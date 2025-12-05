@@ -660,6 +660,14 @@ def run_scan(
     except Exception:
         pass
 
+    # Optional alerting
+    try:
+        from technic_v4.alerts import engine as alerts_engine
+        alerts = alerts_engine.detect_alerts_from_scan(results_df, regime_tags, sb if 'sb' in locals() else None)
+        alerts_engine.log_alerts_to_file(alerts)
+    except Exception:
+        pass
+
     # 8) Save CSV
     output_path = OUTPUT_DIR / "technic_scan_results.csv"
     try:
