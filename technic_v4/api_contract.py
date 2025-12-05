@@ -107,6 +107,24 @@ class ScanResponse(BaseModel):
     metadata: Optional[dict] = None
 
 
+class LiteScanResultItem(BaseModel):
+    symbol: str
+    price: Optional[float] = None
+    tech_rating: float
+    alpha_score: Optional[float] = None
+    signal: str
+    sector: Optional[str] = None
+    short_explanation: Optional[str] = None
+    profile_name: Optional[str] = None
+
+
+class LiteScanResponse(BaseModel):
+    api_version: str = "v1.0"
+    items: List[LiteScanResultItem]
+    regime: Optional[dict] = None
+    metadata: Optional[dict] = None
+
+
 class ScanRequest(BaseModel):
     max_symbols: Optional[int] = Field(None, ge=1, le=2000)
     lookback_days: Optional[int] = Field(None, ge=30, le=1500)
@@ -310,6 +328,62 @@ def create_app() -> "FastAPI":
             regime=None,
             metadata=metadata,
         )
+
+    @app.post("/lite-scan", response_model=LiteScanResponse, dependencies=[] if auth_dep is None else [Depends(auth_dep)])
+    def lite_scan(req: ScanRequest):
+        """
+        Lightweight scan endpoint for mobile clients; returns only essentials.
+        """
+        cfg = ScanConfig(
+            max_symbols=req.max_symbols,
+            lookback_days=req.lookback_days or 150,
+            min_tech_rating=req.min_tech_rating or 0.0,
+            allow_shorts=bool(req.allow_shorts),
+            trade_style=req.trade_style or "Short-term swing",
+            risk_pct=req.risk_pct or 1.0,
+            target_rr=req.target_rr or 2.0,
+            strategy_profile_name=req.strategy_profile_name,
+        )
+        if req.use_ml_alpha is not None:
+            os.environ["TECHNIC_USE_ML_ALPHA"] = "1" if req.use_ml_alpha else "0"
+        if req.use_meta_alpha is not None:
+            os.environ["TECHNIC_USE_META_ALPHA"] = "1" if req.use_meta_alpha else "0"
+        if req.use_tft_features is not None:
+            os.environ["TECHNIC_USE_TFT_FEATURES"] = "1" if req.use_tft_features else "0"
+        try:
+            df, status = run_scan(cfg)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Scan failed: {exc}")
+        if df is None or df.empty:
+            return LiteScanResponse(api_version="v1.0", items=[], regime=None, metadata={"status": status})
+
+        df = df.reset_index(drop=True)
+        top = df.head(min(20, len(df)))
+        items: List[LiteScanResultItem] = []
+        for _, rec in top.iterrows():
+            sym = rec.get("Symbol")
+            price = rec.get("Last") or rec.get("Close") or None
+            expl = rec.get("Explanation") or ""
+            short_expl = (expl[:140] + "...") if expl and len(expl) > 140 else (expl or None)
+            items.append(
+                LiteScanResultItem(
+                    symbol=sym,
+                    price=float(price) if price is not None else None,
+                    tech_rating=float(rec.get("TechRating", 0) or 0),
+                    alpha_score=float(rec.get("AlphaScore")) if rec.get("AlphaScore") is not None else None,
+                    signal=str(rec.get("Signal", "")),
+                    sector=rec.get("Sector"),
+                    short_explanation=short_expl,
+                    profile_name=req.strategy_profile_name or cfg.strategy_profile_name,
+                )
+            )
+        metadata = {
+            "timestamp": pd.Timestamp.utcnow().isoformat(),
+            "status": status,
+            "count": len(items),
+            "profile_name": req.strategy_profile_name or cfg.strategy_profile_name,
+        }
+        return LiteScanResponse(api_version="v1.0", items=items, regime=None, metadata=metadata)
 
     @app.post("/options", response_model=OptionsResponse, dependencies=[] if auth_dep is None else [Depends(auth_dep)])
     def options(req: OptionsRequest):
