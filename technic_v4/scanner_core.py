@@ -18,6 +18,8 @@ from technic_v4.engine.trade_planner import RiskSettings, plan_trades
 from technic_v4.engine.portfolio_engine import risk_adjusted_rank, diversify_by_sector
 from technic_v4.engine.options_engine import score_options, OptionPick
 from technic_v4.engine import alpha_inference
+from technic_v4.engine import explainability
+from technic_v4.engine import ray_runner
 import concurrent.futures
 
 # Where scan CSVs are written
@@ -113,17 +115,40 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
         return df
 
     factor_cols = [
+        "Ret_5",
+        "Ret_21",
+        "Ret_63",
+        "MomentumScore",
+        "Reversal_5",
+        "MACD",
+        "MACD_signal",
+        "MACD_hist",
+        "ADX14",
+        "MA10",
+        "MA20",
+        "MA50",
+        "SlopeMA20",
+        "TrendStrength50",
+        "ATR_pct",
+        "VolatilityScore",
+        "DollarVolume20",
+        "VolumeScore",
+        "GapStat10",
+        "BreakoutScore",
+        "ExplosivenessScore",
+        "RSI14",
+        "OscillatorScore",
+        "value_ep",
+        "quality_roe",
+        "quality_gpm",
+        "dollar_vol_20",
+        "vol_realized_20",
+        "atr_pct_14",
         "mom_21",
         "mom_63",
         "reversal_5",
         "ma_slope_20",
-        "atr_pct_14",
-        "vol_realized_20",
-        "dollar_vol_20",
-        "value_ep",
         "value_cfp",
-        "quality_roe",
-        "quality_gpm",
         "size_log_mcap",
     ]
     available = [c for c in factor_cols if c in df.columns]
@@ -167,19 +192,22 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     if not usable_weights:
         return df
 
-    alpha = sum(zed[k] * v for k, v in usable_weights.items())
-    alpha = zscore(alpha)
+    factor_alpha = sum(zed[k] * v for k, v in usable_weights.items())
+    factor_alpha = zscore(factor_alpha)
 
     # Optional ML alpha blend
+    alpha = factor_alpha
     use_ml_alpha = str(os.getenv("TECHNIC_USE_ML_ALPHA", "false")).lower() in {"1", "true", "yes"}
     if use_ml_alpha:
         try:
-            ml_alpha = alpha_inference.score_alpha(df[[c for c in factor_cols if c in df.columns]])
+            feature_cols_available = [c for c in factor_cols if c in df.columns]
+            ml_alpha = alpha_inference.score_alpha(df[feature_cols_available])
         except Exception:
             ml_alpha = None
         if ml_alpha is not None and not ml_alpha.empty:
             ml_alpha_z = zscore(ml_alpha)
-            alpha = 0.5 * alpha + 0.5 * ml_alpha_z
+            alpha = 0.5 * factor_alpha + 0.5 * ml_alpha_z
+            print("[ALPHA] ML alpha blended with factor alpha")
 
     base_tr = df.get("TechRating", pd.Series(0, index=df.index)).fillna(0)
     blended = 0.6 * base_tr + 0.4 * (alpha * 10 + 15)  # scale alpha into TR-like range
@@ -415,40 +443,54 @@ def run_scan(
     errors = 0
     rejected = 0
 
-    def _worker(idx_urow):
-        idx, urow = idx_urow
-        symbol = urow.symbol
-        if progress_cb is not None:
-            try:
-                progress_cb(symbol, idx, total_symbols)
-            except Exception:
-                pass
-        try:
-            latest_local = _scan_symbol(
-                symbol=symbol,
-                lookback_days=effective_lookback,
-                trade_style=config.trade_style,
-            )
-        except Exception:
-            print(f"[SCAN ERROR] {symbol}:")
-            traceback.print_exc()
-            return ("error", symbol, None, urow)
-        return ("ok", symbol, latest_local, urow)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-        for status, symbol, latest, urow in ex.map(_worker, enumerate(working, start=1)):
+    # Try Ray path first if enabled
+    ray_rows = ray_runner.run_ray_scans([u.symbol for u in working], config, regime_tags)
+    if ray_rows is not None:
+        for urow, latest in zip(working, ray_rows):
             attempted += 1
-            if status == "error" or latest is None:
-                rejected += 1 if status != "error" else 0
-                errors += 1 if status == "error" else 0
+            if latest is None:
+                rejected += 1
                 continue
-
             latest["Sector"] = urow.sector or ""
             latest["Industry"] = urow.industry or ""
             latest["SubIndustry"] = urow.subindustry or ""
-
             rows.append(latest)
             kept += 1
+    else:
+        def _worker(idx_urow):
+            idx, urow = idx_urow
+            symbol = urow.symbol
+            if progress_cb is not None:
+                try:
+                    progress_cb(symbol, idx, total_symbols)
+                except Exception:
+                    pass
+            try:
+                latest_local = _scan_symbol(
+                    symbol=symbol,
+                    lookback_days=effective_lookback,
+                    trade_style=config.trade_style,
+                )
+            except Exception:
+                print(f"[SCAN ERROR] {symbol}:")
+                traceback.print_exc()
+                return ("error", symbol, None, urow)
+            return ("ok", symbol, latest_local, urow)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            for status, symbol, latest, urow in ex.map(_worker, enumerate(working, start=1)):
+                attempted += 1
+                if status == "error" or latest is None:
+                    rejected += 1 if status != "error" else 0
+                    errors += 1 if status == "error" else 0
+                    continue
+
+                latest["Sector"] = urow.sector or ""
+                latest["Industry"] = urow.industry or ""
+                latest["SubIndustry"] = urow.subindustry or ""
+
+                rows.append(latest)
+                kept += 1
 
     print(
         f"[SCAN STATS] attempted={attempted}, kept={kept}, "
@@ -546,6 +588,34 @@ def run_scan(
 
     # Option picks placeholder (populated upstream when chains are available)
     results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
+
+    # Optional SHAP explanations for top names
+    use_explain = str(os.getenv("USE_EXPLAINABILITY", "false")).lower() in {"1", "true", "yes"}
+    if use_explain:
+        try:
+            feature_cols_avail = [c for c in results_df.columns if c not in {"Symbol", "TechRating", "Signal"}]
+            top_symbols = results_df["Symbol"].tolist()[:5]
+            shap_raw = explainability.explain_top_symbols(
+                alpha_inference.load_default_alpha_model(),
+                results_df.set_index("Symbol")[feature_cols_avail],
+                symbols=top_symbols,
+                top_n=5,
+            )
+            explanations = []
+            for sym in results_df["Symbol"]:
+                exp = shap_raw.get(sym, [])
+                explanations.append(explainability.format_explanation(exp))
+            results_df["Explanation"] = explanations
+        except Exception:
+            results_df["Explanation"] = ""
+
+    # Optional scoreboard logging
+    try:
+        from technic_v4.evaluation import scoreboard
+
+        scoreboard.append_daily_signals(results_df)
+    except Exception:
+        pass
 
     # 8) Save CSV
     output_path = OUTPUT_DIR / "technic_scan_results.csv"

@@ -61,3 +61,7 @@ def classify_spy_regime(spy_history: pd.DataFrame) -> Dict[str, str | int]:
     }
     state_id = state_map.get((trend, vol), 4)
     return {"trend": trend, "vol": vol, "state_id": state_id}
+
+# Backward-compatible alias
+def classify_regime(spy_history: pd.DataFrame) -> Dict[str, str | int]:
+    return classify_spy_regime(spy_history)
