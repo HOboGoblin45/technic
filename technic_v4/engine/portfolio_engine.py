@@ -79,6 +79,60 @@ def optimize_weights(
     return w_val, ir
 
 
+def estimate_covariance(df_returns: pd.DataFrame) -> np.ndarray:
+    """
+    Estimate covariance matrix from returns (simple sample covariance).
+    """
+    if df_returns is None or df_returns.empty:
+        return np.array([[]])
+    return df_returns.cov().values
+
+
+def build_risk_model(symbols: list[str], lookback_days: int = 60) -> dict:
+    """
+    Build a basic risk model: vols, covariance, and beta approximation vs SPY (if available).
+    """
+    from technic_v4.data_layer.price_layer import get_stock_history_df
+
+    returns = {}
+    for sym in symbols:
+        try:
+            hist = get_stock_history_df(symbol=sym, days=lookback_days, use_intraday=False)
+            if hist is None or hist.empty or "Close" not in hist:
+                continue
+            rets = hist["Close"].pct_change().dropna()
+            if not rets.empty:
+                returns[sym] = rets
+        except Exception:
+            continue
+    if not returns:
+        return {"cov": None, "vols": None, "betas": None}
+    df_returns = pd.DataFrame(returns).dropna(how="all")
+    cov = estimate_covariance(df_returns)
+    vols = df_returns.std()
+    betas = None
+    if "SPY" in df_returns.columns:
+        mkt = df_returns["SPY"]
+        betas = {}
+        for col in df_returns.columns:
+            if col == "SPY":
+                continue
+            cov_sm = np.cov(df_returns[col], mkt)[0][1]
+            beta = cov_sm / (mkt.var() + 1e-9)
+            betas[col] = beta
+    return {"cov": cov, "vols": vols, "betas": betas}
+
+
+def scenario_pnl(weights: pd.Series, betas: pd.Series | None, shock_pct: float = -0.05) -> float:
+    """
+    Approximate portfolio P&L for a uniform market shock using betas (if available).
+    """
+    if betas is None or betas.empty:
+        return float(weights.sum() * shock_pct)
+    aligned = betas.reindex(weights.index).fillna(1.0)
+    return float((weights * aligned * shock_pct).sum())
+
+
 def optimize_portfolio(df: pd.DataFrame, risk_settings) -> pd.DataFrame:
     """
     Portfolio optimizer: maximize sum(w * alpha) - lambda * w'Σw
@@ -136,6 +190,7 @@ def optimize_portfolio(df: pd.DataFrame, risk_settings) -> pd.DataFrame:
             "Weight": w_val,
             "AlphaScore": alpha,
             "RiskContribution": risk_contrib,
+            "VolEstimate": vols,
         }
     )
     return out
@@ -154,6 +209,10 @@ def apply_portfolio_weights(df: pd.DataFrame, risk_settings, use_optimizer: bool
             opt = optimize_portfolio(df, risk_settings)
             if not opt.empty:
                 weights = dict(zip(opt["Symbol"], opt["Weight"]))
+                if "RiskContribution" in opt.columns:
+                    out["RiskContribution"] = out["Symbol"].map(dict(zip(opt["Symbol"], opt["RiskContribution"])))
+                if "VolEstimate" in opt.columns:
+                    out["VolEstimate"] = out["Symbol"].map(dict(zip(opt["Symbol"], opt["VolEstimate"])))
         except Exception:
             weights = None
     if weights is None:
