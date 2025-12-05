@@ -32,7 +32,7 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
     """
     reg_entry = None
     try:
-        reg_entry = model_registry.get_latest_model("alpha_lgbm_v1")
+        reg_entry = model_registry.get_active_model("alpha_lgbm_v1") or model_registry.get_latest_model("alpha_lgbm_v1")
     except Exception:
         reg_entry = None
     model_path = Path(reg_entry["path_pickle"]) if reg_entry and reg_entry.get("path_pickle") else DEFAULT_MODEL_PATH
@@ -53,7 +53,7 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
     """
     reg_entry = None
     try:
-        reg_entry = model_registry.get_latest_model("alpha_lgbm_v1")
+        reg_entry = model_registry.get_active_model("alpha_lgbm_v1") or model_registry.get_latest_model("alpha_lgbm_v1")
     except Exception:
         reg_entry = None
     use_onnx = str(os.getenv("TECHNIC_USE_ONNX_ALPHA", "false")).lower() in {"1", "true", "yes"}

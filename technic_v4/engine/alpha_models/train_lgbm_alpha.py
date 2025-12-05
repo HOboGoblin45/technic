@@ -131,6 +131,7 @@ def train_and_save(
         path_pickle=str(versioned_path),
         path_onnx=None,
         feature_names=feature_cols,
+        is_active=False,  # promotion handled after gating
     )
     print(f"[TRAIN] Saved model to {versioned_path} (latest copy: {MODEL_LATEST})")
     return versioned_path, metrics
@@ -151,9 +152,29 @@ def main():
     feature_cols = [c for c in df.columns if c not in {"symbol", "asof", "target"}]
     print(f"[TRAIN] Dataset size: {len(df)} rows, {len(feature_cols)} features")
     version = datetime.utcnow().strftime("%Y%m%d")
-    _, metrics = train_and_save(df, feature_cols, target_col="target", version=version)
-    print(f"[TRAIN] Metrics: {metrics}")
-    return {"version": version, "metrics": metrics}
+    versioned_path, metrics = train_and_save(df, feature_cols, target_col="target", version=version)
+
+    # Gating vs active baseline
+    baseline = model_registry.get_active_model("alpha_lgbm_v1")
+    promote = False
+    if baseline is None:
+        print("[TRAIN] No baseline model; promoting first version.")
+        promote = True
+    else:
+        base_metrics = baseline.get("metrics", {}) if baseline else {}
+        base_ic = base_metrics.get("val_ic") or base_metrics.get("ic") or -1e9
+        base_prec = base_metrics.get("val_precision_at_10") or base_metrics.get("precision_at_10") or -1e9
+        cand_ic = metrics.get("val_ic") or -1e9
+        cand_prec = metrics.get("val_precision_at_10") or -1e9
+        if cand_ic >= base_ic + 0.01 or cand_prec >= base_prec + 0.05:
+            promote = True
+            print(f"[TRAIN] Candidate beats baseline (IC {cand_ic:.3f} vs {base_ic:.3f}, P@10 {cand_prec:.3f} vs {base_prec:.3f}). Promoting.")
+        else:
+            print(f"[TRAIN] Candidate did not beat baseline (IC {cand_ic:.3f} vs {base_ic:.3f}, P@10 {cand_prec:.3f} vs {base_prec:.3f}). Keeping baseline active.")
+    # Register (already registered) and set active if promoted
+    if promote:
+        model_registry.set_active_model("alpha_lgbm_v1", version=version)
+    return {"version": version, "metrics": metrics, "promoted": promote}
 
 
 if __name__ == "__main__":
