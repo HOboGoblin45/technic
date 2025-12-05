@@ -777,6 +777,17 @@ except Exception:
     select_option_candidates = None  # type: ignore
 
 try:
+    from technic_v4.engine.strategy_profiles import (
+        StrategyProfile,
+        get_strategy_profile,
+        list_strategy_profiles,
+    )
+except Exception:
+    StrategyProfile = None  # type: ignore
+    get_strategy_profile = None  # type: ignore
+    list_strategy_profiles = None  # type: ignore
+
+try:
     from technic_v4.engine import explanation_nlg
 except Exception:
     explanation_nlg = None  # type: ignore
@@ -4013,6 +4024,30 @@ with st.sidebar:
         value=True,
     )
 
+    # Strategy profiles (maps to ScanConfig + alpha flags)
+    strategy_profile_name: str | None = None
+    strategy_profile: StrategyProfile | None = None
+    if list_strategy_profiles is not None:
+        profiles_dict = list_strategy_profiles()
+        profile_display = list(p.name for p in profiles_dict.values())
+        display_to_key = {p.name: key for key, p in profiles_dict.items()}
+        profile_choice = st.selectbox(
+            "Strategy profile",
+            profile_display + ["Custom / manual"],
+            index=profile_display.index("Balanced Swing") if "Balanced Swing" in profile_display else 0,
+            help="Profiles map risk, RR, and alpha flags. Choose Custom to control everything manually.",
+        )
+        if profile_choice != "Custom / manual":
+            selected_key = display_to_key[profile_choice]
+            strategy_profile_name = selected_key
+            try:
+                strategy_profile = get_strategy_profile(selected_key)
+            except Exception:
+                strategy_profile = None
+            if strategy_profile is not None:
+                st.info(strategy_profile.description)
+
+
     with st.expander("⚙️ Scan Settings", expanded=True):
         lookback_days = st.slider(
             "Lookback window (days)",
@@ -4091,6 +4126,23 @@ with st.sidebar:
             value=bool(preset_cfg.get("only_tradeable", True)),
             help="If enabled, hides 'Avoid' / low-conviction names.",
         )
+
+    # Apply strategy profile overrides (risk/RR/alpha flags) if selected
+    profile_applied = False
+    if strategy_profile is not None:
+        profile_applied = True
+        risk_pct = strategy_profile.risk_pct
+        rr_multiple = strategy_profile.target_rr
+        min_tech_rating = strategy_profile.min_tech_rating
+        trade_style_internal = (
+            "Short-term swing" if strategy_profile.trade_style == "swing" else "Position / longer-term"
+        )
+        # Set alpha/feature flags via env for this run
+        os.environ["TECHNIC_USE_ML_ALPHA"] = "1" if strategy_profile.use_ml_alpha else "0"
+        os.environ["TECHNIC_USE_META_ALPHA"] = "1" if strategy_profile.use_meta_alpha else "0"
+        os.environ["TECHNIC_USE_TFT_FEATURES"] = "1" if strategy_profile.use_tft_features else "0"
+        os.environ["USE_PORTFOLIO_OPTIMIZER"] = "1" if strategy_profile.use_portfolio_optimizer else "0"
+        st.caption(f"Profile: **{strategy_profile.name}** — {strategy_profile.description}")
 
     with st.expander("Universe Filters", expanded=False):
         all_sectors = get_sector_options()
@@ -4469,6 +4521,7 @@ if run_button:
             sectors=selected_sectors or None,
             subindustries=selected_subindustries or None,
             industry_contains=industry_keyword or None,
+            strategy_profile_name=strategy_profile_name if profile_applied else None,
         )
 
         df, status = run_scan(config, progress_cb=on_progress)
@@ -4709,6 +4762,8 @@ if results_df is not None and not results_df.empty:
         "Scoreboard",
         "Quant Copilot",
     ]
+    if str(os.getenv("TECHNIC_SHOW_RESEARCH", "false")).lower() in {"1", "true", "yes"}:
+        tab_names.append("Research Lab")
 
     # Initialize active tab once
     if "active_tab" not in st.session_state:
@@ -4754,6 +4809,8 @@ if results_df is not None and not results_df.empty:
             last_ts = st.session_state.get("technic_last_updated")
             if last_ts is not None:
                 st.caption(f"Last updated: {last_ts.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            if profile_applied and strategy_profile is not None:
+                st.caption(f"Profile: {strategy_profile.name}")
             # Scoreboard summary (optional)
             if eval_scoreboard is not None:
                 try:
@@ -5680,5 +5737,32 @@ if results_df is not None and not results_df.empty:
             "size; the opposite suggests scaling down."
         )
 
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- View: Research Lab (optional) -----------------------------
+    elif active_tab == "Research Lab":
+        st.markdown('<div class="technic-card">', unsafe_allow_html=True)
+        st.markdown("### Research Lab (experimental)")
+        st.caption(
+            "Sandbox for experimenting with profiles and simple backtests. "
+            "Heavy operations are disabled in this UI to keep the main app responsive."
+        )
+        if strategy_profile is not None:
+            st.info(f"Active profile: {strategy_profile.name} — {strategy_profile.description}")
+        else:
+            st.info("Select a strategy profile above to prefill defaults. Custom mode applies current sliders.")
+
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            start_dt = st.date_input("Start date", value=dt.date.today() - dt.timedelta(days=30))
+        with col_r2:
+            end_dt = st.date_input("End date", value=dt.date.today())
+
+        st.write("This lightweight lab reuses cached data only. For deep research, use `python scripts/research_lab.py`.")
+        if st.button("Run quick lab backtest", use_container_width=True):
+            st.info(
+                "Quick lab backtest is not run inside the UI to avoid heavy load. "
+                "Use the CLI: `python -m scripts.research_lab backtest-strategy --help`."
+            )
         st.markdown("</div>", unsafe_allow_html=True)
 

@@ -14,6 +14,7 @@ Steps:
 """
 
 import argparse
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +36,7 @@ def parse_args(argv=None):
     parser.add_argument("--no-onnx-export", action="store_true", help="Skip ONNX export")
     parser.add_argument("--no-scoreboard", action="store_true", help="Skip scoreboard metrics")
     parser.add_argument("--universe-limit", type=int, default=None, help="Limit symbols for training")
+    parser.add_argument("--strategy-profile", type=str, default=None, help="Optional strategy profile name to log/use")
     return parser.parse_args(argv)
 
 
@@ -117,6 +119,9 @@ def update_scoreboard() -> None:
 def main(argv=None):
     args = parse_args(argv)
     _log("Nightly maintenance started.")
+    if args.strategy_profile:
+        os.environ["TECHNIC_STRATEGY_PROFILE"] = args.strategy_profile
+        _log(f"Using strategy profile hint: {args.strategy_profile}")
 
     refresh_data(args.universe_limit)
 

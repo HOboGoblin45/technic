@@ -258,10 +258,24 @@ class ScanConfig:
     risk_pct: float = 1.0   # 1.0 = 1% of account per trade
     target_rr: float = 2.0
     trade_style: str = "Short-term swing"
+    strategy_profile_name: Optional[str] = None
 
     # Advanced
     allow_shorts: bool = False
     only_tradeable: bool = True
+
+    @classmethod
+    def from_strategy_profile(cls, profile) -> "ScanConfig":
+        """
+        Build a ScanConfig from a StrategyProfile instance.
+        """
+        return cls(
+            trade_style="Short-term swing" if profile.trade_style == "swing" else "Position / longer-term",
+            risk_pct=profile.risk_pct,
+            target_rr=profile.target_rr,
+            min_tech_rating=profile.min_tech_rating,
+            strategy_profile_name=profile.name,
+        )
 
 
 # -----------------------------

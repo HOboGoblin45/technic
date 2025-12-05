@@ -1,15 +1,13 @@
 """
-Minimal API contract and optional FastAPI app for Flutter integration.
+API contract and optional FastAPI app for Flutter/mobile integration (v5).
 
-- Defines Pydantic models for scan responses.
-- Provides a create_app() helper that spins up a FastAPI app
-  if FastAPI is installed. (Safe to import even when FastAPI
-  is not present.)
+Includes richer scan outputs: alpha, portfolio weights, explanations, options strategies,
+scoreboard metrics, and regime tags. Responses are versioned and error responses are structured.
 """
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import pandas as pd
 from pydantic import BaseModel, Field, ConfigDict
@@ -50,6 +48,16 @@ except Exception:
 # Pydantic models
 # -------------------------
 
+class OptionStrategyDTO(BaseModel):
+    symbol: str
+    strategy_type: str
+    legs: list
+    expected_value: Optional[float] = None
+    expected_return_pct: Optional[float] = None
+    risk_score: Optional[float] = None
+    notes: Optional[str] = None
+
+
 class ScanItem(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     symbol: str = Field(..., alias="Symbol")
@@ -63,8 +71,9 @@ class ScanItem(BaseModel):
     portfolio_weight: Optional[float] = Field(None, alias="Weight")
     regime_trend: Optional[str] = Field(None, alias="RegimeTrend")
     regime_vol: Optional[str] = Field(None, alias="RegimeVol")
+    regime_state_id: Optional[int] = Field(None, alias="RegimeStateId")
     option_picks: Optional[list] = Field(None, alias="OptionPicks")
-    option_strategies: Optional[list] = Field(None, alias="OptionStrategies")
+    option_strategies: Optional[List[OptionStrategyDTO]] = Field(None, alias="OptionStrategies")
     explanation: Optional[str] = Field(None, alias="Explanation")
     entry: Optional[float] = Field(None, alias="EntryPrice")
     stop: Optional[float] = Field(None, alias="StopPrice")
@@ -74,13 +83,28 @@ class ScanItem(BaseModel):
     sector: Optional[str] = Field(None, alias="Sector")
     industry: Optional[str] = Field(None, alias="Industry")
     subindustry: Optional[str] = Field(None, alias="SubIndustry")
+    tft_forecast_h1: Optional[float] = Field(None, alias="tft_forecast_h1")
+    tft_forecast_h3: Optional[float] = Field(None, alias="tft_forecast_h3")
+    tft_forecast_h5: Optional[float] = Field(None, alias="tft_forecast_h5")
+
+
+class ScoreboardSummaryDTO(BaseModel):
+    ic_30d: Optional[float] = None
+    ic_90d: Optional[float] = None
+    precision10_30d: Optional[float] = None
+    hit_rate_30d: Optional[float] = None
+    avgR_30d: Optional[float] = None
+    sharpe_90d: Optional[float] = None
 
 
 class ScanResponse(BaseModel):
+    api_version: str = "v1.0"
     total: int
     count: int
     items: List[ScanItem]
-    scoreboard_summary: Optional[dict] = None
+    scoreboard_summary: Optional[ScoreboardSummaryDTO] = None
+    regime: Optional[dict] = None
+    metadata: Optional[dict] = None
 
 
 class ScanRequest(BaseModel):
@@ -89,12 +113,25 @@ class ScanRequest(BaseModel):
     min_tech_rating: Optional[float] = None
     allow_shorts: Optional[bool] = False
     trade_style: Optional[str] = None
+    strategy_profile_name: Optional[str] = None
+    risk_pct: Optional[float] = None
+    target_rr: Optional[float] = None
+    use_ml_alpha: Optional[bool] = None
+    use_meta_alpha: Optional[bool] = None
+    use_tft_features: Optional[bool] = None
+    use_portfolio_optimizer: Optional[bool] = None
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
 
 
 class HealthResponse(BaseModel):
     status: str = "ok"
+
+
+class ErrorDTO(BaseModel):
+    code: str
+    message: str
+    details: Optional[Dict[str, Any]] = None
 
 
 class OptionItem(BaseModel):
@@ -175,7 +212,7 @@ def create_app() -> "FastAPI":
     async def http_exception_handler(request, exc: HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
-            content={"error": {"code": exc.status_code, "message": exc.detail}},
+            content={"api_version": "v1.0", "error": {"code": str(exc.status_code), "message": exc.detail}},
         )
 
     @app.get("/health", response_model=HealthResponse, dependencies=[] if auth_dep is None else [Depends(auth_dep)])
@@ -190,13 +227,25 @@ def create_app() -> "FastAPI":
             min_tech_rating=req.min_tech_rating or 0.0,
             allow_shorts=bool(req.allow_shorts),
             trade_style=req.trade_style or "Short-term swing",
+            risk_pct=req.risk_pct or 1.0,
+            target_rr=req.target_rr or 2.0,
+            strategy_profile_name=req.strategy_profile_name,
         )
+        # Feature flags
+        if req.use_ml_alpha is not None:
+            os.environ["TECHNIC_USE_ML_ALPHA"] = "1" if req.use_ml_alpha else "0"
+        if req.use_meta_alpha is not None:
+            os.environ["TECHNIC_USE_META_ALPHA"] = "1" if req.use_meta_alpha else "0"
+        if req.use_tft_features is not None:
+            os.environ["TECHNIC_USE_TFT_FEATURES"] = "1" if req.use_tft_features else "0"
+        if req.use_portfolio_optimizer is not None:
+            os.environ["USE_PORTFOLIO_OPTIMIZER"] = "1" if req.use_portfolio_optimizer else "0"
         try:
             df, status = run_scan(cfg)
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Scan failed: {exc}")
         if df is None or df.empty:
-            return ScanResponse(total=0, count=0, items=[])
+            return ScanResponse(total=0, count=0, items=[], regime=None, metadata={"status": status})
 
         df = df.reset_index(drop=True)
         total = len(df)
@@ -234,10 +283,33 @@ def create_app() -> "FastAPI":
         sb_summary = None
         if eval_scoreboard is not None:
             try:
-                sb_summary = eval_scoreboard.compute_history_metrics(n=10)
+                sb_raw = eval_scoreboard.compute_history_metrics(n=10)
+                # Basic mapping to ScoreboardSummaryDTO; same values used for both 30/90 placeholders for now
+                sb_summary = ScoreboardSummaryDTO(
+                    ic_30d=sb_raw.get("ic"),
+                    ic_90d=sb_raw.get("ic"),
+                    precision10_30d=sb_raw.get("precision_at_n"),
+                    hit_rate_30d=sb_raw.get("hit_rate"),
+                    avgR_30d=sb_raw.get("avg_R"),
+                    sharpe_90d=None,
+                )
             except Exception:
                 sb_summary = None
-        return ScanResponse(total=total, count=len(items_norm), items=items_norm, scoreboard_summary=sb_summary)
+        metadata = {
+            "profile_name": req.strategy_profile_name or cfg.strategy_profile_name,
+            "timestamp": pd.Timestamp.utcnow().isoformat(),
+            "universe_size": total,
+            "status": status,
+        }
+        return ScanResponse(
+            api_version="v1.0",
+            total=total,
+            count=len(items_norm),
+            items=items_norm,
+            scoreboard_summary=sb_summary,
+            regime=None,
+            metadata=metadata,
+        )
 
     @app.post("/options", response_model=OptionsResponse, dependencies=[] if auth_dep is None else [Depends(auth_dep)])
     def options(req: OptionsRequest):

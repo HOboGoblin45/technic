@@ -6,6 +6,7 @@ Tracks model versions, artifact paths, and validation metrics.
 """
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -40,13 +41,14 @@ def register_model(
     path_pickle: str,
     path_onnx: Optional[str] = None,
     feature_names: Optional[list[str]] = None,
+    is_active: bool = False,
+    created_at: Optional[str] = None,
 ) -> None:
     """
     Add or update a model entry in the registry.
     """
     reg = load_registry()
     models = reg.get("models", [])
-    # Drop any existing entry for the same model/version
     models = [
         m
         for m in models
@@ -58,6 +60,8 @@ def register_model(
         "path_pickle": path_pickle,
         "path_onnx": path_onnx,
         "metrics": metrics or {},
+        "is_active": is_active,
+        "created_at": created_at or datetime.utcnow().isoformat(),
     }
     if feature_names:
         entry["feature_names"] = feature_names
@@ -69,11 +73,47 @@ def register_model(
 def get_latest_model(model_name: str) -> Optional[Dict[str, Any]]:
     """
     Return the latest entry for a given model_name, or None if not found.
+    Latest is determined by created_at then version string.
     """
     reg = load_registry()
     models = [m for m in reg.get("models", []) if m.get("model_name") == model_name]
     if not models:
         return None
-    # Sort by version string descending (YYYYMMDD or similar)
-    models = sorted(models, key=lambda m: str(m.get("version", "")), reverse=True)
+
+    def _sort_key(m: Dict[str, Any]):
+        return (
+            m.get("created_at") or "",
+            str(m.get("version", "")),
+        )
+
+    models = sorted(models, key=_sort_key, reverse=True)
     return models[0]
+
+
+def get_active_model(model_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Return the most recent active entry for a given model_name.
+    """
+    reg = load_registry()
+    models = [m for m in reg.get("models", []) if m.get("model_name") == model_name and m.get("is_active")]
+    if not models:
+        return None
+    models = sorted(models, key=lambda m: m.get("created_at") or "", reverse=True)
+    return models[0]
+
+
+def set_active_model(model_name: str, version: str) -> None:
+    """
+    Mark a specific version as active, clearing the flag on others.
+    """
+    reg = load_registry()
+    updated = []
+    for m in reg.get("models", []):
+        if m.get("model_name") != model_name:
+            updated.append(m)
+            continue
+        m = dict(m)
+        m["is_active"] = m.get("version") == version
+        updated.append(m)
+    reg["models"] = updated
+    save_registry(reg)
