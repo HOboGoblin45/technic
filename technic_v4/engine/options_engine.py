@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import pandas as pd
+import numpy as np
 
 
 @dataclass
@@ -34,6 +35,9 @@ class OptionStrategy:
     iv_rank: float | None
     rr_estimate: float | None
     prob_profit_estimate: float | None
+    expected_value: float | None = None
+    expected_return_pct: float | None = None
+    risk_score: float | None = None
     notes: str = ""
 
 
@@ -117,6 +121,8 @@ def generate_option_strategies(
     out: List[OptionStrategy] = []
     iv_rank = float(chain.get("iv_rank", pd.Series([np.nan])).iloc[0]) if "iv_rank" in chain else None
     dir_up = tech_rating >= 0 and alpha_score >= 0
+    underlying_price = float(chain.get("underlying_price", pd.Series([np.nan])).iloc[0]) if "underlying_price" in chain else np.nan
+    mean_iv = float(chain["iv"].dropna().mean()) if "iv" in chain else np.nan
 
     if dir_up:
         # Long call near 0.3-0.5 delta
@@ -127,19 +133,22 @@ def generate_option_strategies(
             for _, row in long_call.iterrows():
                 rr_est = target_rr
                 prob = max(0.0, 1 - abs(row.get("delta", 0)))
-                leg = {"side": "buy", "type": "call", "strike": row["strike"], "expiry": str(row["expiration"])}
-                out.append(
-                    OptionStrategy(
-                        symbol=symbol,
-                        strategy_type="Long Call",
-                        legs=[leg],
-                        underlying_alpha=alpha_score,
-                        iv_rank=iv_rank,
-                        rr_estimate=rr_est,
-                        prob_profit_estimate=prob,
-                        notes="OTM call targeting upside move",
-                    )
+                mid = float((row.get("bid_price", 0) + row.get("ask_price", 0)) / 2)
+                leg = {"side": "buy", "type": "call", "strike": row["strike"], "expiry": str(row["expiration"]), "premium": mid}
+                strat = OptionStrategy(
+                    symbol=symbol,
+                    strategy_type="Long Call",
+                    legs=[leg],
+                    underlying_alpha=alpha_score,
+                    iv_rank=iv_rank,
+                    rr_estimate=rr_est,
+                    prob_profit_estimate=prob,
+                    notes="OTM call targeting upside move",
                 )
+                strat.expected_value, strat.expected_return_pct, strat.risk_score = estimate_strategy_ev(
+                    strat, underlying_price, mean_iv, alpha_score
+                )
+                out.append(strat)
         # Bull call spread: buy ~0.35 delta, sell higher strike
         if not calls.empty:
             calls_sorted = calls.sort_values("strike")
@@ -148,24 +157,28 @@ def generate_option_strategies(
             if not lower.empty and not upper.empty:
                 l = lower.iloc[0]
                 u = upper.iloc[0]
+                mid_lower = float((l.get("bid_price", 0) + l.get("ask_price", 0)) / 2)
+                mid_upper = float((u.get("bid_price", 0) + u.get("ask_price", 0)) / 2)
                 legs = [
-                    {"side": "buy", "type": "call", "strike": l["strike"], "expiry": str(l["expiration"])},
-                    {"side": "sell", "type": "call", "strike": u["strike"], "expiry": str(u["expiration"])},
+                    {"side": "buy", "type": "call", "strike": l["strike"], "expiry": str(l["expiration"]), "premium": mid_lower},
+                    {"side": "sell", "type": "call", "strike": u["strike"], "expiry": str(u["expiration"]), "premium": mid_upper},
                 ]
                 rr_est = target_rr * 0.8
                 prob = max(0.0, 1 - abs(l.get("delta", 0)))
-                out.append(
-                    OptionStrategy(
-                        symbol=symbol,
-                        strategy_type="Bull Call Spread",
-                        legs=legs,
-                        underlying_alpha=alpha_score,
-                        iv_rank=iv_rank,
-                        rr_estimate=rr_est,
-                        prob_profit_estimate=prob,
-                        notes="Defined risk vertical for upside exposure",
-                    )
+                strat = OptionStrategy(
+                    symbol=symbol,
+                    strategy_type="Bull Call Spread",
+                    legs=legs,
+                    underlying_alpha=alpha_score,
+                    iv_rank=iv_rank,
+                    rr_estimate=rr_est,
+                    prob_profit_estimate=prob,
+                    notes="Defined risk vertical for upside exposure",
                 )
+                strat.expected_value, strat.expected_return_pct, strat.risk_score = estimate_strategy_ev(
+                    strat, underlying_price, mean_iv, alpha_score
+                )
+                out.append(strat)
         # Cash-secured put skeleton (scored, not executed)
         puts = chain[chain["option_type"].str.lower() == "put"]
         if not puts.empty:
@@ -173,21 +186,78 @@ def generate_option_strategies(
             csp = puts.iloc[(puts["delta_abs"] - 0.2).abs().argsort()[:1]]
             for _, row in csp.iterrows():
                 prob = max(0.0, 1 - abs(row.get("delta", 0)))
-                legs = [{"side": "sell", "type": "put", "strike": row["strike"], "expiry": str(row["expiration"])}]
-                out.append(
-                    OptionStrategy(
-                        symbol=symbol,
-                        strategy_type="Cash-Secured Put",
-                        legs=legs,
-                        underlying_alpha=alpha_score,
-                        iv_rank=iv_rank,
-                        rr_estimate=target_rr * 0.6,
-                        prob_profit_estimate=prob,
-                        notes="Income approach aligned with bullish bias",
-                    )
+                mid = float((row.get("bid_price", 0) + row.get("ask_price", 0)) / 2)
+                legs = [{"side": "sell", "type": "put", "strike": row["strike"], "expiry": str(row["expiration"]), "premium": mid}]
+                strat = OptionStrategy(
+                    symbol=symbol,
+                    strategy_type="Cash-Secured Put",
+                    legs=legs,
+                    underlying_alpha=alpha_score,
+                    iv_rank=iv_rank,
+                    rr_estimate=target_rr * 0.6,
+                    prob_profit_estimate=prob,
+                    notes="Income approach aligned with bullish bias",
                 )
+                strat.expected_value, strat.expected_return_pct, strat.risk_score = estimate_strategy_ev(
+                    strat, underlying_price, mean_iv, alpha_score
+                )
+                out.append(strat)
 
     return out
+
+
+def estimate_strategy_ev(
+    strategy: OptionStrategy,
+    current_price: float,
+    iv: float,
+    alpha_score: float,
+) -> tuple[float, float, float]:
+    """
+    Rough expected value / return / risk_score estimate using simplified payoff math.
+    - expected move derived from alpha_score (heuristic: 1% per alpha point, clipped)
+    - iv used to penalize high-vol scenarios in risk_score
+    - payoff approximated on a single expected price at expiry
+    """
+    if current_price is None or np.isnan(current_price):
+        return (np.nan, np.nan, np.nan)
+    move_pct = float(np.clip(alpha_score * 0.01, -0.3, 0.3))
+    S_exp = current_price * (1 + move_pct)
+    total_payoff = 0.0
+    total_cost = 0.0
+    for leg in strategy.legs:
+        side = leg.get("side", "buy").lower()
+        opt_type = leg.get("type", "call").lower()
+        strike = float(leg.get("strike", 0) or 0)
+        premium = float(leg.get("premium", 0) or 0)
+        qty = -1 if side == "sell" else 1
+        if opt_type == "call":
+            intrinsic = max(S_exp - strike, 0)
+        else:
+            intrinsic = max(strike - S_exp, 0)
+        total_payoff += qty * intrinsic * 100  # per contract
+        total_cost += qty * premium * 100
+    ev = total_payoff - total_cost
+    denom = abs(total_cost) if abs(total_cost) > 1e-6 else current_price * 100
+    expected_return_pct = ev / denom if denom != 0 else np.nan
+    iv_penalty = abs(iv) if not np.isnan(iv) else 0.5
+    risk_score = iv_penalty * (1 + len(strategy.legs) * 0.1)
+    return (ev, expected_return_pct, risk_score)
+
+
+def rank_option_strategies(strategies: List[OptionStrategy]) -> List[OptionStrategy]:
+    """
+    Rank strategies by expected value, then expected return %, then lower risk_score.
+    """
+    return sorted(
+        strategies,
+        key=lambda s: (
+            float("-inf") if s.expected_value is None or np.isnan(s.expected_value) else -s.expected_value,
+            float("-inf")
+            if s.expected_return_pct is None or np.isnan(s.expected_return_pct)
+            else -s.expected_return_pct,
+            float("inf") if s.risk_score is None or np.isnan(s.risk_score) else s.risk_score,
+        ),
+    )
 
 
 def score_option_strategies_for_scan(df_results: pd.DataFrame, option_chain_service, risk_settings, top_n: int = 5) -> List[OptionStrategy]:
@@ -209,13 +279,16 @@ def score_option_strategies_for_scan(df_results: pd.DataFrame, option_chain_serv
         alpha_score = float(row.get("AlphaScore", 0) or 0)
         tech_rating = float(row.get("TechRating", 0) or 0)
         target_rr = getattr(risk_settings, "target_rr", 2.0) if risk_settings is not None else 2.0
+        chain_df = pd.DataFrame(chain) if not isinstance(chain, pd.DataFrame) else chain
         strat = generate_option_strategies(
             sym,
-            pd.DataFrame(chain) if not isinstance(chain, pd.DataFrame) else chain,
+            chain_df,
             alpha_score,
             tech_rating,
             target_rr,
             risk_settings,
         )
-        strategies.extend(strat)
+        ranked = rank_option_strategies(strat)
+        # keep top 3 per symbol to limit output size
+        strategies.extend(ranked[:3])
     return strategies

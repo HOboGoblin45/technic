@@ -777,6 +777,11 @@ except Exception:
     select_option_candidates = None  # type: ignore
 
 try:
+    from technic_v4.engine import explanation_nlg
+except Exception:
+    explanation_nlg = None  # type: ignore
+
+try:
     from technic_v4.engine.scoring import compute_scores
     from technic_v4.engine.trade_planner import plan_trades, RiskSettings
     from technic_v4.evaluation import scoreboard as eval_scoreboard
@@ -4700,6 +4705,7 @@ if results_df is not None and not results_df.empty:
         "Market Insight",
         "News Hub",
         "Backtester",
+        "Performance & Risk",
         "Scoreboard",
         "Quant Copilot",
     ]
@@ -5351,6 +5357,96 @@ if results_df is not None and not results_df.empty:
                             )
 
                         st.success("Backtest complete.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- View: Performance & Risk Dashboard ------------------------
+    elif active_tab == "Performance & Risk":
+        st.markdown('<div class="technic-card">', unsafe_allow_html=True)
+        st.markdown("### 📊 Performance & Risk Dashboard")
+        st.caption("Rolling signal quality, simple risk view, and Copilot summary (if available).")
+
+        # 1) Scoreboard / evaluation metrics
+        metrics_data = {}
+        if eval_scoreboard is not None:
+            try:
+                metrics_data = eval_scoreboard.compute_history_metrics(n=10)
+            except Exception:
+                metrics_data = {}
+        mcols = st.columns(4)
+        def fmt_pct(val):
+            return f"{val:.2%}" if val is not None and not pd.isna(val) else "N/A"
+
+        ic_val = metrics_data.get("ic")
+        mcols[0].metric("Rolling IC", f"{ic_val:.3f}" if ic_val is not None and not pd.isna(ic_val) else "N/A")
+        mcols[1].metric("Precision@10", fmt_pct(metrics_data.get("precision_at_n")))
+        mcols[2].metric("Hit rate", fmt_pct(metrics_data.get("hit_rate")))
+        avg_r = metrics_data.get("avg_R")
+        mcols[3].metric("Avg R", f"{avg_r:.3f}" if avg_r is not None and not pd.isna(avg_r) else "N/A")
+
+        # 2) Portfolio risk summary (best-effort from current results)
+        st.markdown("#### Portfolio risk snapshot")
+        if "Weight" in results_df.columns and "Sector" in results_df.columns:
+            weights = results_df["Weight"].fillna(0).astype(float)
+            if weights.sum() > 0:
+                weights = weights / weights.sum()
+            sectors = results_df["Sector"].fillna("Unknown")
+            exposure = pd.DataFrame({"Sector": sectors, "Weight": weights}).groupby("Sector").sum().sort_values("Weight", ascending=False)
+            shock_5 = -0.05 * weights.sum()
+            shock_10 = -0.10 * weights.sum()
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total weight", f"{weights.sum():.2f}")
+            c2.metric("Shock P&L (-5%)", f"{shock_5:.2%}")
+            c3.metric("Shock P&L (-10%)", f"{shock_10:.2%}")
+            if not exposure.empty:
+                st.bar_chart(exposure, use_container_width=True, height=260)
+        else:
+            st.info("No portfolio weights available for this scan.")
+
+        # 3) Alpha breakdown (factor vs ML vs meta)
+        st.markdown("#### Alpha breakdown (top 20)")
+        top_view = results_df.head(20)
+        def _dominant_alpha(row: pd.Series) -> str:
+            f = row.get("factor_alpha")
+            m = row.get("ml_alpha")
+            meta = row.get("AlphaScore")
+            scores = {
+                "Factor": abs(f) if pd.notna(f) else -1,
+                "ML": abs(m) if pd.notna(m) else -1,
+                "Meta": abs(meta) if pd.notna(meta) else -1,
+            }
+            best = max(scores, key=scores.get)
+            return best if scores[best] >= 0 else "Unknown"
+        alpha_labels = top_view.apply(_dominant_alpha, axis=1) if not top_view.empty else pd.Series([], dtype=str)
+        if not alpha_labels.empty:
+            alpha_counts = alpha_labels.value_counts()
+            ac_df = alpha_counts.reset_index()
+            ac_df.columns = ["Source", "Count"]
+            st.bar_chart(ac_df.set_index("Source"), use_container_width=True, height=220)
+        else:
+            st.info("No alpha breakdown available yet.")
+
+        # 4) Copilot narrative (optional)
+        st.markdown("#### Quant Copilot Summary")
+        narrative_txt = None
+        if explanation_nlg is not None:
+            try:
+                context = explanation_nlg.build_scan_context_summary(
+                    results_df,
+                    regime={},
+                    scoreboard_summary=metrics_data if metrics_data else None,
+                )
+                explanations = {}
+                if "Explanation" in results_df.columns:
+                    for _, r in results_df.head(5).iterrows():
+                        explanations[str(r.get("Symbol", ""))] = r.get("Explanation", "")
+                narrative_txt = explanation_nlg.generate_narrative(context, explanations)
+            except Exception:
+                narrative_txt = None
+        if narrative_txt:
+            st.info(narrative_txt)
+        else:
+            st.write("Copilot summary unavailable (no API key or explanation engine offline).")
 
         st.markdown("</div>", unsafe_allow_html=True)
 

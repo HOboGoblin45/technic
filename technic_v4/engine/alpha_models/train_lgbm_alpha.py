@@ -3,22 +3,26 @@ from __future__ import annotations
 """
 Offline training script for cross-sectional LGBM alpha model.
 Builds a dataset from cached price history and trains a LightGBM regressor
-to predict forward returns. Saves model to models/alpha/lgbm_v1.pkl.
+to predict forward returns. Saves model artifacts and registers them.
 """
 
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
 
+from technic_v4 import model_registry
 from technic_v4.engine.alpha_models.lgbm_alpha import LGBMAlphaModel
+from technic_v4.evaluation import metrics as eval_metrics
 from technic_v4.engine.feature_engine import get_latest_features
 from technic_v4.data_layer.price_layer import get_stock_history_df
 from technic_v4.universe_loader import load_universe
 
-MODEL_PATH = Path("models/alpha/lgbm_v1.pkl")
+MODEL_LATEST = Path("models/alpha/lgbm_v1.pkl")
+FEATURES_PATH = Path("models/alpha/lgbm_v1_features.json")
 
 
 def compute_forward_return(history_df: pd.DataFrame, horizon: int = 5) -> float:
@@ -83,8 +87,9 @@ def train_and_save(
     df: pd.DataFrame,
     feature_cols: List[str],
     target_col: str = "target",
-    model_path: Path = MODEL_PATH,
-) -> None:
+    version: str | None = None,
+    save_latest: bool = True,
+) -> Tuple[Path, dict]:
     if df.empty:
         raise ValueError("No training data available")
     X = df[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0)
@@ -95,26 +100,60 @@ def train_and_save(
     y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
     model = LGBMAlphaModel()
     model.fit(X_train, y_train)
-    # Optionally evaluate on val (not stored here)
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-    model.save(str(model_path))
-    print(f"[TRAIN] Saved model to {model_path}")
+    # Validation metrics
+    metrics: dict = {}
+    if not X_val.empty:
+        preds_val = model.predict(X_val)
+        preds_series = pd.Series(preds_val, index=y_val.index)
+        metrics["val_ic"] = float(eval_metrics.rank_ic(preds_series, y_val))
+        metrics["val_precision_at_10"] = float(
+            eval_metrics.precision_at_n(preds_series, y_val, n=min(10, len(preds_series)))
+        )
+        metrics["val_avgR"] = float(eval_metrics.average_R(preds_series, y_val))
+    version = version or datetime.utcnow().strftime("%Y%m%d")
+    model_dir = Path("models/alpha")
+    model_dir.mkdir(parents=True, exist_ok=True)
+    versioned_path = model_dir / f"lgbm_v1_{version}.pkl"
+    model.save(str(versioned_path))
+    if save_latest:
+        model.save(str(MODEL_LATEST))
+    try:
+        FEATURES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        FEATURES_PATH.write_text(
+            pd.Series(feature_cols).to_json(orient="values"), encoding="utf-8"
+        )
+    except Exception:
+        pass
+    model_registry.register_model(
+        model_name="alpha_lgbm_v1",
+        version=version,
+        metrics=metrics,
+        path_pickle=str(versioned_path),
+        path_onnx=None,
+        feature_names=feature_cols,
+    )
+    print(f"[TRAIN] Saved model to {versioned_path} (latest copy: {MODEL_LATEST})")
+    return versioned_path, metrics
 
 
 def main():
-    # Configs
-    start_date = "2024-01-01"
-    end_date = "2024-12-31"
+    # Rolling window: last 300 business days
+    end_date = pd.Timestamp.utcnow().normalize()
+    start_date = (end_date - timedelta(days=400)).strftime("%Y-%m-%d")
+    end_date_str = end_date.strftime("%Y-%m-%d")
     horizon = 5
     lookback_days = 120
 
     print("[TRAIN] Building dataset...")
-    df = build_training_dataset(start_date, end_date, horizon=horizon, lookback_days=lookback_days)
+    df = build_training_dataset(start_date, end_date_str, horizon=horizon, lookback_days=lookback_days)
     if df.empty:
         raise SystemExit("No training data built; aborting.")
     feature_cols = [c for c in df.columns if c not in {"symbol", "asof", "target"}]
     print(f"[TRAIN] Dataset size: {len(df)} rows, {len(feature_cols)} features")
-    train_and_save(df, feature_cols, target_col="target", model_path=MODEL_PATH)
+    version = datetime.utcnow().strftime("%Y%m%d")
+    _, metrics = train_and_save(df, feature_cols, target_col="target", version=version)
+    print(f"[TRAIN] Metrics: {metrics}")
+    return {"version": version, "metrics": metrics}
 
 
 if __name__ == "__main__":

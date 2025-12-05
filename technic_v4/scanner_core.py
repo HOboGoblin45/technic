@@ -199,6 +199,7 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     # Optional ML alpha blend
     alpha = factor_alpha
     use_ml_alpha = str(os.getenv("TECHNIC_USE_ML_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    ml_alpha = None
     if use_ml_alpha:
         try:
             feature_cols_available = [c for c in factor_cols if c in df.columns]
@@ -209,6 +210,17 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
             ml_alpha_z = zscore(ml_alpha)
             alpha = 0.5 * factor_alpha + 0.5 * ml_alpha_z
             print("[ALPHA] ML alpha blended with factor alpha")
+
+    # Optional meta alpha
+    use_meta = str(os.getenv("TECHNIC_USE_META_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    if use_meta:
+        try:
+            meta_alpha = alpha_inference.score_meta_alpha(df)
+        except Exception:
+            meta_alpha = None
+        if meta_alpha is not None and not meta_alpha.empty:
+            alpha = zscore(meta_alpha)
+            print("[ALPHA] Meta alpha applied")
 
     base_tr = df.get("TechRating", pd.Series(0, index=df.index)).fillna(0)
     blended = 0.6 * base_tr + 0.4 * (alpha * 10 + 15)  # scale alpha into TR-like range
@@ -513,6 +525,22 @@ def run_scan(
         results_df["TechRating"] = 0.0
     if "Signal" not in results_df.columns:
         results_df["Signal"] = ""
+
+    # Optional TFT forecast features
+    use_tft = str(os.getenv("TECHNIC_USE_TFT_FEATURES", "false")).lower() in {"1", "true", "yes"}
+    if use_tft:
+        try:
+            from technic_v4.engine import multihorizon
+            from technic_v4.engine.feature_engine import merge_tft_features
+
+            symbols = results_df["Symbol"].tolist()
+            tft_feats = multihorizon.build_tft_features_for_symbols(symbols, n_future_steps=3)
+            if tft_feats is not None and not tft_feats.empty:
+                results_df = merge_tft_features(results_df, tft_feats)
+            else:
+                print("[TFT] No TFT features available; skipping.")
+        except Exception as exc:
+            print(f"[TFT] TFT feature merge failed: {exc}")
 
     # 5b) Cross-sectional alpha blend: upgrade TechRating using factor z-scores
     results_df = _apply_alpha_blend(results_df, regime=regime_tags)
