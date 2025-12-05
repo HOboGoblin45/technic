@@ -18,7 +18,7 @@ import datetime as dt
 import requests
 
 try:
-    import altair as alt
+    import altair as alt  # type: ignore
 
     HAVE_ALTAIR = True
 except ImportError:
@@ -28,7 +28,7 @@ except ImportError:
 from generate_copilot_answer import generate_copilot_answer
 
 try:
-    import matplotlib  # noqa: F401
+    import matplotlib  # type: ignore  # noqa: F401
     HAVE_MPL = True
 except ImportError:
     HAVE_MPL = False
