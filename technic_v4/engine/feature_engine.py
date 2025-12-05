@@ -145,3 +145,17 @@ def get_latest_features(
     if feats is None or feats.empty:
         return pd.Series(dtype=float)
     return feats.iloc[-1]
+
+
+def merge_tft_features(results_df: pd.DataFrame, tft_features: pd.DataFrame) -> pd.DataFrame:
+    """
+    Left-join TFT forecast features onto scan results by Symbol.
+    """
+    if results_df is None or results_df.empty or tft_features is None or tft_features.empty:
+        return results_df
+    feats = tft_features.copy()
+    if "Symbol" in feats.columns:
+        feats = feats.set_index("Symbol")
+    feats = feats.add_prefix("")  # no extra prefix, keep tft_* names
+    merged = results_df.merge(feats, left_on="Symbol", right_index=True, how="left")
+    return merged

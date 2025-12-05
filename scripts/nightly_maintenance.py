@@ -20,12 +20,12 @@ from pathlib import Path
 
 
 def _log(msg: str) -> None:
-    print(msg)
+    timestamped = f"[{datetime.utcnow().isoformat()}] {msg}"
+    print(timestamped)
     log_dir = Path("logs")
     log_dir.mkdir(parents=True, exist_ok=True)
-    (log_dir / "nightly.log").write_text(
-        f"[{datetime.utcnow().isoformat()}] {msg}\n", encoding="utf-8", append=True
-    )
+    with open(log_dir / "nightly.log", "a", encoding="utf-8") as fh:
+        fh.write(timestamped + "\n")
 
 
 def parse_args(argv=None):
@@ -55,8 +55,11 @@ def train_alpha() -> None:
     try:
         from technic_v4.engine.alpha_models import train_lgbm_alpha
 
-        train_lgbm_alpha.main()
-        _log("Alpha training complete.")
+        result = train_lgbm_alpha.main()
+        if isinstance(result, dict):
+            _log(f"Alpha training complete. Version={result.get('version')} Metrics={result.get('metrics')}")
+        else:
+            _log("Alpha training complete.")
     except Exception as exc:
         _log(f"Alpha training failed: {exc}")
 
@@ -76,14 +79,27 @@ def train_tft(universe_limit: int | None = None) -> None:
 
 def export_onnx() -> None:
     try:
+        from technic_v4 import model_registry
         from technic_v4.engine.alpha_models import lgbm_alpha
         from technic_v4.engine import inference_engine
-        from technic_v4.engine.alpha_models import train_lgbm_alpha
 
-        model = lgbm_alpha.LGBMAlphaModel.load("models/alpha/lgbm_v1.pkl")
-        feature_names = []  # TODO: persist feature list alongside model
-        inference_engine.export_lgbm_to_onnx(model.model, feature_names, "models/alpha/lgbm_v1.onnx")
-        _log("ONNX export complete.")
+        reg_entry = model_registry.get_latest_model("alpha_lgbm_v1")
+        pickle_path = reg_entry["path_pickle"] if reg_entry else "models/alpha/lgbm_v1.pkl"
+        onnx_target = reg_entry.get("path_onnx") if reg_entry else None
+        feature_names = reg_entry.get("feature_names", []) if reg_entry else []
+        model = lgbm_alpha.LGBMAlphaModel.load(pickle_path)
+        out_path = onnx_target or "models/alpha/lgbm_v1.onnx"
+        inference_engine.export_lgbm_to_onnx(model.model, feature_names, out_path)
+        if reg_entry:
+            model_registry.register_model(
+                model_name="alpha_lgbm_v1",
+                version=reg_entry.get("version", "latest"),
+                metrics=reg_entry.get("metrics", {}),
+                path_pickle=pickle_path,
+                path_onnx=out_path,
+                feature_names=feature_names,
+            )
+        _log(f"ONNX export complete to {out_path}.")
     except Exception as exc:
         _log(f"ONNX export failed: {exc}")
 
