@@ -779,10 +779,12 @@ except Exception:
 try:
     from technic_v4.engine.scoring import compute_scores
     from technic_v4.engine.trade_planner import plan_trades, RiskSettings
+    from technic_v4.evaluation import scoreboard as eval_scoreboard
 except Exception:
     compute_scores = None  # type: ignore
     plan_trades = None  # type: ignore
     RiskSettings = None  # type: ignore
+    eval_scoreboard = None  # type: ignore
 
 FUNDAMENTAL_FIELDS = ["PE", "PEG", "Piotroski", "AltmanZ", "EPS_Growth"]
 
@@ -1180,6 +1182,9 @@ def _format_scan_results(df: pd.DataFrame) -> list[dict[str, Any]]:
                 "techRating": _clean_num(row.get("TechRating")) if "TechRating" in cols else None,
                 "riskScore": _clean_num(row.get("RiskScore")) if "RiskScore" in cols else None,
                 "alphaScore": _clean_num(row.get("AlphaScore")) if "AlphaScore" in cols else None,
+                "portfolioWeight": _clean_num(row.get("Weight")) if "Weight" in cols else None,
+                "explanation": row.get("Explanation") if "Explanation" in cols else None,
+                "optionStrategies": row.get("OptionStrategies") if "OptionStrategies" in cols else None,
                 "regimeTrend": row.get("RegimeTrend") if "RegimeTrend" in cols else None,
                 "regimeVol": row.get("RegimeVol") if "RegimeVol" in cols else None,
                 "optionPicks": row.get("OptionPicks") if "OptionPicks" in cols else None,
@@ -4743,6 +4748,19 @@ if results_df is not None and not results_df.empty:
             last_ts = st.session_state.get("technic_last_updated")
             if last_ts is not None:
                 st.caption(f"Last updated: {last_ts.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            # Scoreboard summary (optional)
+            if eval_scoreboard is not None:
+                try:
+                    sb = eval_scoreboard.compute_history_metrics(n=10)
+                    if sb:
+                        st.caption(f"IC: {sb.get('ic'):.3f} • Precision@10: {sb.get('precision_at_n'):.2%} • Hit rate: {sb.get('hit_rate'):.2%}")
+                except Exception:
+                    pass
+        # Quick alpha/weight view
+        if "AlphaScore" in results_df.columns:
+            quick_cols = [c for c in ["Symbol", "TechRating", "AlphaScore", "risk_score", "Weight", "Explanation"] if c in results_df.columns]
+            if quick_cols:
+                st.dataframe(results_df[quick_cols].head(20), use_container_width=True, height=300)
 
         # --- Personal Quant trade ideas (top of screen) -------------
         trade_cols = {

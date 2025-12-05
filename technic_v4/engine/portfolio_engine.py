@@ -77,3 +77,87 @@ def optimize_weights(
         w_val = np.array(w.value).flatten()
     ir = float(ret.value / (np.sqrt(risk.value) + 1e-6)) if risk.value is not None else 0.0
     return w_val, ir
+
+
+def optimize_portfolio(df: pd.DataFrame, risk_settings) -> pd.DataFrame:
+    """
+    Portfolio optimizer: maximize sum(w * alpha) - lambda * w'Σw
+    subject to sum w = 1, w >= 0, sector caps.
+    Returns a DataFrame with Symbol, Weight, AlphaScore, RiskContribution.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if cp is None:
+        return pd.DataFrame()
+
+    df_local = df.copy()
+    # Required columns; fill missing with defaults
+    df_local["AlphaScore"] = df_local.get("AlphaScore", df_local.get("TechRating", 0)).fillna(0)
+    df_local["VolatilityEstimate"] = df_local.get("VolatilityEstimate", df_local.get("vol_realized_20", 0)).fillna(0.2)
+    symbols = df_local["Symbol"].tolist()
+    alpha = df_local["AlphaScore"].values.astype(float)
+    vols = df_local["VolatilityEstimate"].values.astype(float)
+
+    n = len(df_local)
+    w = cp.Variable(n)
+    # Diagonal covariance approximation if no matrix provided
+    cov = np.diag(vols ** 2)
+
+    lam = getattr(risk_settings, "risk_aversion", 0.1) if risk_settings is not None else 0.1
+    sector_caps = {}
+    if "Sector" in df_local.columns:
+        for sector in df_local["Sector"].unique():
+            sector_caps[sector] = 0.3
+
+    objective = cp.Maximize(alpha @ w - lam * cp.quad_form(w, cov))
+    constraints = [cp.sum(w) == 1, w >= 0]
+    if sector_caps:
+        for sector, cap in sector_caps.items():
+            idx = [i for i, s in enumerate(df_local["Sector"]) if s == sector]
+            if idx:
+                constraints.append(cp.sum(w[idx]) <= cap)
+
+    prob = cp.Problem(objective, constraints)
+    try:
+        prob.solve(solver=cp.ECOS, verbose=False)
+    except Exception:
+        return pd.DataFrame()
+
+    if w.value is None:
+        return pd.DataFrame()
+
+    w_val = np.array(w.value).flatten()
+    total_var = float(w_val @ cov @ w_val)
+    risk_contrib = cov @ w_val
+
+    out = pd.DataFrame(
+        {
+            "Symbol": symbols,
+            "Weight": w_val,
+            "AlphaScore": alpha,
+            "RiskContribution": risk_contrib,
+        }
+    )
+    return out
+
+
+def apply_portfolio_weights(df: pd.DataFrame, risk_settings, use_optimizer: bool = False) -> pd.DataFrame:
+    """
+    Attach weights to scan results. If optimizer disabled or fails, use equal weights.
+    """
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    weights = None
+    if use_optimizer:
+        try:
+            opt = optimize_portfolio(df, risk_settings)
+            if not opt.empty:
+                weights = dict(zip(opt["Symbol"], opt["Weight"]))
+        except Exception:
+            weights = None
+    if weights is None:
+        n = len(out)
+        weights = {sym: 1.0 / n for sym in out["Symbol"].tolist()}
+    out["Weight"] = out["Symbol"].map(weights)
+    return out

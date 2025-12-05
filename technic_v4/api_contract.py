@@ -41,6 +41,10 @@ except ImportError:  # FastAPI not required for core functionality
     HTTPException = None  # type: ignore
     JSONResponse = None  # type: ignore
 
+try:
+    from technic_v4.evaluation import scoreboard as eval_scoreboard
+except Exception:
+    eval_scoreboard = None  # type: ignore
 
 # -------------------------
 # Pydantic models
@@ -56,9 +60,12 @@ class ScanItem(BaseModel):
     mu_ml: Optional[float] = Field(None, alias="MuMl")
     alpha_score: Optional[float] = Field(None, alias="AlphaScore")
     risk_score: Optional[float] = Field(None, alias="risk_score")
+    portfolio_weight: Optional[float] = Field(None, alias="Weight")
     regime_trend: Optional[str] = Field(None, alias="RegimeTrend")
     regime_vol: Optional[str] = Field(None, alias="RegimeVol")
     option_picks: Optional[list] = Field(None, alias="OptionPicks")
+    option_strategies: Optional[list] = Field(None, alias="OptionStrategies")
+    explanation: Optional[str] = Field(None, alias="Explanation")
     entry: Optional[float] = Field(None, alias="EntryPrice")
     stop: Optional[float] = Field(None, alias="StopPrice")
     target: Optional[float] = Field(None, alias="TargetPrice")
@@ -73,6 +80,7 @@ class ScanResponse(BaseModel):
     total: int
     count: int
     items: List[ScanItem]
+    scoreboard_summary: Optional[dict] = None
 
 
 class ScanRequest(BaseModel):
@@ -206,9 +214,12 @@ def create_app() -> "FastAPI":
             rec["mu_ml"] = rec.get("MuMl")
             rec["alpha_score"] = rec.get("AlphaScore")
             rec["risk_score"] = rec.get("risk_score") or rec.get("RiskScore")
+            rec["portfolio_weight"] = rec.get("Weight")
             rec["regime_trend"] = rec.get("RegimeTrend")
             rec["regime_vol"] = rec.get("RegimeVol")
             rec["option_picks"] = rec.get("OptionPicks")
+            rec["option_strategies"] = rec.get("OptionStrategies")
+            rec["explanation"] = rec.get("Explanation")
             rec["entry"] = rec.get("EntryPrice")
             rec["stop"] = rec.get("StopPrice")
             rec["target"] = rec.get("TargetPrice")
@@ -220,7 +231,13 @@ def create_app() -> "FastAPI":
             rec["symbol"] = rec.get("Symbol")
             items_norm.append(rec)
 
-        return ScanResponse(total=total, count=len(items_norm), items=items_norm)
+        sb_summary = None
+        if eval_scoreboard is not None:
+            try:
+                sb_summary = eval_scoreboard.compute_history_metrics(n=10)
+            except Exception:
+                sb_summary = None
+        return ScanResponse(total=total, count=len(items_norm), items=items_norm, scoreboard_summary=sb_summary)
 
     @app.post("/options", response_model=OptionsResponse, dependencies=[] if auth_dep is None else [Depends(auth_dep)])
     def options(req: OptionsRequest):
