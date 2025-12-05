@@ -17,6 +17,7 @@ from technic_v4.data_layer.fundamentals import get_fundamentals
 from technic_v4.engine.trade_planner import RiskSettings, plan_trades
 from technic_v4.engine.portfolio_engine import risk_adjusted_rank, diversify_by_sector
 from technic_v4.engine.options_engine import score_options, OptionPick
+from technic_v4.engine import alpha_inference
 import concurrent.futures
 
 # Where scan CSVs are written
@@ -168,6 +169,17 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
 
     alpha = sum(zed[k] * v for k, v in usable_weights.items())
     alpha = zscore(alpha)
+
+    # Optional ML alpha blend
+    use_ml_alpha = str(os.getenv("TECHNIC_USE_ML_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    if use_ml_alpha:
+        try:
+            ml_alpha = alpha_inference.score_alpha(df[[c for c in factor_cols if c in df.columns]])
+        except Exception:
+            ml_alpha = None
+        if ml_alpha is not None and not ml_alpha.empty:
+            ml_alpha_z = zscore(ml_alpha)
+            alpha = 0.5 * alpha + 0.5 * ml_alpha_z
 
     base_tr = df.get("TechRating", pd.Series(0, index=df.index)).fillna(0)
     blended = 0.6 * base_tr + 0.4 * (alpha * 10 + 15)  # scale alpha into TR-like range
@@ -333,8 +345,14 @@ def run_scan(
     try:
         spy = get_stock_history_df(symbol="SPY", days=260, use_intraday=False)
         if spy is not None and not spy.empty:
-            regime_tags = classify_regime(spy)
-            print(f"[REGIME] trend={regime_tags.get('trend')} vol={regime_tags.get('vol')}")
+            try:
+                from technic_v4.engine.regime_engine import classify_spy_regime
+
+                regime_tags = classify_spy_regime(spy)
+            except Exception:
+                regime_tags = classify_regime(spy)
+            if regime_tags:
+                print(f"[REGIME] trend={regime_tags.get('trend')} vol={regime_tags.get('vol')} state={regime_tags.get('state_id')}")
     except Exception:
         pass
 

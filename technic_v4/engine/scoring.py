@@ -8,6 +8,7 @@ import pandas as pd
 from technic_v4.indicators import calculate_indicators
 from technic_v4.engine.factor_engine import compute_factor_bundle
 from technic_v4.data_layer.fundamentals import FundamentalsSnapshot
+from technic_v4.engine import feature_engine
 
 def _assign_signals(df: pd.DataFrame, style: str) -> pd.DataFrame:
     """
@@ -102,7 +103,10 @@ def compute_scores(
     # Ensure indicators exist
     df = calculate_indicators(df).copy()
 
-    # Factor bundle (one-per-symbol); apply as constant columns to the frame
+    # Feature construction (one-per-bar) via feature_engine + factor bundle
+    feats = feature_engine.build_features(df, fundamentals)
+    if feats is not None and not feats.empty:
+        df = df.join(feats, how="left")
     try:
         bundle = compute_factor_bundle(df, fundamentals)
         for k, v in bundle.factors.items():

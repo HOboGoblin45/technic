@@ -1170,12 +1170,19 @@ def _format_scan_results(df: pd.DataFrame) -> list[dict[str, Any]]:
                 "ticker": row.get("Symbol"),
                 "signal": row.get("Signal"),
                 "rrr": rrr_txt,
+                "muTotal": _clean_num(row.get("MuTotal")) if "MuTotal" in cols else None,
+                "muHat": _clean_num(row.get("MuHat")) if "MuHat" in cols else None,
+                "muMl": _clean_num(row.get("MuMl")) if "MuMl" in cols else None,
                 "entry": _clean_num(row.get("EntryPrice")),
                 "stop": _clean_num(row.get("StopPrice")),
                 "target": _clean_num(row.get("TargetPrice")),
                 "note": row.get("TradeType") or row.get("Signal") or "",
                 "techRating": _clean_num(row.get("TechRating")) if "TechRating" in cols else None,
                 "riskScore": _clean_num(row.get("RiskScore")) if "RiskScore" in cols else None,
+                "alphaScore": _clean_num(row.get("AlphaScore")) if "AlphaScore" in cols else None,
+                "regimeTrend": row.get("RegimeTrend") if "RegimeTrend" in cols else None,
+                "regimeVol": row.get("RegimeVol") if "RegimeVol" in cols else None,
+                "optionPicks": row.get("OptionPicks") if "OptionPicks" in cols else None,
                 "sector": row.get("Sector"),
                 "industry": row.get("Industry"),
             }
@@ -1423,6 +1430,13 @@ if _api_target:
         if scan_df is None or scan_df.empty:
             st.json([])
             st.stop()
+
+        # Normalize new alpha/risk columns for API consumers
+        if "risk_score" in scan_df.columns and "RiskScore" not in scan_df.columns:
+            scan_df = scan_df.rename(columns={"risk_score": "RiskScore"})
+        for col in ["MuTotal", "MuHat", "MuMl", "AlphaScore", "RegimeTrend", "RegimeVol", "OptionPicks"]:
+            if col not in scan_df.columns:
+                scan_df[col] = None
 
         if api_kind == "scanner":
             st.json(
@@ -3627,6 +3641,25 @@ def render_symbol_detail_panel(row: pd.Series) -> None:
             st.markdown("</div>", unsafe_allow_html=True)
         except Exception:
             pass
+
+    # ----- Alpha snapshot --------------------------------------------------
+    mu_total = _clean_num(row.get("MuTotal")) if "MuTotal" in row else None
+    risk_score = _clean_num(row.get("risk_score") or row.get("RiskScore")) if "risk_score" in row or "RiskScore" in row else None
+    if mu_total is not None or risk_score is not None:
+        st.markdown('<div class="technic-card">', unsafe_allow_html=True)
+        st.markdown("##### Alpha snapshot")
+        cols = st.columns(2)
+        with cols[0]:
+            if mu_total is not None:
+                st.metric("μ total (alpha)", f"{mu_total:.3f}")
+            else:
+                st.write("μ total: n/a")
+        with cols[1]:
+            if risk_score is not None:
+                st.metric("Risk-adjusted score", f"{risk_score:.3f}")
+            else:
+                st.write("Risk score: n/a")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     # ----- Score breakdown (left) + conditions (right) ---------------------
     score_keys = [
