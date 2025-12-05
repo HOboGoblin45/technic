@@ -1,0 +1,13 @@
+<svg width="640" height="200" viewBox="0 0 640 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Technic wordmark">
+  <defs>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b6ff3b"/>
+      <stop offset="100%" stop-color="#5eead4"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="22" width="96" height="104" rx="24" ry="24" fill="url(#g2)" transform="rotate(-6 72 74)"/>
+  <rect x="60" y="30" width="12" height="90" rx="6" fill="#ffffff" fill-opacity="0.85" transform="rotate(-6 66 75)"/>
+  <path d="M82 40c10 0 18 8 18 18 0 10-8 18-18 18" stroke="#ffffff" stroke-width="8" stroke-linecap="round" fill="none" transform="rotate(-6 91 58)"/>
+  <text x="150" y="78" font-family="Inter, 'SF Pro Display', sans-serif" font-size="44" font-weight="800" letter-spacing="5" fill="#f8fafc">TECHNIC</text>
+  <text x="150" y="116" font-family="Inter, 'SF Pro Display', sans-serif" font-size="22" font-weight="500" letter-spacing="2" fill="#cbd5e1">PERSONAL QUANT</text>
+</svg>
