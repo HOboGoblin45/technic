@@ -31,4 +31,8 @@ This document maps the current codebase to the planned v5 modular “engines” 
 7) Add evaluation_engine utilities for offline validation; wire minimal tests.
 8) Add inference_engine stubs for Ray/ONNX batch scoring; gated by availability.
 
-All steps should keep Python 3.10 compatibility, prefer GPU (device="cuda") when used, and degrade gracefully to CPU.***
+All steps should keep Python 3.10 compatibility, prefer GPU (device="cuda") when used, and degrade gracefully to CPU.
+
+## Tests
+- Run `pytest` from repo root to execute unit tests (offline-friendly; no external keys required).
+*** End Patch*** End Patch}}"ponents)\n*** End Patch`"}}
