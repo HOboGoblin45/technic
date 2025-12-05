@@ -1,0 +1,30 @@
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+
+# --- Streamlit ---
+.streamlit/
+
+# --- CSV noise files ---
+*.tmp
+*.bak
+technic_v4/scanner_output/
+data_cache/
+
+# --- VS Code ---
+.vscode/
+*.code-workspace
+
+# --- Mac/Windows OS noise ---
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# --- Flutter / mobile builds ---
+technic_app/build/
+technic_app/.dart_tool/
+
+# Local env/keys
+scripts/set_env_local.ps1

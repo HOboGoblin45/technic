@@ -1,0 +1,11 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Technic symbol">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b6ff3b"/>
+      <stop offset="100%" stop-color="#5eead4"/>
+    </linearGradient>
+  </defs>
+  <rect x="36" y="32" width="184" height="192" rx="48" ry="48" fill="url(#g)" transform="rotate(-6 128 128)"/>
+  <rect x="108" y="54" width="24" height="148" rx="12" fill="#ffffff" fill-opacity="0.85" transform="rotate(-6 120 128)"/>
+  <path d="M148 64c18 0 32 14 32 32 0 18-14 32-32 32" stroke="#ffffff" stroke-width="16" stroke-linecap="round" fill="none" transform="rotate(-6 164 96)"/>
+</svg>
