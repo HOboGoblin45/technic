@@ -15,6 +15,12 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     cp = None
 
+try:
+    from sklearn.covariance import LedoitWolf
+    HAVE_LW = True
+except Exception:  # pragma: no cover
+    HAVE_LW = False
+
 
 def risk_adjusted_rank(df: pd.DataFrame, return_col: str = "mu", vol_col: str = "vol") -> pd.DataFrame:
     """
@@ -81,11 +87,22 @@ def optimize_weights(
 
 def estimate_covariance(df_returns: pd.DataFrame) -> np.ndarray:
     """
-    Estimate covariance matrix from returns (simple sample covariance).
+    Estimate covariance matrix from returns.
+    Tries Ledoit-Wolf shrinkage; falls back to sample covariance.
     """
     if df_returns is None or df_returns.empty:
         return np.array([[]])
-    return df_returns.cov().values
+    if HAVE_LW:
+        try:
+            lw = LedoitWolf().fit(df_returns.fillna(0.0).values)
+            return lw.covariance_
+        except Exception:
+            pass
+    # Simple shrinkage fallback: blend sample cov with diagonal target
+    sample_cov = df_returns.cov().values
+    diag_target = np.diag(np.diag(sample_cov))
+    shrink = 0.1
+    return (1 - shrink) * sample_cov + shrink * diag_target
 
 
 def build_risk_model(symbols: list[str], lookback_days: int = 60) -> dict:
@@ -141,8 +158,110 @@ def optimize_portfolio(df: pd.DataFrame, risk_settings) -> pd.DataFrame:
     """
     if df is None or df.empty:
         return pd.DataFrame()
-    if cp is None:
-        return pd.DataFrame()
+    # Use cvxpy if available; otherwise use heuristic closed-form
+    if cp is not None:
+        try:
+            df_local = df.copy()
+            df_local["AlphaScore"] = df_local.get("AlphaScore", df_local.get("TechRating", 0)).fillna(0)
+            df_local["VolatilityEstimate"] = df_local.get("VolatilityEstimate", df_local.get("vol_realized_20", 0)).fillna(0.2)
+            symbols = df_local["Symbol"].tolist()
+            alpha = df_local["AlphaScore"].values.astype(float)
+            vols = df_local["VolatilityEstimate"].values.astype(float)
+
+            n = len(df_local)
+            w = cp.Variable(n)
+            cov = df_local.at[0, "Covariance"] if "Covariance" in df_local.columns else None
+            if cov is None or not isinstance(cov, np.ndarray):
+                cov = np.diag(vols ** 2)
+
+            lam = getattr(risk_settings, "risk_aversion", 0.1) if risk_settings is not None else 0.1
+            sector_caps = {}
+            if "Sector" in df_local.columns:
+                for sector in df_local["Sector"].unique():
+                    sector_caps[sector] = getattr(risk_settings, "sector_cap", 0.3) if risk_settings else 0.3
+
+            objective = cp.Maximize(alpha @ w - lam * cp.quad_form(w, cov))
+            constraints = [cp.sum(w) == 1, w >= 0]
+            max_w = getattr(risk_settings, "max_weight", 0.1) if risk_settings else 0.1
+            if max_w:
+                constraints.append(w <= max_w)
+            if sector_caps:
+                for sector, cap in sector_caps.items():
+                    idx = [i for i, s in enumerate(df_local["Sector"]) if s == sector]
+                    if idx:
+                        constraints.append(cp.sum(w[idx]) <= cap)
+
+            prob = cp.Problem(objective, constraints)
+            prob.solve(solver=cp.ECOS, verbose=False)
+
+            if w.value is not None:
+                w_val = np.array(w.value).flatten()
+                risk_contrib = cov @ w_val
+                out = pd.DataFrame(
+                    {
+                        "Symbol": symbols,
+                        "Weight": w_val,
+                        "AlphaScore": alpha,
+                        "RiskContribution": risk_contrib,
+                        "VolEstimate": vols,
+                        "Covariance": [cov] * len(symbols),
+                    }
+                )
+                return out
+        except Exception:
+            pass
+
+    # Heuristic fallback: closed-form w = inv(Sigma + ridge I) * mu
+    df_local = df.copy()
+    df_local["AlphaScore"] = df_local.get("AlphaScore", df_local.get("TechRating", 0)).fillna(0)
+    df_local["VolatilityEstimate"] = df_local.get("VolatilityEstimate", df_local.get("vol_realized_20", 0)).fillna(0.2)
+    symbols = df_local["Symbol"].tolist()
+    alpha = df_local["AlphaScore"].values.astype(float)
+    cov = df_local.at[0, "Covariance"] if "Covariance" in df_local.columns else None
+    if cov is None or not isinstance(cov, np.ndarray):
+        cov = np.diag(df_local["VolatilityEstimate"].values.astype(float) ** 2)
+    ridge = 1e-4
+    try:
+        inv_cov = np.linalg.inv(cov + ridge * np.eye(len(cov)))
+    except Exception:
+        inv_cov = np.linalg.pinv(cov + ridge * np.eye(len(cov)))
+    raw_w = inv_cov @ alpha
+    raw_w = np.maximum(raw_w, 0)
+    if raw_w.sum() == 0:
+        raw_w = np.ones_like(raw_w)
+    w_val = raw_w / raw_w.sum()
+    max_w = getattr(risk_settings, "max_weight", 0.1) if risk_settings else 0.1
+    if max_w:
+        excess_total = 0.0
+        for i, val in enumerate(w_val):
+            if val > max_w:
+                excess_total += val - max_w
+                w_val[i] = max_w
+        if excess_total > 0 and w_val.sum() > 0:
+            w_val = w_val / w_val.sum()
+    if "Sector" in df_local.columns:
+        sector_caps = {}
+        for sector in df_local["Sector"].unique():
+            sector_caps[sector] = getattr(risk_settings, "sector_cap", 0.3) if risk_settings else 0.3
+        for sector, cap in sector_caps.items():
+            idx = [i for i, s in enumerate(df_local["Sector"]) if s == sector]
+            sec_w = w_val[idx].sum()
+            if sec_w > cap and sec_w > 0:
+                scale = cap / sec_w
+                w_val[idx] = w_val[idx] * scale
+        if w_val.sum() > 0:
+            w_val = w_val / w_val.sum()
+    risk_contrib = cov @ w_val
+    return pd.DataFrame(
+        {
+            "Symbol": symbols,
+            "Weight": w_val,
+            "AlphaScore": alpha,
+            "RiskContribution": risk_contrib,
+            "VolEstimate": df_local["VolatilityEstimate"].values.astype(float),
+            "Covariance": [cov] * len(symbols),
+        }
+    )
 
     df_local = df.copy()
     # Required columns; fill missing with defaults
@@ -216,7 +335,12 @@ def apply_portfolio_weights(df: pd.DataFrame, risk_settings, use_optimizer: bool
         except Exception:
             weights = None
     if weights is None:
-        n = len(out)
-        weights = {sym: 1.0 / n for sym in out["Symbol"].tolist()}
+        # Inverse-volatility weighting as a simple risk-aware default
+        vol_col = "VolEstimate" if "VolEstimate" in out.columns else "vol_realized_20"
+        vols = out[vol_col].replace(0, np.nan) if vol_col in out.columns else pd.Series(1.0, index=out.index)
+        vols = vols.fillna(vols.median() if vols.notna().any() else 1.0)
+        inv_vol = 1.0 / vols
+        inv_vol = inv_vol / inv_vol.sum()
+        weights = dict(zip(out["Symbol"], inv_vol))
     out["Weight"] = out["Symbol"].map(weights)
     return out

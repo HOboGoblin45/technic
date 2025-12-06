@@ -17,6 +17,7 @@ class RiskSettings:
     target_rr: float           # e.g. 2.0
     trade_style: str = "swing" # placeholder for future logic
     allow_shorts: bool = False # engine can detect shorts; execute only if True
+    liquidity_cap_pct: float = 5.0  # cap position to % of ADV (dollar volume)
 
 
 def _dollar_atr(row: pd.Series) -> float:
@@ -56,6 +57,8 @@ def _base_trade_plan_dict(signal: str = "Avoid") -> Dict[str, Any]:
         "TargetPrice": np.nan,
         "RewardRisk": np.nan,
         "PositionSize": 0,
+        "LiquidityLimited": False,
+        "LiquidityNote": None,
     }
 
 
@@ -208,6 +211,27 @@ def plan_trade_for_row(row: pd.Series, risk: RiskSettings) -> Dict[str, Any]:
             "PositionSize": 0,
         }
 
+    # Liquidity cap by ADV / dollar volume
+    liquidity_limited = False
+    liquidity_note = None
+    try:
+        adv_dollar = None
+        for key in ["DollarVolume20", "dollar_vol_20", "DollarVolume"]:
+            if key in row and pd.notna(row.get(key)):
+                adv_dollar = float(row.get(key))
+                break
+        if adv_dollar and adv_dollar > 0 and risk.liquidity_cap_pct > 0:
+            max_dollar = (risk.liquidity_cap_pct / 100.0) * adv_dollar
+            planned_value = position_size * entry
+            if planned_value > max_dollar:
+                capped_size = int(max_dollar // entry)
+                if capped_size < position_size:
+                    position_size = max(capped_size, 0)
+                    liquidity_limited = True
+                    liquidity_note = f"Capped to {risk.liquidity_cap_pct:.1f}% ADV (~${max_dollar:,.0f})"
+    except Exception:
+        pass
+
     return {
         "Signal": signal,
         "EntryPrice": round(entry, 2),
@@ -215,6 +239,8 @@ def plan_trade_for_row(row: pd.Series, risk: RiskSettings) -> Dict[str, Any]:
         "TargetPrice": round(target, 2),
         "RewardRisk": round(rr, 2) if np.isfinite(rr) else np.nan,
         "PositionSize": position_size,
+        "LiquidityLimited": liquidity_limited,
+        "LiquidityNote": liquidity_note,
     }
 
 

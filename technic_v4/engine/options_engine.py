@@ -38,6 +38,8 @@ class OptionStrategy:
     expected_value: float | None = None
     expected_return_pct: float | None = None
     risk_score: float | None = None
+    term_slope: float | None = None
+    skew: float | None = None
     notes: str = ""
 
 
@@ -123,6 +125,17 @@ def generate_option_strategies(
     dir_up = tech_rating >= 0 and alpha_score >= 0
     underlying_price = float(chain.get("underlying_price", pd.Series([np.nan])).iloc[0]) if "underlying_price" in chain else np.nan
     mean_iv = float(chain["iv"].dropna().mean()) if "iv" in chain else np.nan
+    days_to_exp = float(chain["days_to_exp"].median()) if "days_to_exp" in chain else 30.0
+    # Term structure proxy: compare near vs far expiries
+    term_slope = None
+    try:
+        near = chain.sort_values("days_to_exp").groupby("expiration").head(1)
+        far = chain.sort_values("days_to_exp", ascending=False).groupby("expiration").head(1)
+        near_iv = near["iv"].mean()
+        far_iv = far["iv"].mean()
+        term_slope = float(far_iv - near_iv) if pd.notna(near_iv) and pd.notna(far_iv) else None
+    except Exception:
+        term_slope = None
 
     if dir_up:
         # Long call near 0.3-0.5 delta
@@ -143,11 +156,18 @@ def generate_option_strategies(
                     iv_rank=iv_rank,
                     rr_estimate=rr_est,
                     prob_profit_estimate=prob,
+                    term_slope=term_slope,
                     notes="OTM call targeting upside move",
                 )
                 strat.expected_value, strat.expected_return_pct, strat.risk_score = estimate_strategy_ev(
-                    strat, underlying_price, mean_iv, alpha_score
+                    strat, underlying_price, mean_iv, alpha_score, days_to_exp=days_to_exp
                 )
+                # Notes about IV regime
+                if iv_rank is not None:
+                    if iv_rank >= 0.8:
+                        strat.notes += "; High IV (consider spreads / selling)"
+                    elif iv_rank <= 0.2:
+                        strat.notes += "; Low IV (favor buying)"
                 out.append(strat)
         # Bull call spread: buy ~0.35 delta, sell higher strike
         if not calls.empty:
@@ -173,11 +193,17 @@ def generate_option_strategies(
                     iv_rank=iv_rank,
                     rr_estimate=rr_est,
                     prob_profit_estimate=prob,
+                    term_slope=term_slope,
                     notes="Defined risk vertical for upside exposure",
                 )
                 strat.expected_value, strat.expected_return_pct, strat.risk_score = estimate_strategy_ev(
-                    strat, underlying_price, mean_iv, alpha_score
+                    strat, underlying_price, mean_iv, alpha_score, days_to_exp=days_to_exp
                 )
+                if iv_rank is not None:
+                    if iv_rank >= 0.8:
+                        strat.notes += "; High IV (credit spreads favorable)"
+                    elif iv_rank <= 0.2:
+                        strat.notes += "; Low IV (debit spreads acceptable)"
                 out.append(strat)
         # Cash-secured put skeleton (scored, not executed)
         puts = chain[chain["option_type"].str.lower() == "put"]
@@ -196,11 +222,14 @@ def generate_option_strategies(
                     iv_rank=iv_rank,
                     rr_estimate=target_rr * 0.6,
                     prob_profit_estimate=prob,
+                    term_slope=term_slope,
                     notes="Income approach aligned with bullish bias",
                 )
                 strat.expected_value, strat.expected_return_pct, strat.risk_score = estimate_strategy_ev(
-                    strat, underlying_price, mean_iv, alpha_score
+                    strat, underlying_price, mean_iv, alpha_score, days_to_exp=days_to_exp
                 )
+                if iv_rank is not None and iv_rank >= 0.8:
+                    strat.notes += "; High IV (selling premium attractive)"
                 out.append(strat)
 
     return out
@@ -211,6 +240,9 @@ def estimate_strategy_ev(
     current_price: float,
     iv: float,
     alpha_score: float,
+    days_to_exp: float = 30.0,
+    n_sims: int = 5000,
+    risk_free: float = 0.01,
 ) -> tuple[float, float, float]:
     """
     Rough expected value / return / risk_score estimate using simplified payoff math.
@@ -218,12 +250,17 @@ def estimate_strategy_ev(
     - iv used to penalize high-vol scenarios in risk_score
     - payoff approximated on a single expected price at expiry
     """
-    if current_price is None or np.isnan(current_price):
+    if current_price is None or np.isnan(current_price) or days_to_exp <= 0:
         return (np.nan, np.nan, np.nan)
-    move_pct = float(np.clip(alpha_score * 0.01, -0.3, 0.3))
-    S_exp = current_price * (1 + move_pct)
-    total_payoff = 0.0
+    vol = abs(iv) if not np.isnan(iv) else 0.4
+    T = max(days_to_exp, 1) / 252.0
+    # Monte Carlo for payoff distribution
+    z = np.random.normal(size=n_sims)
+    drift = (risk_free - 0.5 * vol * vol) * T
+    diffusion = vol * np.sqrt(T) * z
+    ST = current_price * np.exp(drift + diffusion)
     total_cost = 0.0
+    payoffs = np.zeros(n_sims)
     for leg in strategy.legs:
         side = leg.get("side", "buy").lower()
         opt_type = leg.get("type", "call").lower()
@@ -231,17 +268,17 @@ def estimate_strategy_ev(
         premium = float(leg.get("premium", 0) or 0)
         qty = -1 if side == "sell" else 1
         if opt_type == "call":
-            intrinsic = max(S_exp - strike, 0)
+            intrinsic = np.maximum(ST - strike, 0)
         else:
-            intrinsic = max(strike - S_exp, 0)
-        total_payoff += qty * intrinsic * 100  # per contract
+            intrinsic = np.maximum(strike - ST, 0)
+        payoffs += qty * intrinsic * 100
         total_cost += qty * premium * 100
-    ev = total_payoff - total_cost
+    ev = float(payoffs.mean() - total_cost)
+    pop = float((payoffs - total_cost > 0).mean())
     denom = abs(total_cost) if abs(total_cost) > 1e-6 else current_price * 100
     expected_return_pct = ev / denom if denom != 0 else np.nan
-    iv_penalty = abs(iv) if not np.isnan(iv) else 0.5
-    risk_score = iv_penalty * (1 + len(strategy.legs) * 0.1)
-    return (ev, expected_return_pct, risk_score)
+    risk_score = vol * (1 + len(strategy.legs) * 0.1)
+    return (ev, expected_return_pct, risk_score if not np.isnan(risk_score) else None)
 
 
 def rank_option_strategies(strategies: List[OptionStrategy]) -> List[OptionStrategy]:
