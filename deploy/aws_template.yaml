@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Technic AWS Infrastructure (prototype)
+Resources:
+  InferenceNode:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.medium
+      ImageId: ami-12345678
+  LogsBucket:
+    Type: AWS::S3::Bucket
+  ModelCacheBucket:
+    Type: AWS::S3::Bucket
+  RelationalDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+      DBInstanceClass: db.t3.micro
+  AlertLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.10
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          def handler(event, context):
+            return "ok"
