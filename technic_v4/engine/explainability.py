@@ -80,3 +80,12 @@ def format_explanation(shap_output: List[Tuple[str, float]], max_items: int = 3)
         label = FEATURE_LABELS.get(feat, feat)
         formatted.append(f"{label} {sign}{abs(val):.2f}")
     return ", ".join(formatted)
+
+
+def explain_alpha(model, input_features) -> list:
+    """Return top-5 feature importances for retail-tier explainability."""
+    importance = getattr(model, "feature_importances_", None)
+    if importance is None:
+        return []
+    rationale = sorted(zip(input_features, importance), key=lambda x: -x[1])
+    return rationale[:5]
