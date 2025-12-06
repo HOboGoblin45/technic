@@ -188,6 +188,8 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
         if vol == "HIGH_VOL":
             weights["atr_pct_14"] += 0.05
             weights["vol_realized_20"] += 0.05
+            weights["mom_63"] -= 0.03
+            weights["mom_21"] -= 0.02
     # Restrict to available cols
     usable_weights = {k: v for k, v in weights.items() if k in zed.columns}
     if not usable_weights:
@@ -196,6 +198,19 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     factor_alpha = sum(zed[k] * v for k, v in usable_weights.items())
     factor_alpha = zscore(factor_alpha)
 
+    # Regime dummy features (for ML alpha)
+    if regime:
+        trend = str(regime.get("trend", "")).upper()
+        vol = str(regime.get("vol", "")).upper()
+        trend_cols = ["regime_trend_TRENDING_UP", "regime_trend_TRENDING_DOWN", "regime_trend_SIDEWAYS"]
+        vol_cols = ["regime_vol_HIGH_VOL", "regime_vol_LOW_VOL"]
+        for c in trend_cols + vol_cols:
+            df[c] = 0.0
+        if trend:
+            df[f"regime_trend_{trend}"] = 1.0
+        if vol:
+            df[f"regime_vol_{vol}"] = 1.0
+
     # Optional ML alpha blend
     alpha = factor_alpha
     use_ml_alpha = str(os.getenv("TECHNIC_USE_ML_ALPHA", "false")).lower() in {"1", "true", "yes"}
@@ -203,6 +218,7 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     if use_ml_alpha:
         try:
             feature_cols_available = [c for c in factor_cols if c in df.columns]
+            feature_cols_available += [c for c in df.columns if c.startswith("regime_trend_") or c.startswith("regime_vol_")]
             ml_alpha = alpha_inference.score_alpha(df[feature_cols_available])
         except Exception:
             ml_alpha = None
@@ -210,6 +226,15 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
             ml_alpha_z = zscore(ml_alpha)
             alpha = 0.5 * factor_alpha + 0.5 * ml_alpha_z
             print("[ALPHA] ML alpha blended with factor alpha")
+
+    # Optional deep alpha blend
+    use_deep_alpha = str(os.getenv("TECHNIC_USE_DEEP_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    if use_deep_alpha and "alpha_deep" in df.columns:
+        deep_series = df["alpha_deep"]
+        if deep_series.notna().any():
+            deep_z = zscore(deep_series.fillna(deep_series.mean()))
+            alpha = 0.5 * alpha + 0.5 * deep_z
+            print("[ALPHA] Deep alpha blended with existing alpha")
 
     # Optional meta alpha
     use_meta = str(os.getenv("TECHNIC_USE_META_ALPHA", "false")).lower() in {"1", "true", "yes"}
@@ -222,8 +247,16 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
             alpha = zscore(meta_alpha)
             print("[ALPHA] Meta alpha applied")
 
+    # Regime-aware scaling of alpha weight in TechRating blend
+    alpha_weight = 0.4
+    if regime:
+        if regime.get("vol") == "HIGH_VOL":
+            alpha_weight = 0.35
+        if regime.get("trend") == "TRENDING_UP" and regime.get("vol") == "LOW_VOL":
+            alpha_weight = 0.45
+
     base_tr = df.get("TechRating", pd.Series(0, index=df.index)).fillna(0)
-    blended = 0.6 * base_tr + 0.4 * (alpha * 10 + 15)  # scale alpha into TR-like range
+    blended = (1 - alpha_weight) * base_tr + alpha_weight * (alpha * 10 + 15)  # scale alpha into TR-like range
     df["TechRating_raw"] = base_tr
     df["AlphaScore"] = alpha
     df["TechRating"] = blended
@@ -381,6 +414,15 @@ def _scan_symbol(
 
     latest = scored.iloc[-1].copy()
     latest["symbol"] = symbol
+    # Optional deep alpha from recent history
+    use_deep = str(os.getenv("TECHNIC_USE_DEEP_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    if use_deep:
+        try:
+            deep_val = alpha_inference.score_deep_alpha_single(df)
+            if deep_val is not None:
+                latest["alpha_deep"] = deep_val
+        except Exception:
+            pass
     return latest
 
 

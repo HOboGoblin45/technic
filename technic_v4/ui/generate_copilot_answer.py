@@ -51,6 +51,10 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
     sector = getter("Sector", "Unknown")
     industry = getter("Industry", "Unknown")
     last = getter("Last", None)
+    explanation = getter("Explanation", "")
+    iv_rank = getter("iv_rank", getter("IVRank", None))
+    regime_trend = getter("RegimeTrend", None)
+    regime_vol = getter("RegimeVol", None)
 
     # Optional trade-plan fields if present on the row
     entry = getter("EntryPrice", None)
@@ -90,6 +94,9 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         "Rules:\n"
         "- You may describe an example long/short idea, including entry range, stop, target, "
         "  reward/risk, and notional position size using the metrics you are given.\n"
+        "- Use the 'Model drivers' (feature contributions) when explaining why a setup is ranked; "
+        "  ground your reasoning strictly in those drivers and the metrics provided.\n"
+        "- If volatility context is provided (IV rank, regime), incorporate it into the rationale and risks.\n"
         "- Every answer must clearly state that this is an educational example, not "
         '  personalized financial advice, and that the user is responsible for their own decisions.\n'
         "- Do NOT guarantee profits or certainty about future price moves.\n"
@@ -99,11 +106,26 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         "  Why this setup, and Key risks.\n"
     )
 
+    # Model drivers (from SHAP or similar) and context
+    driver_text = explanation if explanation else "Not available."
+    vol_context = []
+    if iv_rank is not None and not pd.isna(iv_rank):
+        vol_context.append(f"IV rank: {iv_rank}")
+    if regime_trend or regime_vol:
+        vol_context.append(f"Regime: trend={regime_trend}, vol={regime_vol}")
+    vol_block = "; ".join(vol_context) if vol_context else "None provided."
+
     user_msg = f"""
 Current symbol: {symbol}
 
 Scanner metrics:
 {metrics_block}
+
+Model drivers (SHAP-based):
+{driver_text}
+
+Volatility/Risk context:
+{vol_block}
 
 User question:
 {question}

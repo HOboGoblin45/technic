@@ -4819,6 +4819,23 @@ if results_df is not None and not results_df.empty:
                         st.caption(f"IC: {sb.get('ic'):.3f} • Precision@10: {sb.get('precision_at_n'):.2%} • Hit rate: {sb.get('hit_rate'):.2%}")
                 except Exception:
                     pass
+            with st.expander("What do the model drivers mean?"):
+                st.markdown(
+                    "- **1m momentum (mom_21):** 1-month return\n"
+                    "- **3m momentum (mom_63):** 3-month return\n"
+                    "- **5d reversal (reversal_5):** Short-term mean reversion (can hurt trends)\n"
+                    "- **MA20 slope (ma_slope_20):** 20-day trend strength\n"
+                    "- **E/P value (value_ep):** Earnings yield; higher = cheaper\n"
+                    "- **CF/P value (value_cfp):** Cash flow yield; higher = cheaper\n"
+                    "- **ROE quality (quality_roe):** Return on equity\n"
+                    "- **Gross margin (quality_gpm):** Profitability measure\n"
+                    "- **ATR% (atr_pct_14):** Volatility; lower = calmer\n"
+                    "- **Realized vol (vol_realized_20):** 20-day historical volatility\n"
+                    "- **Dollar volume (dollar_vol_20):** Liquidity proxy\n"
+                    "- **Breakout / Explosiveness:** Follow-through strength\n"
+                    "- **Trend strength (TrendStrength50):** Longer-term trend quality\n"
+                    "- **Momentum/Volatility scores:** Composite factors inside TechRating"
+                )
         # Quick alpha/weight view
         if "AlphaScore" in results_df.columns:
             quick_cols = [c for c in ["Symbol", "TechRating", "AlphaScore", "risk_score", "Weight", "Explanation"] if c in results_df.columns]

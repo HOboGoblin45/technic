@@ -47,6 +47,26 @@ def explain_top_symbols(model, df_features: pd.DataFrame, symbols: List[str], to
     return out
 
 
+FEATURE_LABELS = {
+    "mom_21": "1m momentum",
+    "mom_63": "3m momentum",
+    "reversal_5": "5d reversal",
+    "ma_slope_20": "MA20 slope",
+    "value_ep": "E/P value",
+    "value_cfp": "CF/P value",
+    "quality_roe": "ROE quality",
+    "quality_gpm": "Gross margin",
+    "atr_pct_14": "ATR%",
+    "vol_realized_20": "Realized vol",
+    "dollar_vol_20": "Dollar volume",
+    "BreakoutScore": "Breakout",
+    "ExplosivenessScore": "Explosiveness",
+    "VolatilityScore": "Volatility",
+    "TrendStrength50": "Trend strength",
+    "MomentumScore": "Momentum",
+}
+
+
 def format_explanation(shap_output: List[Tuple[str, float]], max_items: int = 3) -> str:
     """
     Convert SHAP tuples into human-readable text.
@@ -57,5 +77,6 @@ def format_explanation(shap_output: List[Tuple[str, float]], max_items: int = 3)
     formatted = []
     for feat, val in shap_output[:max_items]:
         sign = "+" if val >= 0 else "-"
-        formatted.append(f"{feat} {sign}{abs(val):.2f}")
+        label = FEATURE_LABELS.get(feat, feat)
+        formatted.append(f"{label} {sign}{abs(val):.2f}")
     return ", ".join(formatted)
