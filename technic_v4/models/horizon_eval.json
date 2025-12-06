@@ -1,0 +1,9 @@
+{
+  "last_updated": "",
+  "horizons": {
+    "1d": {"rmse": null},
+    "3d": {"rmse": null},
+    "5d": {"rmse": null},
+    "10d": {"rmse": null}
+  }
+}
