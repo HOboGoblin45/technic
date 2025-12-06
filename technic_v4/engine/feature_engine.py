@@ -1,19 +1,18 @@
 """
 Feature engineering utilities for Technic.
 
-Responsibilities:
-- Transform raw price history (OHLCV) + optional fundamentals snapshot into
-  the feature set used by TechRating/score computation.
-- Centralize indicator/factor construction so it can be reused by ML models.
+Single canonical builder for per-symbol features. Outputs a flat Series for
+the latest bar so scoring/ML consume consistent names.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Any, Dict
 
 import numpy as np
 import pandas as pd
-try:  # talib may be unavailable in some environments; degrade gracefully
+
+try:  # talib may be unavailable; degrade gracefully
     import talib
 
     HAVE_TALIB = True
@@ -31,120 +30,106 @@ def _safe_series(df: pd.DataFrame, col: str) -> pd.Series:
 def build_features(
     history_df: pd.DataFrame,
     fundamentals: Optional[FundamentalsSnapshot] = None,
-) -> pd.DataFrame:
+) -> pd.Series:
     """
-    Build the full feature matrix from raw OHLCV history and optional fundamentals.
-
-    Returns a DataFrame aligned to history_df index with:
-    - Trend / momentum: returns over multiple windows, MACD, ADX, MA slopes
-    - Volatility / liquidity: ATR%, realized vol, dollar volume, gap stats
-    - Quality/value stubs (best-effort) based on fundamentals snapshot
+    Build all per-symbol features for the latest bar.
+    Returns: pd.Series (snake_case feature names).
     """
     if history_df is None or history_df.empty:
-        return pd.DataFrame()
+        return pd.Series(dtype=float)
 
     df = history_df.copy()
+    df = df.sort_index()
     close = _safe_series(df, "Close")
     high = _safe_series(df, "High")
     low = _safe_series(df, "Low")
     volume = _safe_series(df, "Volume")
+    open_ = _safe_series(df, "Open")
 
-    feats = pd.DataFrame(index=df.index)
+    feats: Dict[str, Any] = {}
 
     # Returns / momentum
-    feats["Ret_5"] = close.pct_change(5)
-    feats["Ret_21"] = close.pct_change(21)
-    feats["Ret_63"] = close.pct_change(63)
-    feats["MomentumScore"] = feats["Ret_21"] + feats["Ret_63"]
-    feats["Reversal_5"] = -feats["Ret_5"]
+    feats["ret_1d"] = float(close.pct_change(1).iloc[-1]) if len(close) > 1 else np.nan
+    feats["ret_5d"] = float(close.pct_change(5).iloc[-1]) if len(close) > 5 else np.nan
+    feats["ret_21d"] = float(close.pct_change(21).iloc[-1]) if len(close) > 21 else np.nan
 
-    # MACD signal
-    if HAVE_TALIB:
-        macd, macd_signal, macd_hist = talib.MACD(close.values, fastperiod=12, slowperiod=26, signalperiod=9)
+    # Realized volatility 20d
+    if len(close) >= 20:
+        feats["vol_realized_20"] = float(close.pct_change().rolling(20).std().iloc[-1] * np.sqrt(252))
     else:
-        macd = close.ewm(span=12).mean() - close.ewm(span=26).mean()
-        macd_signal = macd.ewm(span=9).mean()
-        macd_hist = macd - macd_signal
-    feats["MACD"] = macd
-    feats["MACD_signal"] = macd_signal
-    feats["MACD_hist"] = macd_hist
+        feats["vol_realized_20"] = np.nan
 
-    # ADX trend strength
-    if HAVE_TALIB:
-        feats["ADX14"] = talib.ADX(high.values, low.values, close.values, timeperiod=14)
-    else:
-        feats["ADX14"] = pd.Series(np.nan, index=df.index)
-
-    # Moving averages and slopes
-    if HAVE_TALIB:
-        ma10 = talib.SMA(close.values, timeperiod=10)
-        ma20 = talib.SMA(close.values, timeperiod=20)
-        ma50 = talib.SMA(close.values, timeperiod=50)
-    else:
-        ma10 = close.rolling(10).mean()
-        ma20 = close.rolling(20).mean()
-        ma50 = close.rolling(50).mean()
-    feats["MA10"] = ma10
-    feats["MA20"] = ma20
-    feats["MA50"] = ma50
-    feats["SlopeMA20"] = pd.Series(ma20, index=df.index).diff()
-    feats["TrendStrength50"] = pd.Series(ma50, index=df.index).pct_change()
-
-    # ATR% and realized volatility
-    if HAVE_TALIB:
+    # ATR 14 pct
+    if HAVE_TALIB and len(close) >= 14:
         atr14 = talib.ATR(high.values, low.values, close.values, timeperiod=14)
+        feats["atr_pct_14"] = float((atr14 / close.replace(0, np.nan)).iloc[-1])
     else:
         tr1 = high - low
         tr2 = (high - close.shift(1)).abs()
         tr3 = (low - close.shift(1)).abs()
         atr14 = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1).rolling(14).mean()
-    feats["ATR14"] = atr14
-    feats["ATR_pct"] = atr14 / close.replace(0, np.nan)
-    feats["VolatilityScore"] = close.pct_change().rolling(20).std() * np.sqrt(252)
+        feats["atr_pct_14"] = float((atr14 / close.replace(0, np.nan)).iloc[-1]) if len(atr14) else np.nan
 
-    # Volume / dollar volume
-    feats["DollarVolume20"] = (close * volume).rolling(20).mean()
-    feats["VolumeScore"] = volume.rolling(20).mean()
+    # Moving averages & trend
+    ma20 = close.rolling(20).mean()
+    ma50 = close.rolling(50).mean()
+    ma200 = close.rolling(200).mean()
+    feats["sma_20"] = float(ma20.iloc[-1]) if len(ma20) else np.nan
+    feats["sma_50"] = float(ma50.iloc[-1]) if len(ma50) else np.nan
+    feats["sma_200"] = float(ma200.iloc[-1]) if len(ma200) else np.nan
+    feats["sma_20_above_50"] = float((ma20.iloc[-1] > ma50.iloc[-1]) if len(ma20) and len(ma50) else np.nan)
+    feats["pct_from_high20"] = (
+        float((close.iloc[-1] / close.rolling(20).max().iloc[-1] - 1) * 100) if len(close) >= 20 else np.nan
+    )
 
-    # Gap stats
-    open_ = _safe_series(df, "Open")
-    gap = (open_ - close.shift(1)).abs() / close.shift(1)
-    feats["GapStat10"] = gap.rolling(10).mean()
-
-    # Breakout/explosiveness proxies
-    feats["BreakoutScore"] = (close > ma20).astype(float) + (close > ma50).astype(float)
-    feats["ExplosivenessScore"] = (feats["Ret_5"].fillna(0)).clip(lower=0)
-
-    # Oscillator proxy (RSI)
-    if HAVE_TALIB:
-        feats["RSI14"] = talib.RSI(close.values, timeperiod=14)
+    # RSI 14
+    if HAVE_TALIB and len(close) >= 14:
+        feats["rsi_14"] = float(talib.RSI(close.values, timeperiod=14)[-1])
     else:
         delta = close.diff()
         gain = delta.where(delta > 0, 0).rolling(14).mean()
         loss = -delta.where(delta < 0, 0).rolling(14).mean()
         rs = gain / loss.replace(0, np.nan)
-        feats["RSI14"] = 100 - (100 / (1 + rs))
-    feats["OscillatorScore"] = (feats["RSI14"] - 50.0) / 10.0
+        feats["rsi_14"] = float((100 - (100 / (1 + rs))).iloc[-1]) if len(rs) else np.nan
 
-    # Quality/value placeholders from fundamentals (best-effort)
+    # MACD histogram
+    if HAVE_TALIB and len(close) >= 26:
+        _, _, macd_hist = talib.MACD(close.values, fastperiod=12, slowperiod=26, signalperiod=9)
+        feats["macd_hist"] = float(macd_hist[-1])
+    else:
+        macd = close.ewm(span=12).mean() - close.ewm(span=26).mean()
+        macd_signal = macd.ewm(span=9).mean()
+        macd_hist = macd - macd_signal
+        feats["macd_hist"] = float(macd_hist.iloc[-1]) if len(macd_hist) else np.nan
+
+    # Dollar volume + spike
+    dollar_vol = close * volume
+    if len(dollar_vol) >= 20:
+        dv20 = dollar_vol.rolling(20).mean()
+        feats["dollar_vol_20"] = float(dv20.iloc[-1])
+        feats["vol_spike_ratio"] = float((dollar_vol.iloc[-1] / dv20.iloc[-1]) if dv20.iloc[-1] else np.nan)
+    else:
+        feats["dollar_vol_20"] = np.nan
+        feats["vol_spike_ratio"] = np.nan
+
+    # Gap
+    gap = (open_ - close.shift(1)).abs() / close.shift(1)
+    feats["gap_mean_10"] = float(gap.rolling(10).mean().iloc[-1]) if len(gap) >= 10 else np.nan
+
+    # Fundamentals (best-effort)
     raw_f = fundamentals.raw if fundamentals is not None else {}
     feats["value_ep"] = raw_f.get("earnings_yield") or raw_f.get("ep")
     feats["quality_roe"] = raw_f.get("return_on_equity") or raw_f.get("roe")
 
-    return feats
+    return pd.Series(feats)
 
 
 def get_latest_features(
     history_df: pd.DataFrame,
     fundamentals: Optional[FundamentalsSnapshot] = None,
 ) -> pd.Series:
-    """
-    Convenience helper: build full feature set and return the latest row.
-    """
-    feats = build_features(history_df, fundamentals)
-    if feats is None or feats.empty:
-        return pd.Series(dtype=float)
-    return feats.iloc[-1]
+    """Convenience wrapper (same as build_features)."""
+    return build_features(history_df, fundamentals)
 
 
 def merge_tft_features(results_df: pd.DataFrame, tft_features: pd.DataFrame) -> pd.DataFrame:
@@ -156,6 +141,8 @@ def merge_tft_features(results_df: pd.DataFrame, tft_features: pd.DataFrame) -> 
     feats = tft_features.copy()
     if "Symbol" in feats.columns:
         feats = feats.set_index("Symbol")
-    feats = feats.add_prefix("")  # no extra prefix, keep tft_* names
     merged = results_df.merge(feats, left_on="Symbol", right_index=True, how="left")
     return merged
+
+
+__all__ = ["build_features", "get_latest_features", "merge_tft_features"]

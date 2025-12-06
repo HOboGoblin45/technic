@@ -4,7 +4,6 @@ Optional Ray-powered scanning helpers.
 
 from __future__ import annotations
 
-import os
 from typing import List, Optional
 
 try:
@@ -12,12 +11,15 @@ try:
 except Exception:  # pragma: no cover
     ray = None
 
+from technic_v4.config.settings import get_settings
+
 
 def init_ray_if_enabled() -> bool:
     """
     Initialize Ray if TECHNIC_USE_RAY is true. Returns True if Ray is ready.
     """
-    use_ray = str(os.getenv("TECHNIC_USE_RAY", "false")).lower() in {"1", "true", "yes"}
+    settings = get_settings()
+    use_ray = settings.use_ray
     if not use_ray or ray is None:
         return False
     if ray.is_initialized():

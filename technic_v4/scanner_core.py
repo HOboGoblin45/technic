@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple, Callable
+from typing import Any, Dict, List, Optional, Tuple, Callable, Iterable
+import time
 
 import traceback
 import pandas as pd
@@ -11,16 +11,22 @@ import numpy as np
 
 from technic_v4.universe_loader import load_universe, UniverseRow
 from technic_v4 import data_engine
+from technic_v4.config.settings import get_settings
+from technic_v4.infra.logging import get_logger
 from technic_v4.engine.scoring import compute_scores
 from technic_v4.engine.factor_engine import zscore
 from technic_v4.engine.regime_engine import classify_regime
 from technic_v4.engine.trade_planner import RiskSettings, plan_trades
 from technic_v4.engine.portfolio_engine import risk_adjusted_rank, diversify_by_sector
-from technic_v4.engine.options_engine import score_options, OptionPick
+from technic_v4.engine.options_engine import score_options
 from technic_v4.engine import alpha_inference
 from technic_v4.engine import explainability
 from technic_v4.engine import ray_runner
 import concurrent.futures
+
+logger = get_logger()
+
+ProgressCallback = Callable[[str, int, int], None]
 
 # Legacy compatibility for tests/monkeypatch
 def get_stock_history_df(symbol: str, days: int, use_intraday: bool = True, end_date=None):
@@ -61,14 +67,15 @@ def _filter_universe(
             for row in filtered
             if row.sector and row.sector.lower().strip() in sector_set
         ]
-        print(
-            f"[UNIVERSE] Sector filter kept {len(filtered)} / {before} "
-            f"symbols for sectors={sorted(sector_set)}"
+        logger.info(
+            "[UNIVERSE] Sector filter kept %d / %d symbols for sectors=%s",
+            len(filtered),
+            before,
+            sorted(sector_set),
         )
     elif sectors and not has_any_sector:
-        print(
-            "[UNIVERSE] Sector filter requested but universe has no sector data; "
-            "skipping sector filter."
+        logger.info(
+            "[UNIVERSE] Sector filter requested but universe has no sector data; skipping sector filter."
         )
 
     # ----- Industry substring filter -----
@@ -81,14 +88,15 @@ def _filter_universe(
                 for row in filtered
                 if row.industry and term in row.industry.lower()
             ]
-            print(
-                f"[UNIVERSE] Industry filter kept {len(filtered)} / {before} "
-                f"symbols for term='{term}'"
+            logger.info(
+                "[UNIVERSE] Industry filter kept %d / %d symbols for term='%s'",
+                len(filtered),
+                before,
+                term,
             )
         else:
-            print(
-                "[UNIVERSE] Industry filter requested but universe has no industry data; "
-                "skipping industry filter."
+            logger.info(
+                "[UNIVERSE] Industry filter requested but universe has no industry data; skipping industry filter."
             )
 
     # ----- SubIndustry filter -----
@@ -100,16 +108,38 @@ def _filter_universe(
             for row in filtered
             if row.subindustry and row.subindustry.lower().strip() in sub_set
         ]
-        print(
-            f"[UNIVERSE] SubIndustry filter kept {len(filtered)} / {before} "
-            f"symbols for subindustries={sorted(sub_set)}"
+        logger.info(
+            "[UNIVERSE] SubIndustry filter kept %d / %d symbols for subindustries=%s",
+            len(filtered),
+            before,
+            sorted(sub_set),
         )
     elif subindustries and not has_any_subindustry:
-        print(
-            "[UNIVERSE] SubIndustry filter requested but universe has no subindustry data; "
-            "skipping subindustry filter."
+        logger.info(
+            "[UNIVERSE] SubIndustry filter requested but universe has no subindustry data; skipping subindustry filter."
         )
 
+    return filtered
+
+
+def _prepare_universe(config: "ScanConfig", settings=None) -> List[UniverseRow]:
+    """
+    Load and filter the universe based on config.
+    """
+    universe: List[UniverseRow] = load_universe()
+    logger.info("[UNIVERSE] loaded %d symbols from ticker_universe.csv.", len(universe))
+
+    filtered = _filter_universe(
+        universe=universe,
+        sectors=config.sectors,
+        subindustries=config.subindustries,
+        industry_contains=config.industry_contains,
+    )
+    logger.info(
+        "[FILTER] %d symbols after universe filters (from %d).",
+        len(filtered),
+        len(universe),
+    )
     return filtered
 
 
@@ -219,7 +249,8 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
 
     # Optional ML alpha blend
     alpha = factor_alpha
-    use_ml_alpha = str(os.getenv("TECHNIC_USE_ML_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    settings = get_settings()
+    use_ml_alpha = settings.use_ml_alpha
     ml_alpha = None
     if use_ml_alpha:
         try:
@@ -231,19 +262,19 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
         if ml_alpha is not None and not ml_alpha.empty:
             ml_alpha_z = zscore(ml_alpha)
             alpha = 0.5 * factor_alpha + 0.5 * ml_alpha_z
-            print("[ALPHA] ML alpha blended with factor alpha")
+            logger.info("[ALPHA] ML alpha blended with factor alpha")
 
     # Optional deep alpha blend
-    use_deep_alpha = str(os.getenv("TECHNIC_USE_DEEP_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    use_deep_alpha = settings.use_deep_alpha
     if use_deep_alpha and "alpha_deep" in df.columns:
         deep_series = df["alpha_deep"]
         if deep_series.notna().any():
             deep_z = zscore(deep_series.fillna(deep_series.mean()))
             alpha = 0.5 * alpha + 0.5 * deep_z
-            print("[ALPHA] Deep alpha blended with existing alpha")
+            logger.info("[ALPHA] Deep alpha blended with existing alpha")
 
     # Optional meta alpha
-    use_meta = str(os.getenv("TECHNIC_USE_META_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    use_meta = settings.use_meta_alpha
     if use_meta:
         try:
             meta_alpha = alpha_inference.score_meta_alpha(df)
@@ -251,7 +282,7 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
             meta_alpha = None
         if meta_alpha is not None and not meta_alpha.empty:
             alpha = zscore(meta_alpha)
-            print("[ALPHA] Meta alpha applied")
+            logger.info("[ALPHA] Meta alpha applied")
 
     # Regime-aware scaling of alpha weight in TechRating blend
     alpha_weight = 0.4
@@ -421,8 +452,8 @@ def _scan_symbol(
     latest = scored.iloc[-1].copy()
     latest["symbol"] = symbol
     # Optional deep alpha from recent history
-    use_deep = str(os.getenv("TECHNIC_USE_DEEP_ALPHA", "false")).lower() in {"1", "true", "yes"}
-    if use_deep:
+    settings = get_settings()
+    if settings.use_deep_alpha:
         try:
             deep_val = alpha_inference.score_deep_alpha_single(df)
             if deep_val is not None:
@@ -432,96 +463,25 @@ def _scan_symbol(
     return latest
 
 
-# -----------------------------
-# Public scan entrypoint
-# -----------------------------
-
-def run_scan(
-    config: Optional[ScanConfig] = None,
-    progress_cb: Optional[ProgressCallback] = None,
-) -> Tuple[pd.DataFrame, str]:
-    if config is None:
-        config = ScanConfig()
-
-    # Regime context (best-effort)
-    regime_tags = None
-    try:
-        spy = data_engine.get_price_history(symbol="SPY", days=260, freq="daily")
-        if spy is not None and not spy.empty:
-            try:
-                from technic_v4.engine.regime_engine import classify_spy_regime
-
-                regime_tags = classify_spy_regime(spy)
-            except Exception:
-                regime_tags = classify_regime(spy)
-            if regime_tags:
-                print(f"[REGIME] trend={regime_tags.get('trend')} vol={regime_tags.get('vol')} state={regime_tags.get('state_id')}")
-    except Exception:
-        pass
-
-    # 1) Load universe
-    universe: List[UniverseRow] = load_universe()
-    print(f"[UNIVERSE] loaded {len(universe)} symbols from ticker_universe.csv.")
-
-    # 2) Apply filters
-    filtered_universe = _filter_universe(
-        universe=universe,
-        sectors=config.sectors,
-        subindustries=config.subindustries,
-        industry_contains=config.industry_contains,
-    )
-    print(
-        f"[FILTER] {len(filtered_universe)} symbols after universe filters "
-        f"(from {len(universe)})."
-    )
-
-    total_symbols = len(filtered_universe)
-
-    if not filtered_universe:
-        return pd.DataFrame(), "No symbols match your sector/industry filters."
-
-    universe = filtered_universe
-
-    # Respect max_symbols
-    working = universe
-    if config.max_symbols and len(working) > config.max_symbols:
-        working = working[: config.max_symbols]
-
-    print(
-        f"[UNIVERSE] Scanning {len(working)} symbols "
-        f"(max_symbols={config.max_symbols})."
-    )
-
-    # 3) Risk settings
-    risk = RiskSettings(
-        account_size=config.account_size,
-        risk_pct=config.risk_pct,  # already in percent
-        target_rr=config.target_rr,
-        trade_style=config.trade_style,
-    )
-
-    # Effective lookback based on trade style
-    effective_lookback = _resolve_lookback_days(
-        config.trade_style,
-        config.lookback_days,
-    )
-    print(
-        f"[SCAN] Using lookback_days={effective_lookback} "
-        f"for trade_style='{config.trade_style}'"
-    )
-
-    # 4) Per-symbol loop with limited IO parallelism
+def _run_symbol_scans(
+    config: "ScanConfig",
+    universe: List[UniverseRow],
+    regime_tags: Optional[dict],
+    effective_lookback: int,
+    settings=None,
+    progress_cb: Optional[Callable[[str, int, int], None]] = None,
+) -> Tuple[pd.DataFrame, dict]:
+    """
+    Execute per-symbol scans (Ray if enabled or thread pool fallback) and return DataFrame plus stats.
+    """
     rows: List[pd.Series] = []
-
-    attempted = 0
-    kept = 0
-    errors = 0
-    rejected = 0
+    attempted = kept = errors = rejected = 0
+    total_symbols = len(universe)
 
     # Try Ray path first if enabled
-    ray_rows = ray_runner.run_ray_scans([u.symbol for u in working], config, regime_tags)
+    ray_rows = ray_runner.run_ray_scans([u.symbol for u in universe], config, regime_tags)
     if ray_rows is not None:
-        for urow, latest in zip(working, ray_rows):
+        for urow, latest in zip(universe, ray_rows):
             attempted += 1
             if latest is None:
                 rejected += 1
@@ -532,6 +492,7 @@ def run_scan(
             rows.append(latest)
             kept += 1
     else:
+
         def _worker(idx_urow):
             idx, urow = idx_urow
             symbol = urow.symbol
@@ -547,19 +508,17 @@ def run_scan(
                     trade_style=config.trade_style,
                 )
             except Exception:
-                print(f"[SCAN ERROR] {symbol}:")
-                traceback.print_exc()
+                logger.warning("[SCAN ERROR] %s", symbol, exc_info=True)
                 return ("error", symbol, None, urow)
             return ("ok", symbol, latest_local, urow)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-            for status, symbol, latest, urow in ex.map(_worker, enumerate(working, start=1)):
+            for status, symbol, latest, urow in ex.map(_worker, enumerate(universe, start=1)):
                 attempted += 1
                 if status == "error" or latest is None:
                     rejected += 1 if status != "error" else 0
                     errors += 1 if status == "error" else 0
                     continue
-
                 latest["Sector"] = urow.sector or ""
                 latest["Industry"] = urow.industry or ""
                 latest["SubIndustry"] = urow.subindustry or ""
@@ -567,16 +526,25 @@ def run_scan(
                 rows.append(latest)
                 kept += 1
 
-    print(
-        f"[SCAN STATS] attempted={attempted}, kept={kept}, "
-        f"errors={errors}, rejected={rejected}"
-    )
+    stats = {"attempted": attempted, "kept": kept, "errors": errors, "rejected": rejected}
+    return pd.DataFrame(rows), stats
 
-    if not rows:
+
+def _finalize_results(
+    config: "ScanConfig",
+    results_df: pd.DataFrame,
+    risk: RiskSettings,
+    regime_tags: Optional[dict],
+    settings=None,
+) -> Tuple[pd.DataFrame, str]:
+    """
+    Post-process results: optional TFT merge, alpha blend, filters, trade planning, logging.
+    """
+    if settings is None:
+        settings = get_settings()
+
+    if results_df.empty:
         return pd.DataFrame(), "No results returned. Check universe or data source."
-
-    # 5) Build DataFrame from kept rows
-    results_df = pd.DataFrame(rows)
 
     # Normalize column naming to match UI
     if "symbol" in results_df.columns:
@@ -589,8 +557,7 @@ def run_scan(
         results_df["Signal"] = ""
 
     # Optional TFT forecast features
-    use_tft = str(os.getenv("TECHNIC_USE_TFT_FEATURES", "false")).lower() in {"1", "true", "yes"}
-    if use_tft:
+    if settings.use_tft_features:
         try:
             from technic_v4.engine import multihorizon
             from technic_v4.engine.feature_engine import merge_tft_features
@@ -600,24 +567,25 @@ def run_scan(
             if tft_feats is not None and not tft_feats.empty:
                 results_df = merge_tft_features(results_df, tft_feats)
             else:
-                print("[TFT] No TFT features available; skipping.")
+                logger.info("[TFT] No TFT features available; skipping.")
         except Exception as exc:
-            print(f"[TFT] TFT feature merge failed: {exc}")
+            logger.warning("[TFT] TFT feature merge failed: %s", exc)
 
-    # 5b) Cross-sectional alpha blend: upgrade TechRating using factor z-scores
+    # Cross-sectional alpha blend: upgrade TechRating using factor z-scores
     results_df = _apply_alpha_blend(results_df, regime=regime_tags)
 
     # Keep an unfiltered copy for fallbacks
     base_results = results_df.copy()
 
-    # 6) TechRating filter
     status_text = "Scan complete."
     if config.min_tech_rating is not None:
         before = len(results_df)
         results_df = results_df[results_df["TechRating"] >= config.min_tech_rating]
-        print(
-            f"[FILTER] {len(results_df)} symbols after min_tech_rating "
-            f">= {config.min_tech_rating} (from {before})."
+        logger.info(
+            "[FILTER] %d symbols after min_tech_rating >= %s (from %d).",
+            len(results_df),
+            config.min_tech_rating,
+            before,
         )
 
     if results_df.empty:
@@ -634,10 +602,10 @@ def run_scan(
             "No results passed the TechRating filter; showing top-ranked names instead."
         )
 
-    # 7) Trade planning
+    # Trade planning
     results_df = plan_trades(results_df, risk)
 
-    # 7b) Alpha/risk scaffolding
+    # Alpha/risk scaffolding
     results_df["MuHat"] = results_df["TechRating"] / 100.0
     results_df["MuMl"] = pd.Series([np.nan] * len(results_df))
     results_df["MuTotal"] = results_df["MuHat"]
@@ -659,10 +627,6 @@ def run_scan(
         if not tradeable_df.empty:
             results_df = tradeable_df
 
-    # ❌ REMOVE the old:
-    # if results_df.empty:
-    #     return results_df, "No tradeable signals under current filters."
-
     # Risk-adjusted sorting + diversification fallback
     vol_col = "vol_realized_20" if "vol_realized_20" in results_df.columns else None
     results_df = risk_adjusted_rank(
@@ -681,8 +645,7 @@ def run_scan(
     results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
 
     # Optional SHAP explanations for top names
-    use_explain = str(os.getenv("USE_EXPLAINABILITY", "false")).lower() in {"1", "true", "yes"}
-    if use_explain:
+    if settings.use_explainability:
         try:
             feature_cols_avail = [c for c in results_df.columns if c not in {"Symbol", "TechRating", "Signal"}]
             top_symbols = results_df["Symbol"].tolist()[:5]
@@ -711,24 +674,172 @@ def run_scan(
     # Optional alerting
     try:
         from technic_v4.alerts import engine as alerts_engine
-        alerts = alerts_engine.detect_alerts_from_scan(results_df, regime_tags, sb if 'sb' in locals() else None)
+        alerts = alerts_engine.detect_alerts_from_scan(results_df, regime_tags, locals().get("sb"))
         alerts_engine.log_alerts_to_file(alerts)
     except Exception:
         pass
 
-    # 8) Save CSV
+    # Save CSV
     output_path = OUTPUT_DIR / "technic_scan_results.csv"
     try:
         results_df.to_csv(output_path, index=False)
-        print(f"[OUTPUT] Wrote scan results to: {output_path}")
+        logger.info("[OUTPUT] Wrote scan results to: %s", output_path)
     except Exception:
-        print("[OUTPUT ERROR] Failed to write scan results CSV:")
-        traceback.print_exc()
+        logger.warning("[OUTPUT ERROR] Failed to write scan results CSV", exc_info=True)
+
+    return results_df, status_text
+
+
+def _validate_results(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize and validate scan results before returning to UI/API.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    expected_cols = {
+        "Symbol": np.nan,
+        "Signal": "",
+        "TechRating": np.nan,
+        "AlphaScore": np.nan,
+        "Entry": np.nan,
+        "Stop": np.nan,
+        "Target": np.nan,
+        "Sector": "",
+        "Industry": "",
+        "SubIndustry": "",
+    }
+
+    for col, default in expected_cols.items():
+        if col not in df.columns:
+            df[col] = default
+
+    # Drop rows missing critical identifiers/scores
+    df = df.dropna(subset=["Symbol", "TechRating"])
+
+    # Coerce types
+    float_cols = ["TechRating", "AlphaScore", "Entry", "Stop", "Target"]
+    for col in float_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    str_cols = ["Symbol", "Signal", "Sector", "Industry", "SubIndustry"]
+    for col in str_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+
+    return df
+
+
+# -----------------------------
+# Public scan entrypoint
+# -----------------------------
+
+def run_scan(
+    config: Optional[ScanConfig] = None,
+    progress_cb: Optional[ProgressCallback] = None,
+) -> Tuple[pd.DataFrame, str]:
+    """
+    Public scan entrypoint: orchestrates universe prep, per-symbol scanning, and result finalization.
+    """
+    if config is None:
+        config = ScanConfig()
+
+    settings = get_settings()
+
+    # Regime context (best-effort)
+    regime_tags = None
+    try:
+        spy = data_engine.get_price_history(symbol="SPY", days=260, freq="daily")
+        if spy is not None and not spy.empty:
+            try:
+                from technic_v4.engine.regime_engine import classify_spy_regime
+
+                regime_tags = classify_spy_regime(spy)
+            except Exception:
+                regime_tags = classify_regime(spy)
+            if regime_tags:
+                logger.info(
+                    "[REGIME] trend=%s vol=%s state=%s",
+                    regime_tags.get("trend"),
+                    regime_tags.get("vol"),
+                    regime_tags.get("state_id"),
+                )
+    except Exception:
+        pass
+
+    # 1) Universe (load + sector/industry filters)
+    universe: List[UniverseRow] = _prepare_universe(config, settings=settings)
+    total_symbols = len(universe)
+    if not universe:
+        return pd.DataFrame(), "No symbols match your sector/industry filters."
+
+    # Respect max_symbols
+    working = universe
+    if config.max_symbols and len(working) > config.max_symbols:
+        working = working[: config.max_symbols]
+
+    logger.info(
+        "[UNIVERSE] Scanning %d symbols (max_symbols=%s).",
+        len(working),
+        config.max_symbols,
+    )
+
+    # 2) Risk settings
+    risk = RiskSettings(
+        account_size=config.account_size,
+        risk_pct=config.risk_pct,  # already in percent
+        target_rr=config.target_rr,
+        trade_style=config.trade_style,
+    )
+
+    # Effective lookback based on trade style
+    effective_lookback = _resolve_lookback_days(
+        config.trade_style,
+        config.lookback_days,
+    )
+    logger.info(
+        "[SCAN] Using lookback_days=%d for trade_style='%s'",
+        effective_lookback,
+        config.trade_style,
+    )
+
+    # 3) Per-symbol loop (Ray or thread pool)
+    results_df, stats = _run_symbol_scans(
+        config=config,
+        universe=working,
+        regime_tags=regime_tags,
+        effective_lookback=effective_lookback,
+        settings=settings,
+        progress_cb=progress_cb,
+    )
+
+    logger.info(
+        "[SCAN STATS] attempted=%d, kept=%d, errors=%d, rejected=%d",
+        stats.get("attempted", 0),
+        stats.get("kept", 0),
+        stats.get("errors", 0),
+        stats.get("rejected", 0),
+    )
+
+    if results_df.empty:
+        return pd.DataFrame(), "No results returned. Check universe or data source."
+
+    # 4) Finalize results (alpha blend, filters, trade planning, logging)
+    results_df, status_text = _finalize_results(
+        config=config,
+        results_df=results_df,
+        risk=risk,
+        regime_tags=regime_tags,
+        settings=settings,
+    )
+
+    results_df = _validate_results(results_df)
 
     return results_df, status_text
 
 
 if __name__ == "__main__":
     df, msg = run_scan()
-    print(msg)
-    print(df.head())
+    logger.info(msg)
+    logger.info(df.head())

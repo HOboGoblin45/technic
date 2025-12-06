@@ -11,6 +11,9 @@ from technic_v4.data_layer.market_cache import MarketCache
 from technic_v4.data_layer.price_layer import get_stock_history_df as _price_history
 from technic_v4.data_layer.fundamentals import get_fundamentals as _fundamentals
 from technic_v4.data_layer.options_data import OptionChainService
+from technic_v4.infra.logging import get_logger
+
+logger = get_logger()
 
 
 _MARKET_CACHE: Optional[MarketCache] = None
@@ -23,7 +26,7 @@ def _get_market_cache() -> Optional[MarketCache]:
         try:
             _MARKET_CACHE = MarketCache()
         except Exception as exc:
-            print(f"[data_engine] MarketCache unavailable: {exc}")
+            logger.warning("[data_engine] MarketCache unavailable: %s", exc)
             _MARKET_CACHE = None
     return _MARKET_CACHE
 
@@ -63,7 +66,7 @@ def _standardize_history(df: pd.DataFrame) -> pd.DataFrame:
     cols = ["Open", "High", "Low", "Close", "Volume"]
     missing = [c for c in cols if c not in out.columns]
     if missing:
-        print(f"[data_engine] missing columns {missing}")
+        logger.warning("[data_engine] missing columns %s", missing)
     return out[cols] if all(c in out.columns for c in cols) else out
 
 
@@ -80,27 +83,30 @@ def get_price_history(symbol: str, days: int, freq: str = "daily") -> pd.DataFra
                 try:
                     df = cache.get_symbol_history(symbol, days)
                     if df is not None and not df.empty and len(df) >= days:
+                        logger.info("[data_engine] cache hit for %s (%d bars)", symbol, len(df))
                         return _standardize_history(df.tail(days))
                 except Exception as exc:
-                    print(f"[data_engine] MarketCache miss for {symbol}: {exc}")
+                    logger.warning("[data_engine] MarketCache miss for %s: %s", symbol, exc)
 
             try:
                 df = _price_history(symbol=symbol, days=days, use_intraday=False)
+                logger.info("[data_engine] fallback to Polygon daily for %s", symbol)
                 return _standardize_history(df)
             except Exception as exc:
-                print(f"[data_engine] Polygon daily failed for {symbol}: {exc}")
+                logger.error("[data_engine] Polygon daily failed for %s", symbol, exc_info=True)
                 return pd.DataFrame()
 
         # Intraday or other frequencies
         try:
             df = _price_history(symbol=symbol, days=days, use_intraday=True)
+            logger.info("[data_engine] intraday fetch for %s", symbol)
             return _standardize_history(df)
         except Exception as exc:
-            print(f"[data_engine] intraday fetch failed for {symbol}: {exc}")
+            logger.error("[data_engine] intraday fetch failed for %s", symbol, exc_info=True)
             return pd.DataFrame()
 
     except Exception as exc:
-        print(f"[data_engine] unexpected price history error for {symbol}: {exc}")
+        logger.error("[data_engine] unexpected price history error for %s", symbol, exc_info=True)
         return pd.DataFrame()
 
 
@@ -109,7 +115,7 @@ def get_fundamentals(symbol: str, as_of_date: Optional[date] = None):
     try:
         return _fundamentals(symbol)
     except Exception as exc:
-        print(f"[data_engine] fundamentals error for {symbol}: {exc}")
+        logger.error("[data_engine] fundamentals error for %s", symbol, exc_info=True)
         return None
 
 
@@ -120,7 +126,7 @@ def get_options_chain(symbol: str, as_of_date: Optional[date] = None) -> pd.Data
         contracts, _meta = service.fetch_chain_snapshot(symbol)
         return pd.DataFrame(contracts)
     except Exception as exc:
-        print(f"[data_engine] options chain error for {symbol}: {exc}")
+        logger.error("[data_engine] options chain error for %s", symbol, exc_info=True)
         return pd.DataFrame()
 
 
