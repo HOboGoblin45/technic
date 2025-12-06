@@ -79,7 +79,7 @@ def get_price_history(symbol: str, days: int, freq: str = "daily") -> pd.DataFra
             if cache:
                 try:
                     df = cache.get_symbol_history(symbol, days)
-                    if df is not None and not df.empty:
+                    if df is not None and not df.empty and len(df) >= days:
                         return _standardize_history(df.tail(days))
                 except Exception as exc:
                     print(f"[data_engine] MarketCache miss for {symbol}: {exc}")
