@@ -1,0 +1,14 @@
+apiVersion: v2
+name: technic
+version: 0.1.0
+appVersion: "1.0"
+description: Technic orchestration chart
+kind: Application
+spec:
+  livenessProbe:
+    httpGet:
+      path: /api/healthcheck
+      port: 8000
+  strategy:
+    type: RollingUpdate
+  secrets: []
