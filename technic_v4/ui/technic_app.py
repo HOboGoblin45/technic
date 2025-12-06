@@ -4759,6 +4759,7 @@ if results_df is not None and not results_df.empty:
         "News Hub",
         "Backtester",
         "Performance & Risk",
+        "Resilience",
         "Scoreboard",
         "Quant Copilot",
     ]
@@ -5524,7 +5525,21 @@ if results_df is not None and not results_df.empty:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- View 5: Scoreboard ----------------------------------------
+    # --- View 5: Resilience ----------------------------------------
+    elif active_tab == "Resilience":
+        st.markdown('<div class="technic-card">', unsafe_allow_html=True)
+        st.markdown("### Resilience Dashboard")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Robustness", "N/A")
+        with col2:
+            st.metric("Drift score", "N/A")
+        with col3:
+            st.metric("Adversarial survival", "N/A")
+        st.info("Resilience metrics will populate when robustness, drift, and stress testing are enabled.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- View 6: Scoreboard ----------------------------------------
     elif active_tab == "Scoreboard":
         ensure_scoreboard_state()
         sb_df = build_scoreboard_df(st.session_state["scoreboard_entries"])
