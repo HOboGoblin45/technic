@@ -10,11 +10,10 @@ import pandas as pd
 import numpy as np
 
 from technic_v4.universe_loader import load_universe, UniverseRow
-from technic_v4.data_layer.price_layer import get_stock_history_df
+from technic_v4 import data_engine
 from technic_v4.engine.scoring import compute_scores
 from technic_v4.engine.factor_engine import zscore
 from technic_v4.engine.regime_engine import classify_regime
-from technic_v4.data_layer.fundamentals import get_fundamentals
 from technic_v4.engine.trade_planner import RiskSettings, plan_trades
 from technic_v4.engine.portfolio_engine import risk_adjusted_rank, diversify_by_sector
 from technic_v4.engine.options_engine import score_options, OptionPick
@@ -22,6 +21,13 @@ from technic_v4.engine import alpha_inference
 from technic_v4.engine import explainability
 from technic_v4.engine import ray_runner
 import concurrent.futures
+
+# Legacy compatibility for tests/monkeypatch
+def get_stock_history_df(symbol: str, days: int, use_intraday: bool = True, end_date=None):
+    return data_engine.get_price_history(symbol, days, freq="intraday" if use_intraday else "daily")
+
+def get_fundamentals(symbol: str):
+    return data_engine.get_fundamentals(symbol)
 
 # Where scan CSVs are written
 OUTPUT_DIR = Path(__file__).resolve().parent / "scanner_output"
@@ -390,10 +396,10 @@ def _scan_symbol(
 
     # 1) History
     try:
-        df = get_stock_history_df(
+        df = data_engine.get_price_history(
             symbol=symbol,
             days=lookback_days,
-            use_intraday=use_intraday,
+            freq="intraday" if use_intraday else "daily",
         )
     except Exception:
         return None
@@ -405,7 +411,7 @@ def _scan_symbol(
         return None
 
     # Fundamentals (best-effort)
-    fundamentals = get_fundamentals(symbol)
+    fundamentals = data_engine.get_fundamentals(symbol)
 
     # 3) Indicator + scoring pipeline
     scored = compute_scores(df, trade_style=trade_style, fundamentals=fundamentals)
@@ -440,7 +446,7 @@ def run_scan(
     # Regime context (best-effort)
     regime_tags = None
     try:
-        spy = get_stock_history_df(symbol="SPY", days=260, use_intraday=False)
+        spy = data_engine.get_price_history(symbol="SPY", days=260, freq="daily")
         if spy is not None and not spy.empty:
             try:
                 from technic_v4.engine.regime_engine import classify_spy_regime
