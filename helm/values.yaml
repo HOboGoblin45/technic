@@ -1,0 +1,7 @@
+replicaCount: 1
+image:
+  repository: technic-app
+  tag: latest
+service:
+  type: ClusterIP
+  port: 8000
