@@ -15,9 +15,13 @@ import numpy as np
 import pandas as pd
 
 from technic_v4 import model_registry
+from technic_v4.config.settings import get_settings
 from technic_v4.engine import inference_engine
 from technic_v4.engine.alpha_models import BaseAlphaModel, LGBMAlphaModel, XGBAlphaModel
 from technic_v4.engine.alpha_models.meta_alpha import MetaAlphaModel
+from technic_v4.infra.logging import get_logger
+
+logger = get_logger()
 
 try:
     import torch
@@ -48,9 +52,12 @@ def _load_model_by_entry(entry: dict) -> Optional[BaseAlphaModel]:
     model_name = entry.get("model_name", "")
     try:
         if model_name == "alpha_xgb_v1":
+            logger.info("[alpha] loading XGB model from %s", path)
             return XGBAlphaModel.load(path)
+        logger.info("[alpha] loading LGBM model from %s", path)
         return LGBMAlphaModel.load(path)
     except Exception:
+        logger.warning("[alpha] failed to load model at %s", path, exc_info=True)
         return None
 
 
@@ -60,7 +67,8 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
         reg_entry = model_registry.get_active_model("alpha_lgbm_v1") or model_registry.get_latest_model("alpha_lgbm_v1")
     except Exception:
         reg_entry = None
-    env_model_name = os.getenv("TECHNIC_ALPHA_MODEL_NAME")
+    settings = get_settings()
+    env_model_name = settings.alpha_model_name or os.getenv("TECHNIC_ALPHA_MODEL_NAME")
     if env_model_name:
         try:
             reg_entry = model_registry.get_active_model(env_model_name) or model_registry.get_latest_model(env_model_name)
@@ -76,22 +84,26 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
     if not model_path.exists():
         return None
     try:
+        logger.info("[alpha] loading default LGBM model from %s", model_path)
         return LGBMAlphaModel.load(str(model_path))
     except Exception:
+        logger.warning("[alpha] failed to load default model %s", model_path, exc_info=True)
         return None
 
 
 def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
     reg_entry = None
     try:
-        preferred = os.getenv("TECHNIC_ALPHA_MODEL_NAME")
+        settings = get_settings()
+        preferred = settings.alpha_model_name or os.getenv("TECHNIC_ALPHA_MODEL_NAME")
         if preferred:
             reg_entry = model_registry.get_active_model(preferred) or model_registry.get_latest_model(preferred)
         if reg_entry is None:
             reg_entry = model_registry.get_active_model("alpha_lgbm_v1") or model_registry.get_latest_model("alpha_lgbm_v1")
     except Exception:
         reg_entry = None
-    use_onnx = str(os.getenv("TECHNIC_USE_ONNX_ALPHA", "false")).lower() in {"1", "true", "yes"}
+    settings = get_settings()
+    use_onnx = settings.use_onnx_alpha
     candidate_onnx = Path(reg_entry["path_onnx"]) if reg_entry and reg_entry.get("path_onnx") else DEFAULT_ONNX_PATH
     if not candidate_onnx.exists() and DEFAULT_ONNX_PATH.exists():
         candidate_onnx = DEFAULT_ONNX_PATH
@@ -99,15 +111,17 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
         sess = inference_engine.load_onnx_session(str(candidate_onnx))
         if sess is not None:
             try:
+                logger.info("[alpha] scoring with ONNX model %s", candidate_onnx)
                 return inference_engine.onnx_predict(sess, df_features)
             except Exception:
-                pass
+                logger.warning("[alpha] ONNX prediction failed; falling back to python model", exc_info=True)
     model = load_default_alpha_model()
     if model is None:
         return None
     try:
         return model.predict(df_features)
     except Exception:
+        logger.warning("[alpha] model prediction failed", exc_info=True)
         return None
 
 
@@ -120,8 +134,10 @@ def load_meta_alpha_model() -> Optional[BaseAlphaModel]:
     if not path.exists():
         return None
     try:
+        logger.info("[alpha] loading meta model from %s", path)
         return MetaAlphaModel.load(str(path))
     except Exception:
+        logger.warning("[alpha] failed to load meta model %s", path, exc_info=True)
         return None
 
 

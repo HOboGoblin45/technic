@@ -1178,34 +1178,21 @@ def _format_scan_results(df: pd.DataFrame) -> list[dict[str, Any]]:
     if df is None or df.empty:
         return []
 
-    cols = set(df.columns)
     out: list[dict[str, Any]] = []
     for _, row in df.iterrows():
-        rr_val = _float_or_none(row.get("RewardRisk"))
-        rrr_txt = f"R:R {rr_val:.2f}" if rr_val is not None else None
         out.append(
             {
                 "ticker": row.get("Symbol"),
                 "signal": row.get("Signal"),
-                "rrr": rrr_txt,
-                "muTotal": _clean_num(row.get("MuTotal")) if "MuTotal" in cols else None,
-                "muHat": _clean_num(row.get("MuHat")) if "MuHat" in cols else None,
-                "muMl": _clean_num(row.get("MuMl")) if "MuMl" in cols else None,
-                "entry": _clean_num(row.get("EntryPrice")),
-                "stop": _clean_num(row.get("StopPrice")),
-                "target": _clean_num(row.get("TargetPrice")),
-                "note": row.get("TradeType") or row.get("Signal") or "",
-                "techRating": _clean_num(row.get("TechRating")) if "TechRating" in cols else None,
-                "riskScore": _clean_num(row.get("RiskScore")) if "RiskScore" in cols else None,
-                "alphaScore": _clean_num(row.get("AlphaScore")) if "AlphaScore" in cols else None,
-                "portfolioWeight": _clean_num(row.get("Weight")) if "Weight" in cols else None,
-                "explanation": row.get("Explanation") if "Explanation" in cols else None,
-                "optionStrategies": row.get("OptionStrategies") if "OptionStrategies" in cols else None,
-                "regimeTrend": row.get("RegimeTrend") if "RegimeTrend" in cols else None,
-                "regimeVol": row.get("RegimeVol") if "RegimeVol" in cols else None,
-                "optionPicks": row.get("OptionPicks") if "OptionPicks" in cols else None,
+                "techRating": _clean_num(row.get("TechRating")),
+                "alphaScore": _clean_num(row.get("AlphaScore")),
+                "entry": _clean_num(row.get("Entry")),
+                "stop": _clean_num(row.get("Stop")),
+                "target": _clean_num(row.get("Target")),
                 "sector": row.get("Sector"),
                 "industry": row.get("Industry"),
+                "subIndustry": row.get("SubIndustry"),
+                "note": row.get("Explanation") or row.get("Signal") or "",
             }
         )
     return out
@@ -5001,7 +4988,7 @@ if results_df is not None and not results_df.empty:
         st.session_state["auto_cards"] = auto_cards
         sort_by = st.selectbox(
             "Sort by",
-            options=["CompositeScore", "TechRating", "RS_pct", "RiskScore", "PE"],
+            options=["TechRating", "AlphaScore"],
             index=0,
             help="Choose a column to sort results.",
         )
@@ -5009,24 +4996,12 @@ if results_df is not None and not results_df.empty:
         essential_order = [
             "Symbol",
             "Signal",
-            "MatchMode",
-        "TechRating",
-        "CompositeScore",
-        "RS_pct",
-        "PE",
-        "PEG",
-        "Piotroski",
-        "AltmanZ",
-        "EPS_Growth",
-            "RiskScore",
-            "RewardRisk",
-            "EntryPrice",
-            "StopPrice",
-            "TargetPrice",
-            "PositionSize",
+            "TechRating",
+            "AlphaScore",
+            "Entry",
+            "Stop",
+            "Target",
             "Sector",
-            "Industry",
-            "Sparkline",
         ]
         essential_cols = [c for c in essential_order if c in results_df.columns]
         remaining_cols = [c for c in results_df.columns if c not in essential_cols]

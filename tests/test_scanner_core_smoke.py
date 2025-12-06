@@ -9,8 +9,25 @@ import technic_v4.engine.feature_engine as fe
 def test_run_scan_smoke(monkeypatch):
     # Universe with two symbols
     monkeypatch.setattr(sc, "load_universe", lambda: [UniverseRow("AAA", "Tech", "SW", "SW"), UniverseRow("BBB", "Tech", "SW", "SW")])
-    # Avoid feature overlap during join: return empty feature set
-    monkeypatch.setattr(fe, "build_features", lambda df, fundamentals=None: pd.DataFrame(index=df.index))
+    # Provide minimal feature set
+    monkeypatch.setattr(
+        fe,
+        "build_features",
+        lambda df, fundamentals=None: pd.Series(
+            {
+                "sma_20": 10.0,
+                "sma_50": 9.5,
+                "sma_200": 9.0,
+                "sma_20_above_50": 1.0,
+                "rsi_14": 60.0,
+                "macd_hist": 0.1,
+                "pct_from_high20": -1.0,
+                "ret_5d": 0.02,
+                "atr_pct_14": 0.01,
+                "vol_spike_ratio": 1.0,
+            }
+        ),
+    )
 
     def fake_history(symbol: str, days: int, use_intraday: bool = False, end_date=None):
         idx = pd.date_range("2024-01-01", periods=60, freq="D")

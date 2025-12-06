@@ -17,8 +17,8 @@ def test_build_features_basic():
     )
     feats = feature_engine.build_features(df)
     assert not feats.empty
-    for col in ["MomentumScore", "ATR_pct", "RSI14"]:
-        assert col in feats.columns
+    for col in ["ret_5d", "atr_pct_14", "rsi_14"]:
+        assert col in feats.index
     latest = feature_engine.get_latest_features(df)
     assert isinstance(latest, pd.Series)
     assert not latest.empty
