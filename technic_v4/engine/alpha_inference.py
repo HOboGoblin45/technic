@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Optional
-
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -38,6 +38,23 @@ DEFAULT_ONNX_PATH = Path("models/alpha/lgbm_v1.onnx")
 DEFAULT_META_MODEL_PATH = Path("models/alpha/meta_alpha.pkl")
 DEFAULT_DEEP_MODEL_PATH = Path("models/alpha/deep_alpha.pt")
 
+_XGB_BUNDLE = None
+_XGB_MODEL_PATH = os.getenv(
+    "TECHNIC_ALPHA_MODEL_PATH", "models/alpha/xgb_v1.pkl"
+)
+
+def load_xgb_bundle():
+    """
+    Lazy-load the XGBoost alpha model and feature list.
+    """
+    global _XGB_BUNDLE
+    if _XGB_BUNDLE is None:
+        if not os.path.exists(_XGB_MODEL_PATH):
+            raise FileNotFoundError(
+                f"Alpha model bundle not found at {_XGB_MODEL_PATH}"
+            )
+        _XGB_BUNDLE = joblib.load(_XGB_MODEL_PATH)
+    return _XGB_BUNDLE
 
 # -------------------------------
 # Core model loading helpers
@@ -95,36 +112,41 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
 
 
 def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
-    reg_entry = None
+    """
+    Score ML alpha using the local XGB bundle (models/alpha/xgb_v1.pkl by default).
+
+    df_features: DataFrame with all candidate feature columns. We will select
+    only the columns the model was trained on.
+    """
     try:
-        settings = get_settings()
-        preferred = settings.alpha_model_name or os.getenv("TECHNIC_ALPHA_MODEL_NAME")
-        if preferred:
-            reg_entry = model_registry.load_model(preferred)
-        if reg_entry is None:
-            reg_entry = model_registry.load_model("alpha_lgbm_v1")
-    except Exception:
-        reg_entry = None
-    settings = get_settings()
-    use_onnx = settings.use_onnx_alpha
-    candidate_onnx = Path(reg_entry["path_onnx"]) if reg_entry and reg_entry.get("path_onnx") else DEFAULT_ONNX_PATH
-    if not candidate_onnx.exists() and DEFAULT_ONNX_PATH.exists():
-        candidate_onnx = DEFAULT_ONNX_PATH
-    if use_onnx and candidate_onnx.exists():
-        sess = inference_engine.load_onnx_session(str(candidate_onnx))
-        if sess is not None:
-            try:
-                logger.info("[alpha] scoring with ONNX model %s", candidate_onnx)
-                return inference_engine.onnx_predict(sess, df_features)
-            except Exception:
-                logger.warning("[alpha] ONNX prediction failed; falling back to python model", exc_info=True)
-    model = load_default_alpha_model()
-    if model is None:
+        bundle = load_xgb_bundle()
+    except FileNotFoundError:
+        logger.warning("[alpha] XGB bundle not found at %s; returning None", _XGB_MODEL_PATH)
         return None
-    try:
-        return model.predict(df_features)
     except Exception:
-        logger.warning("[alpha] model prediction failed", exc_info=True)
+        logger.warning("[alpha] failed to load XGB bundle", exc_info=True)
+        return None
+
+    model = bundle.get("model")
+    feature_cols = bundle.get("features") or []
+
+    if model is None or not feature_cols:
+        logger.warning("[alpha] XGB bundle missing model or feature list")
+        return None
+
+    # Use only the features the model was trained on
+    available = [c for c in feature_cols if c in df_features.columns]
+    if not available:
+        logger.warning("[alpha] no matching feature columns found for XGB model")
+        return None
+
+    X = df_features[available].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    try:
+        preds = model.predict(X)
+        return pd.Series(preds, index=df_features.index)
+    except Exception:
+        logger.warning("[alpha] XGB prediction failed", exc_info=True)
         return None
 
 
