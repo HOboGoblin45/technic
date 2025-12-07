@@ -19,6 +19,9 @@ from technic_v4.engine.regime_engine import classify_regime
 from technic_v4.engine.trade_planner import RiskSettings, plan_trades
 from technic_v4.engine.portfolio_engine import risk_adjusted_rank, diversify_by_sector
 from technic_v4.engine.options_engine import score_options
+from technic_v4.engine import ranking_engine
+from technic_v4.engine.options_suggest import suggest_option_trades
+from technic_v4.engine import explainability_engine
 from technic_v4.engine import alpha_inference
 from technic_v4.engine import explainability
 from technic_v4.engine import ray_runner
@@ -463,6 +466,29 @@ def _scan_symbol(
     return latest
 
 
+def _process_symbol(
+    config: "ScanConfig",
+    urow: UniverseRow,
+    effective_lookback: int,
+    settings=None,
+    regime_tags: Optional[dict] = None,
+) -> Optional[pd.Series]:
+    """
+    Wrapper to process a single symbol; returns a Series/row or None.
+    """
+    latest_local = _scan_symbol(
+        symbol=urow.symbol,
+        lookback_days=effective_lookback,
+        trade_style=config.trade_style,
+    )
+    if latest_local is None:
+        return None
+    latest_local["Sector"] = urow.sector or ""
+    latest_local["Industry"] = urow.industry or ""
+    latest_local["SubIndustry"] = urow.subindustry or ""
+    return latest_local
+
+
 def _run_symbol_scans(
     config: "ScanConfig",
     universe: List[UniverseRow],
@@ -502,17 +528,20 @@ def _run_symbol_scans(
                 except Exception:
                     pass
             try:
-                latest_local = _scan_symbol(
-                    symbol=symbol,
-                    lookback_days=effective_lookback,
-                    trade_style=config.trade_style,
+                latest_local = _process_symbol(
+                    config=config,
+                    urow=urow,
+                    effective_lookback=effective_lookback,
+                    settings=settings,
+                    regime_tags=regime_tags,
                 )
             except Exception:
                 logger.warning("[SCAN ERROR] %s", symbol, exc_info=True)
                 return ("error", symbol, None, urow)
             return ("ok", symbol, latest_local, urow)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+        max_workers = getattr(settings, "max_workers", None) or MAX_WORKERS
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             for status, symbol, latest, urow in ex.map(_worker, enumerate(universe, start=1)):
                 attempted += 1
                 if status == "error" or latest is None:
@@ -614,6 +643,15 @@ def _finalize_results(
     if regime_tags:
         results_df["RegimeTrend"] = regime_tags.get("trend")
         results_df["RegimeVol"] = regime_tags.get("vol")
+        if "MarketRegime" not in results_df.columns:
+            label = regime_tags.get("label") or f"{regime_tags.get('trend','')}_{regime_tags.get('vol','')}"
+            results_df["MarketRegime"] = label
+
+    # Portfolio-aware ranking
+    try:
+        results_df = ranking_engine.rank_results(results_df, max_positions=config.max_symbols or len(results_df))
+    except Exception:
+        pass
 
     # Engine-level tradeable filter (soft)
     if config.only_tradeable and "Signal" in results_df.columns:
@@ -643,6 +681,39 @@ def _finalize_results(
 
     # Option picks placeholder (populated upstream when chains are available)
     results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
+    # Optional: suggest simple option trades for strongest longs
+    try:
+        picks: list = []
+        for idx, row in results_df.iterrows():
+            sig = row.get("Signal")
+            if sig not in {"Strong Long", "Long"}:
+                picks.append([])
+                continue
+            spot = row.get("Close") or row.get("Entry") or row.get("Last")
+            if spot is None or pd.isna(spot):
+                picks.append([])
+                continue
+            suggested = suggest_option_trades(str(row.get("Symbol")), float(spot), bullish=True)
+            picks.append(suggested or [])
+        results_df["OptionTrade"] = picks
+    except Exception:
+        results_df["OptionTrade"] = [[] for _ in range(len(results_df))]
+
+    # Build short rationales per idea (best-effort)
+    try:
+        rationales = []
+        for _, row in results_df.iterrows():
+            rationales.append(
+                explainability_engine.build_rationale(
+                    symbol=str(row.get("Symbol", "")),
+                    row=row,
+                    features=None,
+                    regime=regime_tags,
+                )
+            )
+        results_df["Rationale"] = rationales
+    except Exception:
+        results_df["Rationale"] = ""
 
     # Optional SHAP explanations for top names
     if settings.use_explainability:
@@ -708,6 +779,9 @@ def _validate_results(df: pd.DataFrame) -> pd.DataFrame:
         "Sector": "",
         "Industry": "",
         "SubIndustry": "",
+        "RegimeTrend": "",
+        "RegimeVol": "",
+        "MarketRegime": "",
     }
 
     for col, default in expected_cols.items():
@@ -753,17 +827,21 @@ def run_scan(
         spy = data_engine.get_price_history(symbol="SPY", days=260, freq="daily")
         if spy is not None and not spy.empty:
             try:
-                from technic_v4.engine.regime_engine import classify_spy_regime
+                from technic_v4.engine.regime_engine import classify_spy_regime, detect_market_regime
 
                 regime_tags = classify_spy_regime(spy)
+                regime_rich = detect_market_regime(spy)
+                if regime_rich:
+                    regime_tags.update(regime_rich)
             except Exception:
                 regime_tags = classify_regime(spy)
             if regime_tags:
                 logger.info(
-                    "[REGIME] trend=%s vol=%s state=%s",
+                    "[REGIME] trend=%s vol=%s state=%s label=%s",
                     regime_tags.get("trend"),
                     regime_tags.get("vol"),
                     regime_tags.get("state_id"),
+                    regime_tags.get("label"),
                 )
     except Exception:
         pass

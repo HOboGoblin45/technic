@@ -70,6 +70,13 @@ def register_model(
     save_registry(reg)
 
 
+def get_model_metadata(model_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Return the latest metadata dict for a given model_name.
+    """
+    return get_latest_model(model_name)
+
+
 def get_latest_model(model_name: str) -> Optional[Dict[str, Any]]:
     """
     Return the latest entry for a given model_name, or None if not found.
@@ -117,3 +124,31 @@ def set_active_model(model_name: str, version: str) -> None:
         updated.append(m)
     reg["models"] = updated
     save_registry(reg)
+
+
+def _best_by_metric(model_name: str, metric_key: str = "val_ic") -> Optional[Dict[str, Any]]:
+    reg = load_registry()
+    models = [m for m in reg.get("models", []) if m.get("model_name") == model_name]
+    if not models:
+        return None
+    models = [m for m in models if metric_key in (m.get("metrics") or {})]
+    if not models:
+        return None
+    models = sorted(models, key=lambda m: m.get("metrics", {}).get(metric_key, float("-inf")), reverse=True)
+    return models[0]
+
+
+def load_model(model_name: str, metric_key: str = "val_ic") -> Optional[Dict[str, Any]]:
+    """
+    Choose the best model entry:
+    - active if present
+    - else best by metric_key
+    - else latest
+    """
+    active = get_active_model(model_name)
+    if active:
+        return active
+    best = _best_by_metric(model_name, metric_key=metric_key)
+    if best:
+        return best
+    return get_latest_model(model_name)

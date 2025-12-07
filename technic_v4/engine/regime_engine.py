@@ -65,3 +65,50 @@ def classify_spy_regime(spy_history: pd.DataFrame) -> Dict[str, str | int]:
 # Backward-compatible alias
 def classify_regime(spy_history: pd.DataFrame) -> Dict[str, str | int]:
     return classify_spy_regime(spy_history)
+
+
+def detect_market_regime(index_history: pd.DataFrame) -> Dict[str, object]:
+    """
+    Return a richer regime descriptor using simple heuristics.
+    {
+      "label": "TRENDING_UP_LOW_VOL",
+      "trend": str,
+      "vol": str,
+      "state_id": int,
+      "vol_level": float,
+      "trend_slope": float,
+      "probabilities": {}
+    }
+    """
+    if index_history is None or index_history.empty:
+        return {}
+    closes = index_history.get("Close", pd.Series(dtype=float))
+    rets = closes.pct_change()
+    trend = _label_trend(closes)
+    vol = _label_vol(rets)
+    state_map = {
+        ("TRENDING_UP", "LOW_VOL"): 0,
+        ("TRENDING_UP", "HIGH_VOL"): 1,
+        ("TRENDING_DOWN", "LOW_VOL"): 2,
+        ("TRENDING_DOWN", "HIGH_VOL"): 3,
+        ("SIDEWAYS", "LOW_VOL"): 4,
+        ("SIDEWAYS", "HIGH_VOL"): 5,
+    }
+    state_id = state_map.get((trend, vol), 4)
+    vol_level = float(rets.tail(20).std() * np.sqrt(252)) if not rets.empty else np.nan
+    # Trend slope: simple linear fit over last 50 closes
+    trend_slope = np.nan
+    if len(closes) >= 10:
+        tail = closes.tail(50)
+        x = np.arange(len(tail))
+        coef = np.polyfit(x, tail.values, 1)
+        trend_slope = float(coef[0])
+    return {
+        "label": f"{trend}_{vol}",
+        "trend": trend,
+        "vol": vol,
+        "state_id": state_id,
+        "vol_level": vol_level,
+        "trend_slope": trend_slope,
+        "probabilities": {},
+    }

@@ -21,6 +21,8 @@ except Exception:  # pragma: no cover
     HAVE_TALIB = False
 
 from technic_v4.data_layer.fundamentals import FundamentalsSnapshot
+from technic_v4.config.settings import get_settings
+from technic_v4.alpha import tft_inference
 
 
 def _safe_series(df: pd.DataFrame, col: str) -> pd.Series:
@@ -120,6 +122,16 @@ def build_features(
     raw_f = fundamentals.raw if fundamentals is not None else {}
     feats["value_ep"] = raw_f.get("earnings_yield") or raw_f.get("ep")
     feats["quality_roe"] = raw_f.get("return_on_equity") or raw_f.get("roe")
+
+    # Optional TFT multi-horizon forecasts
+    settings = get_settings()
+    if getattr(settings, "use_tft_features", False):
+        try:
+            tft_feats = tft_inference.tft_predict_horizons(symbol=raw_f.get("symbol", ""), history_df=df)
+            feats.update(tft_feats or {})
+        except Exception:
+            # best-effort; ignore TFT errors
+            pass
 
     return pd.Series(feats)
 
