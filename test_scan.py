@@ -5,8 +5,7 @@ URL = "http://127.0.0.1:8502/v1/scan"
 
 headers = {
     "Content-Type": "application/json",
-    # Only include this if you set TECHNIC_API_KEY in your env / api_server
-    # "X-API-Key": "changeme-super-secret",
+    "X-API-Key": "my-dev-technic-key",  # must match TECHNIC_API_KEY env var
 }
 
 payload = {
