@@ -20,9 +20,8 @@ COPY technic_v4 ./technic_v4
 
 # Environment
 ENV PYTHONUNBUFFERED=1
-ENV TECHNIC_API_PORT=8502
 
+# 8502 is fine locally; on Render we'll use $PORT
 EXPOSE 8502
 
-# Start the API server
-CMD ["uvicorn", "technic_v4.api_server:app", "--host", "0.0.0.0", "--port", "8502"]
+CMD ["sh", "-c", "uvicorn technic_v4.api_server:app --host 0.0.0.0 --port ${PORT:-8502}"]
