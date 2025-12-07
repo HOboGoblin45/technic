@@ -1,30 +1,47 @@
 from __future__ import annotations
 
+import os
 from typing import Any, List, Optional
 
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from technic_v4.config.settings import get_settings
-from technic_v4.scanner_core import run_scan, ScanConfig
-from technic_v4.infra.logging import get_logger
+from technic_v4.config.product import PRODUCT
+from technic_v4.config.pricing import PLANS
+from technic_v4.scanner_core import ScanConfig, run_scan
 
-logger = get_logger()
-app = FastAPI(title="Technic API", version="1.0.0")
+app = FastAPI(
+    title="Technic API",
+    version="1.0.0",
+    description="Technic scan API: equity/options idea generation",
+)
 
 
+# -----------------------------
+# Auth
+# -----------------------------
+def get_api_key(x_api_key: Optional[str] = Header(default=None)) -> str:
+    """
+    Simple header-based API key check. If TECHNIC_API_KEY is unset, allow all (dev mode).
+    """
+    expected = os.getenv("TECHNIC_API_KEY")
+    if expected is None:
+        return ""
+    if not x_api_key or x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return x_api_key
+
+
+# -----------------------------
+# Schemas
+# -----------------------------
 class ScanRequest(BaseModel):
-    universe: Optional[List[str]] = None  # currently not wired; default loader used
+    universe: Optional[List[str]] = None  # currently not wired; default loader is used
     max_symbols: int = 25
     trade_style: str = "Short-term swing"
     min_tech_rating: float = 0.0
-    lookback_days: int = 120
-    allow_shorts: bool = False
-    only_tradeable: bool = True
-    sectors: Optional[List[str]] = None
-    subindustries: Optional[List[str]] = None
-    industry_contains: Optional[str] = None
 
 
 class ScanResultRow(BaseModel):
@@ -36,96 +53,129 @@ class ScanResultRow(BaseModel):
     stop: Optional[float] = None
     target: Optional[float] = None
     rationale: Optional[str] = None
-    sector: Optional[str] = None
-    industry: Optional[str] = None
+    optionTrade: Optional[dict] = None
 
 
 class ScanResponse(BaseModel):
     status: str
+    disclaimer: str
     results: List[ScanResultRow]
 
 
+# -----------------------------
+# Endpoints
+# -----------------------------
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {"status": "ok"}
 
 
 @app.get("/version")
-def version() -> dict[str, str]:
-    return {"version": "1.0.0"}
+def version() -> dict[str, Any]:
+    settings = get_settings()
+    return {
+        "api_version": app.version,
+        "use_ml_alpha": settings.use_ml_alpha,
+        "use_tft_features": settings.use_tft_features,
+    }
+
+
+@app.get("/meta")
+def meta():
+    return {
+        "name": PRODUCT.name,
+        "tagline": PRODUCT.tagline,
+        "short_description": PRODUCT.short_description,
+        "website_url": PRODUCT.website_url,
+        "docs_url": PRODUCT.docs_url,
+        "plans": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "price_usd_per_month": p.price_usd_per_month,
+            }
+            for p in PLANS
+        ],
+    }
+
+
+@app.get("/v1/plans")
+def list_plans():
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "price_usd_per_month": p.price_usd_per_month,
+            "description": p.description,
+            "features": p.features,
+        }
+        for p in PLANS
+    ]
 
 
 def _format_scan_results(df: pd.DataFrame) -> List[ScanResultRow]:
     if df is None or df.empty:
         return []
 
-    def _val(row, col):
-        return row[col] if col in row and pd.notna(row[col]) else None
+    def _float_or_none(val):
+        try:
+            if val == val:
+                return float(val)
+        except Exception:
+            return None
+        return None
+
+    def _maybe_option(row: pd.Series):
+        if "OptionPicks" in row and row["OptionPicks"]:
+            return row["OptionPicks"][0]
+        if "OptionTrade" in row and row["OptionTrade"]:
+            return row["OptionTrade"][0] if isinstance(row["OptionTrade"], list) else row["OptionTrade"]
+        return None
 
     rows: List[ScanResultRow] = []
-    for _, row in df.iterrows():
+    for _, r in df.iterrows():
         rows.append(
             ScanResultRow(
-                symbol=str(_val(row, "Symbol") or ""),
-                signal=str(_val(row, "Signal") or ""),
-                techRating=float(_val(row, "TechRating") or 0.0),
-                alphaScore=_val(row, "AlphaScore"),
-                entry=_val(row, "Entry"),
-                stop=_val(row, "Stop"),
-                target=_val(row, "Target"),
-                rationale=str(
-                    _val(row, "Rationale")
-                    or _val(row, "Explanation")
-                    or ""
-                ),
-                sector=_val(row, "Sector"),
-                industry=_val(row, "Industry"),
+                symbol=str(r.get("Symbol", "")),
+                signal=str(r.get("Signal", "")),
+                techRating=_float_or_none(r.get("TechRating")) or 0.0,
+                alphaScore=_float_or_none(r.get("AlphaScore")),
+                entry=_float_or_none(r.get("Entry")),
+                stop=_float_or_none(r.get("Stop")),
+                target=_float_or_none(r.get("Target")),
+                rationale=str(r.get("Rationale") or r.get("Explanation") or ""),
+                optionTrade=_maybe_option(r),
             )
         )
     return rows
 
 
 @app.post("/v1/scan", response_model=ScanResponse)
-def scan_v1(req: ScanRequest) -> ScanResponse:
+def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> ScanResponse:
     """
-    Versioned scan endpoint with a stable schema.
+    Run a scan and return a stable, versioned schema.
     """
     cfg = ScanConfig(
         max_symbols=req.max_symbols,
-        lookback_days=req.lookback_days,
-        min_tech_rating=req.min_tech_rating,
         trade_style=req.trade_style,
-        allow_shorts=req.allow_shorts,
-        only_tradeable=req.only_tradeable,
-        sectors=req.sectors,
-        subindustries=req.subindustries,
-        industry_contains=req.industry_contains,
-    )
-    logger.info("[API] /v1/scan request: %s", cfg)
-    df, status = run_scan(config=cfg)
-    return ScanResponse(status=status, results=_format_scan_results(df))
-
-
-# Legacy endpoint kept for backward compatibility
-@app.post("/scan", response_model=ScanResponse)
-def scan(req: ScanRequest) -> ScanResponse:
-    cfg = ScanConfig(
-        max_symbols=req.max_symbols,
-        lookback_days=req.lookback_days,
         min_tech_rating=req.min_tech_rating,
-        trade_style=req.trade_style,
-        allow_shorts=req.allow_shorts,
-        only_tradeable=req.only_tradeable,
-        sectors=req.sectors,
-        subindustries=req.subindustries,
-        industry_contains=req.industry_contains,
     )
-    logger.info("[API] /scan request: %s", cfg)
-    df, status = run_scan(config=cfg)
-    return ScanResponse(status=status, results=_format_scan_results(df))
+    df, status_text = run_scan(cfg)
+
+    disclaimer = " ".join(PRODUCT.disclaimers)
+
+    return ScanResponse(status=status_text, disclaimer=disclaimer, results=_format_scan_results(df))
 
 
+# -----------------------------
+# Dev entrypoint
+# -----------------------------
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("technic_v4.api_server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "technic_v4.api_server:app",
+        host="0.0.0.0",
+        port=int(os.getenv("TECHNIC_API_PORT", "8502")),
+        reload=True,
+    )
