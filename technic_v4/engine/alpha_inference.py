@@ -17,7 +17,7 @@ import pandas as pd
 from technic_v4 import model_registry
 from technic_v4.config.settings import get_settings
 from technic_v4.engine import inference_engine
-from technic_v4.engine.alpha_models import BaseAlphaModel, LGBMAlphaModel, XGBAlphaModel
+from technic_v4.engine.alpha_models import BaseAlphaModel, LGBMAlphaModel, XGBAlphaModel, EnsembleAlphaModel
 from technic_v4.engine.alpha_models.meta_alpha import MetaAlphaModel
 from technic_v4.infra.logging import get_logger
 
@@ -54,6 +54,9 @@ def _load_model_by_entry(entry: dict) -> Optional[BaseAlphaModel]:
         if model_name == "alpha_xgb_v1":
             logger.info("[alpha] loading XGB model from %s", path)
             return XGBAlphaModel.load(path)
+        if model_name == "alpha_ensemble_v1":
+            logger.info("[alpha] loading ensemble model from %s", path)
+            return EnsembleAlphaModel.load(path)
         logger.info("[alpha] loading LGBM model from %s", path)
         return LGBMAlphaModel.load(path)
     except Exception:
@@ -64,14 +67,14 @@ def _load_model_by_entry(entry: dict) -> Optional[BaseAlphaModel]:
 def load_default_alpha_model() -> Optional[BaseAlphaModel]:
     reg_entry = None
     try:
-        reg_entry = model_registry.get_active_model("alpha_lgbm_v1") or model_registry.get_latest_model("alpha_lgbm_v1")
+        reg_entry = model_registry.load_model("alpha_lgbm_v1")
     except Exception:
         reg_entry = None
     settings = get_settings()
     env_model_name = settings.alpha_model_name or os.getenv("TECHNIC_ALPHA_MODEL_NAME")
     if env_model_name:
         try:
-            reg_entry = model_registry.get_active_model(env_model_name) or model_registry.get_latest_model(env_model_name)
+            reg_entry = model_registry.load_model(env_model_name)
         except Exception:
             pass
     if reg_entry:
@@ -97,9 +100,9 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
         settings = get_settings()
         preferred = settings.alpha_model_name or os.getenv("TECHNIC_ALPHA_MODEL_NAME")
         if preferred:
-            reg_entry = model_registry.get_active_model(preferred) or model_registry.get_latest_model(preferred)
+            reg_entry = model_registry.load_model(preferred)
         if reg_entry is None:
-            reg_entry = model_registry.get_active_model("alpha_lgbm_v1") or model_registry.get_latest_model("alpha_lgbm_v1")
+            reg_entry = model_registry.load_model("alpha_lgbm_v1")
     except Exception:
         reg_entry = None
     settings = get_settings()
