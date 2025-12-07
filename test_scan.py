@@ -5,7 +5,7 @@ URL = "https://technic-m5vn.onrender.com/v1/scan"
 
 headers = {
     "Content-Type": "application/json",
-    "X-API-Key": "my-dev-technic-key",  # must match TECHNIC_API_KEY env var
+    "X-API-Key": "my-dev-technic-key",  # must match TECHNIC_API_KEY on Render
 }
 
 payload = {
