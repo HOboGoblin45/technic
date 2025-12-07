@@ -12,7 +12,7 @@ import numpy as np
 from technic_v4.universe_loader import load_universe, UniverseRow
 from technic_v4 import data_engine
 from technic_v4.config.settings import get_settings
-from technic_v4.infra.logging import get_logger
+from .infra.logging import get_logger
 from technic_v4.engine.scoring import compute_scores
 from technic_v4.engine.factor_engine import zscore
 from technic_v4.engine.regime_engine import classify_regime
