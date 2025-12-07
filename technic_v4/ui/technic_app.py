@@ -5024,99 +5024,52 @@ if results_df is not None and not results_df.empty:
             top_syms = table_df["Symbol"].astype(str).head(6).tolist()
             render_multi_chart_grid(top_syms, days=90, cols=3)
 
+        
         use_cards = force_cards or card_mode or auto_cards
 
         if use_cards:
             max_cards = 20
-            opt_teaser_limit = 5
-            trade_style_label = _current_trade_style()
             st.caption(f"Showing top {min(len(table_df), max_cards)} setups in card view.")
-            for idx, (_, r) in enumerate(table_df.head(max_cards).iterrows()):
+            for _, r in table_df.head(max_cards).iterrows():
                 sym = r.get("Symbol", "-")
                 sig = r.get("Signal", "-")
-                sector = r.get("Sector", "-")
                 tech = r.get("TechRating", None)
-                risk = r.get("RiskScore", None)
-                comp = r.get("CompositeScore", None)
-                rs = r.get("RS_pct", None)
-                entry = r.get("EntryPrice", None)
-                stop = r.get("StopPrice", None)
-                target = r.get("TargetPrice", None)
-                rr = r.get("RewardRisk", None)
-
-                opt_teaser = ""
-                show_opt_badge = False
-                if (
-                    idx < opt_teaser_limit
-                    and POLYGON_API_KEY
-                    and fetch_option_recos is not None
-                ):
-                    direction = "put" if isinstance(sig, str) and "Short" in sig else "call"
-                    underlying_px = _get_live_price(sym) or _float_or_none(r.get("Last")) or _float_or_none(r.get("Close")) or _float_or_none(entry)
-                    try:
-                        if underlying_px is not None:
-                            opt_payload = fetch_option_recos(
-                                symbol=str(sym),
-                                direction=direction,
-                                trade_style=trade_style_label,
-                                underlying=float(underlying_px),
-                                tech_rating=_float_or_none(tech),
-                                risk_score=_float_or_none(risk),
-                                price_target=_float_or_none(target),
-                                signal=str(sig),
-                            )
-                            picks = opt_payload.get("picks") or []
-                            if picks:
-                                p = picks[0]
-                                show_opt_badge = True
-                                delta_val = p.get("delta")
-                                spread_val = p.get("spread_pct")
-                                delta_txt = f"{delta_val:.2f}" if isinstance(delta_val, (int, float)) else "N/A"
-                                spread_txt = (
-                                    f"{spread_val*100:.1f}%"
-                                    if isinstance(spread_val, (int, float))
-                                    else "N/A"
-                                )
-                                opt_teaser = (
-                                    f"<div style='margin-top:6px;padding:6px 8px;border-radius:10px;"
-                                    "background:rgba(148,163,184,0.08);font-size:0.85rem;'>"
-                                    f"<span style='font-weight:700;color:{'#16a34a' if direction=='call' else '#ef4444'};'>"
-                                    f"{p.get('ticker','')}</span> "
-                                    f"{p.get('contract_type','').upper()} "
-                                    f"${p.get('strike','')} exp {p.get('expiration','')} "
-                                    f"Δ {delta_txt} | spread {spread_txt}"
-                                    "</div>"
-                                )
-                    except Exception:
-                        opt_teaser = ""
+                alpha = r.get("AlphaScore", None)
+                rationale = r.get("Rationale", "") or ""
+                rationale_short = (rationale[:140] + "...") if len(rationale) > 140 else rationale
+                entry = r.get("Entry", None)
+                stop = r.get("Stop", None)
+                target = r.get("Target", None)
 
                 st.markdown(
                     f"""
-                    <div class="technic-card" style="margin-bottom:0.6rem;padding:0.8rem 1rem;">
-                      <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <div style="font-weight:800;font-size:1.1rem;display:flex;align-items:center;gap:8px;">
-                          <span>{sym}</span>{'<span style="font-size:0.75rem;padding:2px 8px;border-radius:999px;background:rgba(22,163,74,0.12);color:#22c55e;font-weight:700;">Options</span>' if show_opt_badge else ''}
-                        </div>
-                        <div style="font-weight:700;padding:4px 8px;border-radius:12px;background:rgba(158,240,26,0.15);color:#9ef01a;">{sig}</div>
+                    <div class=\"technic-card\" style=\"margin-bottom:0.6rem;padding:0.9rem 1rem;\">
+                      <div style=\"display:flex;justify-content:space-between;align-items:center;\">
+                        <div style=\"font-weight:800;font-size:1.1rem;\">{sym}</div>
+                        <div style=\"font-weight:700;padding:4px 8px;border-radius:12px;background:rgba(158,240,26,0.15);color:#9ef01a;\">{sig}</div>
                       </div>
-                      <div style="display:flex;flex-wrap:wrap;gap:0.7rem;font-size:0.9rem;margin-top:0.35rem;">
+                      <div style=\"display:flex;gap:12px;margin-top:4px;font-size:0.95rem;\">
                         <div>TechRating: <strong>{'' if pd.isna(tech) else f'{tech:.1f}'}</strong></div>
-                        <div>RiskScore: <strong>{'' if pd.isna(risk) else f'{risk:.2f}'}</strong></div>
-                        <div>Composite: <strong>{'' if pd.isna(comp) else f'{comp:.1f}'}</strong></div>
-                        <div>RS pct: <strong>{'' if pd.isna(rs) else f'{rs:.0f}%'}</strong></div>
-                        <div>R:R: <strong>{'' if pd.isna(rr) else f'{rr:.1f}:1'}</strong></div>
-                        <div>Sector: <strong>{sector}</strong></div>
+                        <div>Alpha: <strong>{'' if pd.isna(alpha) else f'{alpha:.2f}'}</strong></div>
                       </div>
-                      <div style="display:flex;flex-wrap:wrap;gap:1rem;font-size:0.9rem;margin-top:0.35rem;">
-                        <div>Entry: <strong>{'' if pd.isna(entry) else f'{entry:.2f}'}</strong></div>
-                        <div>Stop: <strong>{'' if pd.isna(stop) else f'{stop:.2f}'}</strong></div>
-                        <div>Target: <strong>{'' if pd.isna(target) else f'{target:.2f}'}</strong></div>
+                      <div style=\"display:flex;gap:12px;margin-top:4px;font-size:0.9rem;color:#cbd5e1;\">
+                        <div>Entry: <span style=\"color:#e5e7eb;\">{'' if pd.isna(entry) else f'{entry:.2f}'}</span></div>
+                        <div>Stop: <span style=\"color:#e5e7eb;\">{'' if pd.isna(stop) else f'{stop:.2f}'}</span></div>
+                        <div>Target: <span style=\"color:#e5e7eb;\">{'' if pd.isna(target) else f'{target:.2f}'}</span></div>
                       </div>
-                      {opt_teaser}
+                      <div style=\"margin-top:6px;font-size:0.95rem;color:#cbd5e1;\">{rationale_short}</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
+                with st.expander("Details"):
+                    if rationale:
+                        st.write(rationale)
+                    if "OptionTrade" in r and r.get("OptionTrade"):
+                        st.markdown("**Option idea:**")
+                        st.json(r.get("OptionTrade"))
+                    st.button(f"Open Copilot Chat for {sym} (coming soon)", key=f"chat_{sym}", disabled=True)
+
         else:
             styled = style_results_table(table_df, compact=compact_table)
             st.dataframe(
