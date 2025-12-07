@@ -1,0 +1,11 @@
+***REMOVED***
+regex:OPENAI_API_KEY\s*=\s*".*"==OPENAI_API_KEY = "REDACTED"
+
+***REMOVED***
+regex:POLYGON_API_KEY\s*=\s*".*"==POLYGON_API_KEY = "REDACTED"
+
+***REMOVED***
+regex:FMP_API_KEY\s*=\s*".*"==FMP_API_KEY = "REDACTED"
+
+***REMOVED***
+regex:TECHNIC_API_KEY\s*=\s*".*"==TECHNIC_API_KEY = "REDACTED"
