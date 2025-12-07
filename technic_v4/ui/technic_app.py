@@ -783,7 +783,9 @@ try:
         list_strategy_profiles,
     )
 except Exception:
-    StrategyProfile = None  # type: ignore
+    from typing import Any
+
+    StrategyProfile = Any  # type: ignore
     get_strategy_profile = None  # type: ignore
     list_strategy_profiles = None  # type: ignore
 
@@ -4013,7 +4015,7 @@ with st.sidebar:
 
     # Strategy profiles (maps to ScanConfig + alpha flags)
     strategy_profile_name: str | None = None
-    strategy_profile: StrategyProfile | None = None
+    strategy_profile: Any | None = None
     if list_strategy_profiles is not None:
         profiles_dict = list_strategy_profiles()
         profile_display = list(p.name for p in profiles_dict.values())
