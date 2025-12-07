@@ -28,3 +28,4 @@ technic_app/.dart_tool/
 
 # Local env/keys
 scripts/set_env_local.ps1
+.env
