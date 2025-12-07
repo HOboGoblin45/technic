@@ -1,7 +1,7 @@
 import json
 import requests
 
-URL = "http://127.0.0.1:8502/v1/scan"
+URL = "https://technic-m5vn.onrender.com/v1/scan"
 
 headers = {
     "Content-Type": "application/json",
