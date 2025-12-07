@@ -783,11 +783,17 @@ def _validate_results(df: pd.DataFrame) -> pd.DataFrame:
         "RegimeTrend": "",
         "RegimeVol": "",
         "MarketRegime": "",
+        "OptionTrade": [],
+        "Rationale": "",
+        "Explanation": "",
     }
 
     for col, default in expected_cols.items():
         if col not in df.columns:
-            df[col] = default
+            if isinstance(default, list):
+                df[col] = [[] for _ in range(len(df))]
+            else:
+                df[col] = default
 
     # Drop rows missing critical identifiers/scores
     df = df.dropna(subset=["Symbol", "TechRating"])
@@ -821,6 +827,8 @@ def run_scan(
         config = ScanConfig()
 
     settings = get_settings()
+    start_ts = time.time()
+    logger.info("Starting scan with config: %s", config)
 
     # Regime context (best-effort)
     regime_tags = None
@@ -940,6 +948,11 @@ def run_scan(
         logger.warning("[LOG] failed to append recommendations log", exc_info=True)
 
     results_df = _validate_results(results_df)
+
+    elapsed = time.time() - start_ts
+    logger.info(
+        "Finished scan in %.2fs (%d results)", elapsed, len(results_df)
+    )
 
     return results_df, status_text
 
