@@ -22,6 +22,7 @@ from technic_v4.engine.options_engine import score_options
 from technic_v4.engine import ranking_engine
 from technic_v4.engine.options_suggest import suggest_option_trades
 from technic_v4.engine import explainability_engine
+from datetime import datetime
 from technic_v4.engine import alpha_inference
 from technic_v4.engine import explainability
 from technic_v4.engine import ray_runner
@@ -911,6 +912,32 @@ def run_scan(
         regime_tags=regime_tags,
         settings=settings,
     )
+
+    # Best-effort logging of recommendations for live evaluation
+    try:
+        log_dir = Path("logs")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "recommendations.csv"
+        top_log = results_df.head(min(10, len(results_df))).copy()
+        top_log["AsOf"] = datetime.utcnow().isoformat()
+        cols = [
+            "AsOf",
+            "Symbol",
+            "Signal",
+            "TechRating",
+            "AlphaScore",
+            "Entry",
+            "Stop",
+            "Target",
+            "MarketRegime",
+        ]
+        for c in cols:
+            if c not in top_log.columns:
+                top_log[c] = None
+        top_log[cols].to_csv(log_path, mode="a", header=not log_path.exists(), index=False)
+        logger.info("[LOG] appended top recommendations to %s", log_path)
+    except Exception:
+        logger.warning("[LOG] failed to append recommendations log", exc_info=True)
 
     results_df = _validate_results(results_df)
 
