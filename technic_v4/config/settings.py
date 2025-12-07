@@ -22,6 +22,7 @@ class Settings:
     use_tft_features: bool = field(default=False)
     use_ray: bool = field(default=False)
     use_explainability: bool = field(default=False)
+    enable_shadow_mode: bool = field(default=False)
 
     # Scan defaults
     default_universe_name: str = field(default="us_core")
@@ -47,6 +48,7 @@ class Settings:
         self.use_tft_features = _env_bool(f"{prefix}USE_TFT_FEATURES", self.use_tft_features)
         self.use_ray = _env_bool(f"{prefix}USE_RAY", self.use_ray)
         self.use_explainability = _env_bool(f"{prefix}USE_EXPLAINABILITY", self.use_explainability)
+        self.enable_shadow_mode = _env_bool(f"{prefix}ENABLE_SHADOW_MODE", self.enable_shadow_mode)
 
         self.default_universe_name = os.getenv(f"{prefix}DEFAULT_UNIVERSE_NAME", self.default_universe_name)
         self.default_min_tech_rating = float(
