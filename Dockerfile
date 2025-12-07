@@ -15,13 +15,12 @@ RUN if [ -f "requirements.txt" ]; then \
         pip install --no-cache-dir -r requirements.txt; \
     fi
 
-# Copy the application code
 COPY technic_v4 ./technic_v4
+COPY models ./models
 
-# Environment
 ENV PYTHONUNBUFFERED=1
 
-# 8502 is fine locally; on Render we'll use $PORT
 EXPOSE 8502
 
 CMD ["sh", "-c", "uvicorn technic_v4.api_server:app --host 0.0.0.0 --port ${PORT:-8502}"]
+
