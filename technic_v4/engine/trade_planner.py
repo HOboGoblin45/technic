@@ -245,8 +245,24 @@ def plan_trade_for_row(row: pd.Series, risk: RiskSettings) -> Dict[str, Any]:
 
 
 def plan_trades(df: pd.DataFrame, risk: RiskSettings) -> pd.DataFrame:
-    """Vectorized wrapper: apply plan_trade_for_row across the scan DataFrame."""
-    plans = df.apply(lambda row: plan_trade_for_row(row, risk), axis=1, result_type="expand")
+    """
+    Vectorized wrapper: apply plan_trade_for_row across the scan DataFrame.
+
+    We take a defensive .copy() so downstream assignments don't trigger
+    SettingWithCopyWarning when df is a slice of a larger DataFrame.
+    """
+    # Compute plans in a separate DataFrame
+    plans = df.apply(
+        lambda row: plan_trade_for_row(row, risk),
+        axis=1,
+        result_type="expand",
+    )
+
+    # Work on a real copy of df to avoid chained-assignment warnings
+    df = df.copy()
+
+    # Assign each column from plans back into df explicitly
     for col in plans.columns:
-        df[col] = plans[col]
+        df.loc[:, col] = plans[col].values
+
     return df

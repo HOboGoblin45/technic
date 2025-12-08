@@ -635,6 +635,9 @@ def _finalize_results(
     # Trade planning
     results_df = plan_trades(results_df, risk)
 
+    # Work on a copy to avoid SettingWithCopyWarning when results_df is a slice
+    results_df = results_df.copy()
+
     # Alpha/risk scaffolding
     results_df["MuHat"] = results_df["TechRating"] / 100.0
     results_df["MuMl"] = pd.Series([np.nan] * len(results_df))
