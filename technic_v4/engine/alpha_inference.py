@@ -114,10 +114,6 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
 def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
     """
     Score ML alpha using the local XGB bundle (models/alpha/xgb_v1.pkl by default).
-
-    df_features: DataFrame with all candidate feature columns. We will select
-    the exact columns the model was trained on. If any are missing, we log and
-    return None so the caller can fall back to factor-only alpha.
     """
     logger.info(
         "[ALPHA] score_alpha called with shape=%s columns=%s",
@@ -141,7 +137,6 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
         logger.warning("[ALPHA] XGB bundle missing model or feature list")
         return None
 
-    # Ensure all training features are present; if not, log and return None
     missing = [c for c in feature_cols if c not in df_features.columns]
     if missing:
         logger.warning("[ALPHA] missing feature columns for XGB model: %s", missing)
