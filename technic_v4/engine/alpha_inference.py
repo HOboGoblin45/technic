@@ -116,7 +116,8 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
     Score ML alpha using the local XGB bundle (models/alpha/xgb_v1.pkl by default).
 
     df_features: DataFrame with all candidate feature columns. We will select
-    only the columns the model was trained on.
+    the exact columns the model was trained on. If any are missing, we log and
+    return None.
     """
     try:
         bundle = load_xgb_bundle()
@@ -134,13 +135,13 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
         logger.warning("[alpha] XGB bundle missing model or feature list")
         return None
 
-    # Use only the features the model was trained on
-    available = [c for c in feature_cols if c in df_features.columns]
-    if not available:
-        logger.warning("[alpha] no matching feature columns found for XGB model")
+    # Ensure all training features are present; if not, log and return None
+    missing = [c for c in feature_cols if c not in df_features.columns]
+    if missing:
+        logger.warning("[alpha] missing feature columns for XGB model: %s", missing)
         return None
 
-    X = df_features[available].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    X = df_features[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     try:
         preds = model.predict(X)
