@@ -117,8 +117,9 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
 
     df_features: DataFrame with all candidate feature columns. We will select
     the exact columns the model was trained on. If any are missing, we log and
-    return None.
+    return None so the caller can fall back to factor-only alpha.
     """
+    # Load the trained XGB bundle (model + feature list)
     try:
         bundle = load_xgb_bundle()
     except FileNotFoundError:
@@ -141,6 +142,7 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
         logger.warning("[alpha] missing feature columns for XGB model: %s", missing)
         return None
 
+    # Build X in the same feature order as training
     X = df_features[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     try:
