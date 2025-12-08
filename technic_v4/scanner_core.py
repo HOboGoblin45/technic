@@ -607,6 +607,25 @@ def _finalize_results(
     # Cross-sectional alpha blend: upgrade TechRating using factor z-scores
     results_df = _apply_alpha_blend(results_df, regime=regime_tags)
 
+    # --- BEGIN: explicit ML alpha scoring hook ---
+    # Even if _apply_alpha_blend skipped ML blending for some reason,
+    # explicitly try to score ML alpha here using the XGB bundle.
+    try:
+        from technic_v4.engine import alpha_inference
+
+        ml_alpha = alpha_inference.score_alpha(results_df)
+    except Exception:
+        logger.warning("[ALPHA] explicit score_alpha() call failed in _finalize_results", exc_info=True)
+        ml_alpha = None
+
+    if ml_alpha is not None and not ml_alpha.empty:
+        # Use raw ML alpha as AlphaScore for now
+        results_df["AlphaScore"] = ml_alpha
+        logger.info("[ALPHA] explicit ML alpha applied in _finalize_results")
+    else:
+        logger.info("[ALPHA] explicit ML alpha missing/empty in _finalize_results")
+    # --- END: explicit ML alpha scoring hook ---
+
     # Keep an unfiltered copy for fallbacks
     base_results = results_df.copy()
 
@@ -646,6 +665,7 @@ def _finalize_results(
     results_df["MuMl"] = pd.Series([np.nan] * len(results_df))
     results_df["MuTotal"] = results_df["MuHat"]
     if "AlphaScore" not in results_df.columns:
+        # If ML alpha was truly not available, fall back to TechRating
         results_df["AlphaScore"] = results_df["TechRating"]
     if regime_tags:
         results_df["RegimeTrend"] = regime_tags.get("trend")
