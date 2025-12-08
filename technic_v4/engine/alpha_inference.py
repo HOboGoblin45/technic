@@ -11,13 +11,19 @@ import os
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
+import joblib
 import numpy as np
 import pandas as pd
 
 from technic_v4 import model_registry
 from technic_v4.config.settings import get_settings
 from technic_v4.engine import inference_engine
-from technic_v4.engine.alpha_models import BaseAlphaModel, LGBMAlphaModel, XGBAlphaModel, EnsembleAlphaModel
+from technic_v4.engine.alpha_models import (
+    BaseAlphaModel,
+    LGBMAlphaModel,
+    XGBAlphaModel,
+    EnsembleAlphaModel,
+)
 from technic_v4.engine.alpha_models.meta_alpha import MetaAlphaModel
 from technic_v4.infra.logging import get_logger
 
@@ -34,6 +40,7 @@ else:
 try:
     import torch  # type: ignore
     import torch.nn as nn  # type: ignore
+
     HAVE_TORCH = True
 except Exception:  # pragma: no cover
     HAVE_TORCH = False
@@ -46,10 +53,31 @@ DEFAULT_ONNX_PATH = Path("models/alpha/lgbm_v1.onnx")
 DEFAULT_META_MODEL_PATH = Path("models/alpha/meta_alpha.pkl")
 DEFAULT_DEEP_MODEL_PATH = Path("models/alpha/deep_alpha.pt")
 
+# Local XGB bundle (non-registry) for alpha_xgb_v1
+_XGB_BUNDLE: Optional[dict] = None
+_XGB_MODEL_PATH = os.getenv("TECHNIC_ALPHA_MODEL_PATH", "models/alpha/xgb_v1.pkl")
+
+
+def load_xgb_bundle() -> dict:
+    """
+    Lazy-load the XGBoost alpha model and feature list from a simple joblib bundle.
+
+    Expected format:
+        {"model": <xgb.XGBRegressor>, "features": [<feature_name>, ...]}
+    """
+    global _XGB_BUNDLE
+    if _XGB_BUNDLE is None:
+        if not os.path.exists(_XGB_MODEL_PATH):
+            raise FileNotFoundError(f"Alpha model bundle not found at {_XGB_MODEL_PATH}")
+        logger.info("[ALPHA] loading XGB bundle from %s", _XGB_MODEL_PATH)
+        _XGB_BUNDLE = joblib.load(_XGB_MODEL_PATH)
+    return _XGB_BUNDLE
+
 
 # -------------------------------
-# Core model loading helpers
+# Core model loading helpers (LGBM / registry)
 # -------------------------------
+
 
 def _load_model_by_entry(entry: dict) -> Optional[BaseAlphaModel]:
     if not entry:
@@ -89,7 +117,11 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
         loaded = _load_model_by_entry(reg_entry)
         if loaded:
             return loaded
-    model_path = Path(reg_entry["path_pickle"]) if reg_entry and reg_entry.get("path_pickle") else DEFAULT_MODEL_PATH
+    model_path = (
+        Path(reg_entry["path_pickle"])
+        if reg_entry and reg_entry.get("path_pickle")
+        else DEFAULT_MODEL_PATH
+    )
     if not model_path.exists() and DEFAULT_MODEL_PATH.exists():
         model_path = DEFAULT_MODEL_PATH
     if not model_path.exists():
@@ -98,47 +130,73 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
         logger.info("[alpha] loading default LGBM model from %s", model_path)
         return LGBMAlphaModel.load(str(model_path))
     except Exception:
-        logger.warning("[alpha] failed to load default model %s", model_path, exc_info=True)
+        logger.warning(
+            "[alpha] failed to load default model %s", model_path, exc_info=True
+        )
         return None
 
 
 def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
-    reg_entry = None
+    """
+    Score ML alpha using the local XGB bundle (models/alpha/xgb_v1.pkl by default).
+
+    Returns a pd.Series of raw forward-return predictions (AlphaScore), indexed
+    to df_features.index, or None on error.
+    """
+    logger.info(
+        "[ALPHA] score_alpha called with shape=%s columns=%s",
+        df_features.shape,
+        list(df_features.columns),
+    )
+
+    # Load the bundle
     try:
-        settings = get_settings()
-        preferred = settings.alpha_model_name or os.getenv("TECHNIC_ALPHA_MODEL_NAME")
-        if preferred:
-            reg_entry = model_registry.load_model(preferred)
-        if reg_entry is None:
-            reg_entry = model_registry.load_model("alpha_lgbm_v1")
-    except Exception:
-        reg_entry = None
-    settings = get_settings()
-    use_onnx = settings.use_onnx_alpha
-    candidate_onnx = Path(reg_entry["path_onnx"]) if reg_entry and reg_entry.get("path_onnx") else DEFAULT_ONNX_PATH
-    if not candidate_onnx.exists() and DEFAULT_ONNX_PATH.exists():
-        candidate_onnx = DEFAULT_ONNX_PATH
-    if use_onnx and candidate_onnx.exists():
-        sess = inference_engine.load_onnx_session(str(candidate_onnx))
-        if sess is not None:
-            try:
-                logger.info("[alpha] scoring with ONNX model %s", candidate_onnx)
-                return inference_engine.onnx_predict(sess, df_features)
-            except Exception:
-                logger.warning("[alpha] ONNX prediction failed; falling back to python model", exc_info=True)
-    model = load_default_alpha_model()
-    if model is None:
+        bundle = load_xgb_bundle()
+    except FileNotFoundError:
+        logger.warning(
+            "[ALPHA] XGB bundle not found at %s; returning None", _XGB_MODEL_PATH
+        )
         return None
-    try:
-        return model.predict(df_features)
     except Exception:
-        logger.warning("[alpha] model prediction failed", exc_info=True)
+        logger.warning("[ALPHA] failed to load XGB bundle", exc_info=True)
+        return None
+
+    model = bundle.get("model")
+    feature_cols = bundle.get("features") or []
+
+    if model is None or not feature_cols:
+        logger.warning("[ALPHA] XGB bundle missing model or feature list")
+        return None
+
+    # Check required features exist
+    missing = [c for c in feature_cols if c not in df_features.columns]
+    if missing:
+        logger.warning(
+            "[ALPHA] missing feature columns for XGB model: %s", missing
+        )
+        return None
+
+    # Build inference matrix
+    X = (
+        df_features[feature_cols]
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+    )
+
+    # Prediction with logging; fall back to None on error
+    try:
+        preds = model.predict(X)
+        logger.info("[ALPHA] XGB prediction succeeded, first few=%s", preds[:5])
+        return pd.Series(preds, index=df_features.index)
+    except Exception:
+        logger.warning("[ALPHA] XGB prediction failed", exc_info=True)
         return None
 
 
 # -------------------------------
 # Meta alpha
 # -------------------------------
+
 
 def load_meta_alpha_model() -> Optional[BaseAlphaModel]:
     path = DEFAULT_META_MODEL_PATH
@@ -148,7 +206,9 @@ def load_meta_alpha_model() -> Optional[BaseAlphaModel]:
         logger.info("[alpha] loading meta model from %s", path)
         return MetaAlphaModel.load(str(path))
     except Exception:
-        logger.warning("[alpha] failed to load meta model %s", path, exc_info=True)
+        logger.warning(
+            "[alpha] failed to load meta model %s", path, exc_info=True
+        )
         return None
 
 
@@ -156,12 +216,18 @@ def score_meta_alpha(df: pd.DataFrame) -> Optional[pd.Series]:
     model = load_meta_alpha_model()
     if model is None:
         return None
-    cols = []
+    cols: list[str] = []
     for col in ["factor_alpha", "ml_alpha", "AlphaScore"]:
         if col in df.columns:
             cols.append(col)
     cols.extend([c for c in df.columns if c.startswith("tft_forecast_h")])
-    cols.extend([c for c in df.columns if c.startswith("regime_trend_") or c.startswith("regime_vol_")])
+    cols.extend(
+        [
+            c
+            for c in df.columns
+            if c.startswith("regime_trend_") or c.startswith("regime_vol_")
+        ]
+    )
     if not cols:
         return None
     try:
@@ -175,6 +241,7 @@ def score_meta_alpha(df: pd.DataFrame) -> Optional[pd.Series]:
 # Deep alpha (sequential) placeholder
 # -------------------------------
 if HAVE_TORCH:
+
     class _TinyLSTM(nn.Module):  # pragma: no cover
         def __init__(self, input_dim: int, hidden_dim: int = 32):
             super().__init__()
@@ -185,6 +252,7 @@ if HAVE_TORCH:
             _, (h, _) = self.lstm(x)
             out = self.head(h[-1])
             return out.squeeze(-1)
+
 else:
     _TinyLSTM = None  # type: ignore
 
@@ -196,7 +264,11 @@ def load_deep_alpha_model(path: Path = DEFAULT_DEEP_MODEL_PATH):
         return None
     try:
         state = torch.load(path, map_location="cpu")
-        input_dim = state.get("meta", {}).get("input_dim", 4) if isinstance(state, dict) else 4
+        input_dim = (
+            state.get("meta", {}).get("input_dim", 4)
+            if isinstance(state, dict)
+            else 4
+        )
         model = _TinyLSTM(input_dim=input_dim)
         model.load_state_dict(state.get("state_dict", state))
         model.eval()
@@ -205,7 +277,9 @@ def load_deep_alpha_model(path: Path = DEFAULT_DEEP_MODEL_PATH):
         return None
 
 
-def _build_seq_from_history(history_df: pd.DataFrame, seq_len: int = 60) -> Optional[np.ndarray]:
+def _build_seq_from_history(
+    history_df: pd.DataFrame, seq_len: int = 60
+) -> Optional[np.ndarray]:
     if history_df is None or history_df.empty:
         return None
     df = history_df.tail(seq_len + 1).copy()
@@ -213,8 +287,18 @@ def _build_seq_from_history(history_df: pd.DataFrame, seq_len: int = 60) -> Opti
         return None
     df["ret"] = df["Close"].pct_change()
     df["vol"] = df["Volume"].pct_change().fillna(0)
-    df["rsi_proxy"] = df["Close"].rolling(14).apply(lambda x: (x.diff().clip(lower=0).mean() / (x.diff().abs().mean() + 1e-6)))
-    feats = df[["ret", "vol", "rsi_proxy"]].fillna(0).tail(seq_len).values.astype("float32")
+    df["rsi_proxy"] = df["Close"].rolling(14).apply(
+        lambda x: (
+            x.diff().clip(lower=0).mean()
+            / (x.diff().abs().mean() + 1e-6)
+        )
+    )
+    feats = (
+        df[["ret", "vol", "rsi_proxy"]]
+        .fillna(0)
+        .tail(seq_len)
+        .values.astype("float32")
+    )
     return feats
 
 
