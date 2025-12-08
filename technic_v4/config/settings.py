@@ -39,8 +39,13 @@ class Settings:
     # Model selection
     alpha_model_name: Optional[str] = field(default=None)
 
+    # Blending weight for ML vs factor alpha (0..1, used in scanner_core)
+    alpha_weight: float = field(default=0.5)
+
     def __post_init__(self) -> None:
         prefix = "TECHNIC_"
+
+        # Booleans
         self.use_ml_alpha = _env_bool(f"{prefix}USE_ML_ALPHA", self.use_ml_alpha)
         self.use_meta_alpha = _env_bool(f"{prefix}USE_META_ALPHA", self.use_meta_alpha)
         self.use_deep_alpha = _env_bool(f"{prefix}USE_DEEP_ALPHA", self.use_deep_alpha)
@@ -50,18 +55,39 @@ class Settings:
         self.use_explainability = _env_bool(f"{prefix}USE_EXPLAINABILITY", self.use_explainability)
         self.enable_shadow_mode = _env_bool(f"{prefix}ENABLE_SHADOW_MODE", self.enable_shadow_mode)
 
+        # Scan defaults
         self.default_universe_name = os.getenv(f"{prefix}DEFAULT_UNIVERSE_NAME", self.default_universe_name)
         self.default_min_tech_rating = float(
             os.getenv(f"{prefix}DEFAULT_MIN_TECH_RATING", self.default_min_tech_rating)
         )
-        self.default_max_positions = int(os.getenv(f"{prefix}DEFAULT_MAX_POSITIONS", self.default_max_positions))
-        self.default_risk_profile = os.getenv(f"{prefix}DEFAULT_RISK_PROFILE", self.default_risk_profile)
+        self.default_max_positions = int(
+            os.getenv(f"{prefix}DEFAULT_MAX_POSITIONS", self.default_max_positions)
+        )
+        self.default_risk_profile = os.getenv(
+            f"{prefix}DEFAULT_RISK_PROFILE", self.default_risk_profile
+        )
 
+        # Paths
         self.data_cache_dir = os.getenv(f"{prefix}DATA_CACHE_DIR", self.data_cache_dir)
         self.models_dir = os.getenv(f"{prefix}MODELS_DIR", self.models_dir)
-        self.alpha_model_name = os.getenv(f"{prefix}ALPHA_MODEL_NAME", self.alpha_model_name or "")
+
+        # Model selection
+        self.alpha_model_name = os.getenv(
+            f"{prefix}ALPHA_MODEL_NAME", self.alpha_model_name or ""
+        )
         if self.alpha_model_name == "":
             self.alpha_model_name = None
+
+        # Alpha blending weight (ML vs factor), clamp to [0, 1]
+        raw_w = os.getenv(f"{prefix}ALPHA_WEIGHT")
+        if raw_w is not None:
+            try:
+                w = float(raw_w)
+            except Exception:
+                w = self.alpha_weight
+        else:
+            w = self.alpha_weight
+        self.alpha_weight = max(0.0, min(1.0, w))
 
 
 _settings = Settings()  # singleton

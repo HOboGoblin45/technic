@@ -149,163 +149,154 @@ def _prepare_universe(config: "ScanConfig", settings=None) -> List[UniverseRow]:
 
 def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.DataFrame:
     """
-    Upgrade TechRating using cross-sectional factor z-scores.
-    Keeps the original TechRating but blends in multi-factor signals.
+    Cross-sectional alpha blend:
+    - factor_alpha = zscore of baseline TechRating (v1 heuristic)
+    - ml_alpha     = XGB model prediction (5d fwd return)
+    - alpha_blend  = blend(factor_alpha, ml_alpha_z; TECHNIC_ALPHA_WEIGHT)
+    - TechRating   = v2 hybrid score using alpha_blend
+
+    Columns produced:
+        factor_alpha   : cross-sectional z-score of baseline TechRating
+        AlphaScore     : raw ML predictions (for API / scoreboard)
+        ml_alpha_z     : z-scored ML alpha (when available)
+        meta_alpha     : optional meta-ensemble alpha (if enabled)
+        alpha_blend    : final cross-sectional alpha driver
+        TechRating_raw : original TechRating before alpha blending
+        TechRating     : blended TechRating v2 (hybrid)
     """
-    if df.empty:
+    if df is None or df.empty:
         return df
 
-    # Log settings up front so we can see what the app believes
     settings = get_settings()
-    logger.info("[ALPHA] settings.use_ml_alpha=%s", settings.use_ml_alpha)
+    logger.info(
+        "[ALPHA] use_ml_alpha=%s use_meta_alpha=%s alpha_weight=%.2f",
+        settings.use_ml_alpha,
+        settings.use_meta_alpha,
+        getattr(settings, "alpha_weight", 0.5),
+    )
 
-    factor_cols = [
-        "Ret_5",
-        "Ret_21",
-        "Ret_63",
-        "MomentumScore",
-        "Reversal_5",
-        "MACD",
-        "MACD_signal",
-        "MACD_hist",
-        "ADX14",
-        "MA10",
-        "MA20",
-        "MA50",
-        "SlopeMA20",
-        "TrendStrength50",
-        "ATR_pct",
-        "VolatilityScore",
-        "DollarVolume20",
-        "VolumeScore",
-        "GapStat10",
-        "BreakoutScore",
-        "ExplosivenessScore",
-        "RSI14",
-        "OscillatorScore",
-        "value_ep",
-        "quality_roe",
-        "quality_gpm",
-        "dollar_vol_20",
-        "vol_realized_20",
-        "atr_pct_14",
-        "mom_21",
-        "mom_63",
-        "reversal_5",
-        "ma_slope_20",
-        "value_cfp",
-        "size_log_mcap",
-    ]
-    available = [c for c in factor_cols if c in df.columns]
-    if not available:
-        logger.info("[ALPHA] no factor columns available; skipping alpha blend")
-        return df
+    # Baseline TechRating (v1) from heuristic engine
+    base_tr = df.get("TechRating", pd.Series(0.0, index=df.index))
+    base_tr = pd.to_numeric(base_tr, errors="coerce").fillna(0.0)
 
-    zed = pd.DataFrame({c: zscore(df[c]) for c in available})
-    # Higher is better for most; flip risk measures
-    risk_cols = {"atr_pct_14", "vol_realized_20"}
-    for rc in risk_cols.intersection(zed.columns):
-        zed[rc] = -zed[rc]
+    # Factor alpha: cross-sectional z-score of baseline TechRating
+    try:
+        factor_alpha = zscore(base_tr)
+    except Exception:
+        logger.warning("[ALPHA] factor zscore failed; using zeros", exc_info=True)
+        factor_alpha = pd.Series(0.0, index=df.index)
 
-    # Base weights: momentum 35%, value 20%, quality 20%, liquidity 10%, risk 15%
-    weights = {
-        "mom_21": 0.15,
-        "mom_63": 0.20,
-        "reversal_5": 0.05,
-        "ma_slope_20": 0.05,
-        "value_ep": 0.10,
-        "value_cfp": 0.10,
-        "quality_roe": 0.10,
-        "quality_gpm": 0.10,
-        "dollar_vol_20": 0.05,
-        "atr_pct_14": 0.05,
-        "vol_realized_20": 0.05,
-    }
+    df["factor_alpha"] = factor_alpha
+
+    # Regime one-hot features (for ML/meta models)
     if regime:
         trend = str(regime.get("trend", "")).upper()
         vol = str(regime.get("vol", "")).upper()
-        if trend == "TRENDING_UP":
-            weights["mom_63"] += 0.05
-            weights["mom_21"] += 0.02
-        elif trend == "TRENDING_DOWN":
-            weights["reversal_5"] += 0.05
-            weights["value_ep"] += 0.05
-        if vol == "HIGH_VOL":
-            weights["atr_pct_14"] += 0.05
-            weights["vol_realized_20"] += 0.05
-            weights["mom_63"] -= 0.03
-            weights["mom_21"] -= 0.02
-    # Restrict to available cols
-    usable_weights = {k: v for k, v in weights.items() if k in zed.columns}
-    if not usable_weights:
-        return df
-
-    factor_alpha = sum(zed[k] * v for k, v in usable_weights.items())
-    factor_alpha = zscore(factor_alpha)
-
-    # Regime dummy features (for ML alpha)
-    if regime:
-        trend = str(regime.get("trend", "")).upper()
-        vol = str(regime.get("vol", "")).upper()
-        trend_cols = ["regime_trend_TRENDING_UP", "regime_trend_TRENDING_DOWN", "regime_trend_SIDEWAYS"]
-        vol_cols = ["regime_vol_HIGH_VOL", "regime_vol_LOW_VOL"]
+        trend_cols = [
+            "regime_trend_TRENDING_UP",
+            "regime_trend_TRENDING_DOWN",
+            "regime_trend_SIDEWAYS",
+        ]
+        vol_cols = [
+            "regime_vol_HIGH_VOL",
+            "regime_vol_LOW_VOL",
+        ]
         for c in trend_cols + vol_cols:
-            df[c] = 0.0
+            if c not in df.columns:
+                df[c] = 0.0
         if trend:
-            df[f"regime_trend_{trend}"] = 1.0
+            col = f"regime_trend_{trend}"
+            if col in df.columns:
+                df[col] = 1.0
         if vol:
-            df[f"regime_vol_{vol}"] = 1.0
+            col = f"regime_vol_{vol}"
+            if col in df.columns:
+                df[col] = 1.0
 
-    # Optional ML alpha blend
-    alpha = factor_alpha
-    settings = get_settings()
-    logger.info("[ALPHA] settings.use_ml_alpha=%s", settings.use_ml_alpha)
-    use_ml_alpha = settings.use_ml_alpha
-    ml_alpha = None
+    # --- ML alpha (XGB) ---------------------------------------------------
+    ml_alpha: Optional[pd.Series] = None
+    ml_alpha_z: Optional[pd.Series] = None
 
-    if use_ml_alpha:
+    if settings.use_ml_alpha:
         try:
-            # Pass the full feature frame to score_alpha; it will select the
-            # exact training feature set from the bundle.
             ml_alpha = alpha_inference.score_alpha(df)
         except Exception:
-            logger.warning("[ALPHA] error calling score_alpha", exc_info=True)
+            logger.warning("[ALPHA] score_alpha() failed", exc_info=True)
             ml_alpha = None
 
-        if ml_alpha is not None and not ml_alpha.empty:
-            # Normalize ML alpha and blend with factor alpha
-            ml_alpha_z = zscore(ml_alpha)
-            alpha = 0.5 * factor_alpha + 0.5 * ml_alpha_z
-            logger.info("[ALPHA] ML alpha blended with factor alpha")
-        else:
-            logger.info("[ALPHA] ML alpha missing or empty, skipping blend")
+    if ml_alpha is not None and not ml_alpha.empty:
+        # Raw model prediction (5d forward return) – this is the "true" AlphaScore
+        ml_alpha = pd.to_numeric(ml_alpha, errors="coerce")
+        df["AlphaScore"] = ml_alpha
 
-    # Optional meta alpha
-    use_meta = settings.use_meta_alpha
-    if use_meta:
+        try:
+            ml_alpha_z = zscore(ml_alpha)
+            df["ml_alpha_z"] = ml_alpha_z
+        except Exception:
+            logger.warning("[ALPHA] zscore() on ML alpha failed", exc_info=True)
+            ml_alpha_z = None
+            df["ml_alpha_z"] = np.nan
+        logger.info("[ALPHA] ML alpha available for %d rows", ml_alpha.notna().sum())
+    else:
+        # Ensure AlphaScore exists for downstream consumers (API / eval)
+        if "AlphaScore" not in df.columns:
+            df["AlphaScore"] = np.nan
+        df["ml_alpha_z"] = np.nan
+        logger.info("[ALPHA] ML alpha unavailable; factor-only alpha will be used")
+
+    # --- Blend factor alpha and ML alpha ----------------------------------
+    alpha_blend = factor_alpha.copy()
+
+    if ml_alpha_z is not None:
+        w = getattr(settings, "alpha_weight", 0.5)
+        try:
+            w = float(w)
+        except Exception:
+            w = 0.5
+        w = max(0.0, min(1.0, w))  # clamp to [0,1]
+
+        alpha_blend = (1.0 - w) * factor_alpha + w * ml_alpha_z
+        logger.info("[ALPHA] blended factor + ML with TECHNIC_ALPHA_WEIGHT=%.2f", w)
+    else:
+        logger.info("[ALPHA] using factor_alpha only (no ML alpha)")
+
+    # --- Optional meta alpha override ------------------------------------
+    if settings.use_meta_alpha:
         try:
             meta_alpha = alpha_inference.score_meta_alpha(df)
         except Exception:
+            logger.warning("[ALPHA] score_meta_alpha() failed", exc_info=True)
             meta_alpha = None
-        if meta_alpha is not None and not meta_alpha.empty:
-            alpha = zscore(meta_alpha)
-            logger.info("[ALPHA] Meta alpha applied")
 
-    # Regime-aware scaling of alpha weight in TechRating blend
-    alpha_weight = 0.4
+        if meta_alpha is not None and not meta_alpha.empty:
+            try:
+                meta_z = zscore(meta_alpha)
+            except Exception:
+                meta_z = None
+            if meta_z is not None is not None:
+                df["meta_alpha"] = meta_alpha
+                alpha_blend = meta_z
+                logger.info("[ALPHA] meta alpha applied, overriding factor/ML blend")
+
+    df["alpha_blend"] = alpha_blend
+
+    # --- Map alpha_blend into TechRating v2 ------------------------------
+    alpha_weight_tr = 0.4
     if regime:
         if regime.get("vol") == "HIGH_VOL":
-            alpha_weight = 0.35
+            alpha_weight_tr = 0.35
         if regime.get("trend") == "TRENDING_UP" and regime.get("vol") == "LOW_VOL":
-            alpha_weight = 0.45
+            alpha_weight_tr = 0.45
+    alpha_weight_tr = max(0.0, min(1.0, alpha_weight_tr))
 
-    base_tr = df.get("TechRating", pd.Series(0, index=df.index)).fillna(0)
-    blended = (1 - alpha_weight) * base_tr + alpha_weight * (alpha * 10 + 15)  # scale alpha into TR-like range
+    # Scale alpha_blend (z-score) into a TechRating-like band and blend
+    tr_from_alpha = alpha_blend * 10.0 + 15.0
+    blended_tr = (1.0 - alpha_weight_tr) * base_tr + alpha_weight_tr * tr_from_alpha
+
     df["TechRating_raw"] = base_tr
-    df["AlphaScore"] = alpha
-    df["TechRating"] = blended
-    return df
+    df["TechRating"] = blended_tr
 
+    return df
 
 # -----------------------------
 # Scan configuration
@@ -604,27 +595,8 @@ def _finalize_results(
         except Exception as exc:
             logger.warning("[TFT] TFT feature merge failed: %s", exc)
 
-    # Cross-sectional alpha blend: upgrade TechRating using factor z-scores
+    # Cross-sectional alpha blend: upgrade TechRating using factor/ML/meta alpha
     results_df = _apply_alpha_blend(results_df, regime=regime_tags)
-
-    # --- BEGIN: explicit ML alpha scoring hook ---
-    # Even if _apply_alpha_blend skipped ML blending for some reason,
-    # explicitly try to score ML alpha here using the XGB bundle.
-    try:
-        from technic_v4.engine import alpha_inference
-
-        ml_alpha = alpha_inference.score_alpha(results_df)
-    except Exception:
-        logger.warning("[ALPHA] explicit score_alpha() call failed in _finalize_results", exc_info=True)
-        ml_alpha = None
-
-    if ml_alpha is not None and not ml_alpha.empty:
-        # Use raw ML alpha as AlphaScore for now
-        results_df["AlphaScore"] = ml_alpha
-        logger.info("[ALPHA] explicit ML alpha applied in _finalize_results")
-    else:
-        logger.info("[ALPHA] explicit ML alpha missing/empty in _finalize_results")
-    # --- END: explicit ML alpha scoring hook ---
 
     # Keep an unfiltered copy for fallbacks
     base_results = results_df.copy()
@@ -660,13 +632,48 @@ def _finalize_results(
     # Work on a copy to avoid SettingWithCopyWarning when results_df is a slice
     results_df = results_df.copy()
 
-    # Alpha/risk scaffolding
+    # Alpha / risk scaffolding
+    # MuHat: heuristic tech-based drift
     results_df["MuHat"] = results_df["TechRating"] / 100.0
-    results_df["MuMl"] = pd.Series([np.nan] * len(results_df))
-    results_df["MuTotal"] = results_df["MuHat"]
-    if "AlphaScore" not in results_df.columns:
-        # If ML alpha was truly not available, fall back to TechRating
-        results_df["AlphaScore"] = results_df["TechRating"]
+
+    # MuMl: ML alpha (raw forward-return prediction)
+    if "AlphaScore" in results_df.columns:
+        alpha_series = pd.to_numeric(results_df["AlphaScore"], errors="coerce")
+    else:
+        results_df["AlphaScore"] = np.nan
+        alpha_series = pd.Series([np.nan] * len(results_df), index=results_df.index)
+
+    if alpha_series.notna().any():
+        results_df["MuMl"] = alpha_series
+
+        # Blend heuristic and ML drift using TECHNIC_ALPHA_WEIGHT
+        w_mu = getattr(settings, "alpha_weight", 0.5)
+        try:
+            w_mu = float(w_mu)
+        except Exception:
+            w_mu = 0.5
+        w_mu = max(0.0, min(1.0, w_mu))
+
+        results_df["MuTotal"] = (1.0 - w_mu) * results_df["MuHat"] + w_mu * results_df["MuMl"]
+    else:
+        # No ML alpha available
+        results_df["MuMl"] = np.nan
+        results_df["MuTotal"] = results_df["MuHat"]
+        # For downstream consumers that expect AlphaScore, fall back to TechRating
+        results_df.loc[:, "AlphaScore"] = results_df["TechRating"]
+
+    # Cross-sectional alpha percentile (0–100) for UI / ranking
+    if "AlphaScorePct" not in results_df.columns:
+        alpha_source = None
+        if results_df["AlphaScore"].notna().any():
+            alpha_source = pd.to_numeric(results_df["AlphaScore"], errors="coerce")
+        elif "alpha_blend" in results_df.columns and results_df["alpha_blend"].notna().any():
+            alpha_source = pd.to_numeric(results_df["alpha_blend"], errors="coerce")
+
+        if alpha_source is not None and alpha_source.notna().any():
+            results_df["AlphaScorePct"] = alpha_source.rank(pct=True) * 100.0
+        else:
+            results_df["AlphaScorePct"] = np.nan
     if regime_tags:
         results_df["RegimeTrend"] = regime_tags.get("trend")
         results_df["RegimeVol"] = regime_tags.get("vol")
