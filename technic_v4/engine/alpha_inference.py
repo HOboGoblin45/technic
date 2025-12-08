@@ -1,4 +1,4 @@
-"""
+﻿"""
 Optional ML alpha inference.
 
 Loads default alpha models (LGBM/XGB), optional deep model, and meta alpha.
@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
-import joblib
+from typing import Optional, TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
 
@@ -23,9 +23,17 @@ from technic_v4.infra.logging import get_logger
 
 logger = get_logger()
 
+# Optional torch typing for pylance
+if TYPE_CHECKING:  # pragma: no cover
+    import torch as torch_mod
+    import torch.nn as nn_mod
+else:
+    torch_mod = None
+    nn_mod = None
+
 try:
-    import torch
-    import torch.nn as nn
+    import torch  # type: ignore
+    import torch.nn as nn  # type: ignore
     HAVE_TORCH = True
 except Exception:  # pragma: no cover
     HAVE_TORCH = False
@@ -38,23 +46,6 @@ DEFAULT_ONNX_PATH = Path("models/alpha/lgbm_v1.onnx")
 DEFAULT_META_MODEL_PATH = Path("models/alpha/meta_alpha.pkl")
 DEFAULT_DEEP_MODEL_PATH = Path("models/alpha/deep_alpha.pt")
 
-_XGB_BUNDLE = None
-_XGB_MODEL_PATH = os.getenv(
-    "TECHNIC_ALPHA_MODEL_PATH", "models/alpha/xgb_v1.pkl"
-)
-
-def load_xgb_bundle():
-    """
-    Lazy-load the XGBoost alpha model and feature list.
-    """
-    global _XGB_BUNDLE
-    if _XGB_BUNDLE is None:
-        if not os.path.exists(_XGB_MODEL_PATH):
-            raise FileNotFoundError(
-                f"Alpha model bundle not found at {_XGB_MODEL_PATH}"
-            )
-        _XGB_BUNDLE = joblib.load(_XGB_MODEL_PATH)
-    return _XGB_BUNDLE
 
 # -------------------------------
 # Core model loading helpers
@@ -112,44 +103,36 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
 
 
 def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
-    """
-    Score ML alpha using the local XGB bundle (models/alpha/xgb_v1.pkl by default).
-    """
-    logger.info(
-        "[ALPHA] score_alpha called with shape=%s columns=%s",
-        df_features.shape,
-        list(df_features.columns),
-    )
-
+    reg_entry = None
     try:
-        bundle = load_xgb_bundle()
-    except FileNotFoundError:
-        logger.warning("[ALPHA] XGB bundle not found at %s; returning None", _XGB_MODEL_PATH)
-        return None
+        settings = get_settings()
+        preferred = settings.alpha_model_name or os.getenv("TECHNIC_ALPHA_MODEL_NAME")
+        if preferred:
+            reg_entry = model_registry.load_model(preferred)
+        if reg_entry is None:
+            reg_entry = model_registry.load_model("alpha_lgbm_v1")
     except Exception:
-        logger.warning("[ALPHA] failed to load XGB bundle", exc_info=True)
+        reg_entry = None
+    settings = get_settings()
+    use_onnx = settings.use_onnx_alpha
+    candidate_onnx = Path(reg_entry["path_onnx"]) if reg_entry and reg_entry.get("path_onnx") else DEFAULT_ONNX_PATH
+    if not candidate_onnx.exists() and DEFAULT_ONNX_PATH.exists():
+        candidate_onnx = DEFAULT_ONNX_PATH
+    if use_onnx and candidate_onnx.exists():
+        sess = inference_engine.load_onnx_session(str(candidate_onnx))
+        if sess is not None:
+            try:
+                logger.info("[alpha] scoring with ONNX model %s", candidate_onnx)
+                return inference_engine.onnx_predict(sess, df_features)
+            except Exception:
+                logger.warning("[alpha] ONNX prediction failed; falling back to python model", exc_info=True)
+    model = load_default_alpha_model()
+    if model is None:
         return None
-
-    model = bundle.get("model")
-    feature_cols = bundle.get("features") or []
-
-    if model is None or not feature_cols:
-        logger.warning("[ALPHA] XGB bundle missing model or feature list")
-        return None
-
-    missing = [c for c in feature_cols if c not in df_features.columns]
-    if missing:
-        logger.warning("[ALPHA] missing feature columns for XGB model: %s", missing)
-        return None
-
-    X = df_features[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
     try:
-        preds = model.predict(X)
-        logger.info("[ALPHA] XGB prediction succeeded, first few=%s", preds[:5])
-        return pd.Series(preds, index=df_features.index)
+        return model.predict(df_features)
     except Exception:
-        logger.warning("[ALPHA] XGB prediction failed", exc_info=True)
+        logger.warning("[alpha] model prediction failed", exc_info=True)
         return None
 
 

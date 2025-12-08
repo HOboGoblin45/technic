@@ -393,20 +393,23 @@ def _resolve_lookback_days(trade_style: str, base_days: int) -> int:
     """
     Adjust effective lookback based on trade style.
 
-    - Short-term swing: use at most 90 days
-    - Medium-term swing: use slider value as-is
-    - Position / longer-term: ensure at least 180 days
+    - "Short-term swing" or plain "swing": use at most 90 days
+    - "Medium-term swing": use slider value as-is
+    - "Position / longer-term": ensure at least 180 days
     """
-    ts = (trade_style or "").lower()
+    ts = (trade_style or "").lower().strip()
 
-    if "short-term" in ts:
-        return min(base_days, 90)
-
+    # Medium-term first so it doesn't get caught by generic "swing" logic
     if "medium" in ts:
         return base_days
 
+    # Longer-term / position style
     if "position" in ts or "longer" in ts:
         return max(base_days, 180)
+
+    # Treat plain "swing" as short-term, plus explicit short-term labels
+    if "short-term" in ts or ts == "swing":
+        return min(base_days, 90)
 
     # Fallback: leave unchanged
     return base_days
