@@ -491,7 +491,6 @@ def _process_symbol(
     latest_local["SubIndustry"] = urow.subindustry or ""
     return latest_local
 
-
 def _run_symbol_scans(
     config: "ScanConfig",
     universe: List[UniverseRow],
@@ -507,9 +506,29 @@ def _run_symbol_scans(
     attempted = kept = errors = rejected = 0
     total_symbols = len(universe)
 
-    # Try Ray path first if enabled
-    ray_rows = ray_runner.run_ray_scans([u.symbol for u in universe], config, regime_tags)
+    if settings is None:
+        settings = get_settings()
+
+    # Decide execution mode up front
+    use_ray = getattr(settings, "use_ray", False)
+    ray_rows = None
+
+    start_ts = time.time()
+
+    # ---------------- Ray path (optional) ----------------
+    if use_ray and total_symbols > 0:
+        try:
+            ray_rows = ray_runner.run_ray_scans(
+                [u.symbol for u in universe],
+                config,
+                regime_tags,
+            )
+        except Exception:
+            logger.warning("[RAY] run_ray_scans failed; falling back to thread pool", exc_info=True)
+            ray_rows = None
+
     if ray_rows is not None:
+        # Ray returned rows aligned with universe list
         for urow, latest in zip(universe, ray_rows):
             attempted += 1
             if latest is None:
@@ -520,8 +539,9 @@ def _run_symbol_scans(
             latest["SubIndustry"] = urow.subindustry or ""
             rows.append(latest)
             kept += 1
+        engine_mode = "ray"
     else:
-
+        # ---------------- Thread pool path ----------------
         def _worker(idx_urow):
             idx, urow = idx_urow
             symbol = urow.symbol
@@ -557,8 +577,26 @@ def _run_symbol_scans(
 
                 rows.append(latest)
                 kept += 1
+        engine_mode = "threadpool"
 
-    stats = {"attempted": attempted, "kept": kept, "errors": errors, "rejected": rejected}
+    elapsed = time.time() - start_ts
+    per_symbol = elapsed / max(total_symbols, 1)
+    logger.info(
+        "[SCAN PERF] symbol engine: %d symbols via %s in %.2fs (%.3fs/symbol, max_workers=%s, use_ray=%s)",
+        total_symbols,
+        engine_mode,
+        elapsed,
+        per_symbol,
+        getattr(settings, "max_workers", None),
+        getattr(settings, "use_ray", False),
+    )
+
+    stats = {
+        "attempted": attempted,
+        "kept": kept,
+        "errors": errors,
+        "rejected": rejected,
+    }
     return pd.DataFrame(rows), stats
 
 

@@ -39,8 +39,11 @@ class Settings:
     # Model selection
     alpha_model_name: Optional[str] = field(default=None)
 
-    # Blending weight for ML vs factor alpha (0..1, used in scanner_core)
+    # Alpha blending weight (0..1) for factor vs ML alpha
     alpha_weight: float = field(default=0.5)
+
+    # Parallelism control for thread-pool scans
+    max_workers: int = field(default=6)
 
     def __post_init__(self) -> None:
         prefix = "TECHNIC_"
@@ -88,6 +91,15 @@ class Settings:
         else:
             w = self.alpha_weight
         self.alpha_weight = max(0.0, min(1.0, w))
+
+        # Max workers for thread pools
+        raw_workers = os.getenv(f"{prefix}MAX_WORKERS")
+        if raw_workers is not None:
+            try:
+                self.max_workers = max(1, int(raw_workers))
+            except Exception:
+                # keep default on parse error
+                pass
 
 
 _settings = Settings()  # singleton
