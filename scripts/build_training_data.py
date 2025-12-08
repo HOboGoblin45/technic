@@ -1,19 +1,17 @@
 import os
-from datetime import date, timedelta
 from typing import List
 
 import pandas as pd
 
 from technic_v4 import data_engine
-from technic_v4.engine.feature_engine import build_features
+from technic_v4.engine.scoring import compute_scores
 
-# Simple universe for now – you can replace with your real list
-UNIVERSE: List[str] = ["AA", "AAL", "AACB"]  # extend with your core universe
+# Small training universe to start; expand once this is working
+UNIVERSE: List[str] = ["AA", "AAL", "AACB"]
 
-START_DATE = date(2022, 1, 1)
-END_DATE = date(2024, 12, 31)
-LOOKBACK_DAYS = 150
+LOOKBACK_DAYS = 150   # minimum history before we trust scores
 FWD_DAYS = 5
+TRADE_STYLE = "Short-term swing"
 
 
 def build_training_rows() -> pd.DataFrame:
@@ -21,47 +19,56 @@ def build_training_rows() -> pd.DataFrame:
 
     for symbol in UNIVERSE:
         print(f"Processing {symbol}...")
-        # Pull full history once
-        hist = data_engine.get_price_history(symbol, days=1000, freq="daily")
+
+        # Pull a decent amount of daily history (e.g., ~2+ years)
+        hist = data_engine.get_price_history(symbol, days=600, freq="daily")
         if hist is None or hist.empty:
+            print(f"  no history for {symbol}, skipping.")
             continue
 
-        # Ensure we have a Date column for easier slicing
-        df = hist.reset_index()  # index → column
-        # After reset_index, if the index name was "Date", you'll now have a "Date" column.
-        # If the index name is something else (e.g. "index"), rename it for consistency.
-        if "Date" not in df.columns:
-            # assume the first column is the date-like index
-            df.rename(columns={df.columns[0]: "Date"}, inplace=True)
+        # Sort by date index
+        df_hist = hist.sort_index().copy()
 
-        df = df.sort_values("Date")
+        if "Close" not in df_hist.columns:
+            print(f"  no Close column for {symbol}, skipping.")
+            continue
 
-        for idx in range(LOOKBACK_DAYS, len(df) - FWD_DAYS):
-            as_of_row = df.iloc[idx]
-            as_of_date = as_of_row["Date"].date()
+        n_hist = len(df_hist)
+        print(f"  history length: {n_hist}")
 
-            if not (START_DATE <= as_of_date <= END_DATE):
+        # For each as-of index, take all history up to that point,
+        # run compute_scores on that window, and use the last row as features.
+        n_rows_before = len(rows)
+        for idx in range(LOOKBACK_DAYS, n_hist - FWD_DAYS):
+            window = df_hist.iloc[: idx + 1]
+
+            scored = compute_scores(window, trade_style=TRADE_STYLE, fundamentals=None)
+            if scored is None or scored.empty:
                 continue
 
-            window = df.iloc[idx - LOOKBACK_DAYS : idx + 1]
-            fut_window = df.iloc[idx + 1 : idx + 1 + FWD_DAYS]
+            # latest scored row corresponds to the as-of date
+            as_of_row = scored.iloc[-1]
 
-            if fut_window.empty:
-                continue
-
-            # Forward 5-day return
-            as_of_close = as_of_row["Close"]
-            fwd_close = fut_window["Close"].iloc[-1]
+            # as-of date and forward close
+            as_of_close = float(window["Close"].iloc[-1])
+            fwd_close = float(df_hist["Close"].iloc[idx + FWD_DAYS])
             fwd_ret = (fwd_close - as_of_close) / as_of_close
 
-            # Features
-            feats = build_features(window, fundamentals=None)
-            feats = feats.to_dict()
+            # ensure there's a Date field
+            if "Date" in as_of_row.index:
+                as_of_date = as_of_row["Date"]
+            else:
+                as_of_date = window.index[-1]
+
+            feats = as_of_row.to_dict()
             feats["symbol"] = symbol
             feats["as_of_date"] = as_of_date
             feats["fwd_ret_5d"] = fwd_ret
 
             rows.append(feats)
+
+        n_rows_after = len(rows)
+        print(f"  added {n_rows_after - n_rows_before} training rows for {symbol}")
 
     return pd.DataFrame(rows)
 
