@@ -273,7 +273,7 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
                 meta_z = zscore(meta_alpha)
             except Exception:
                 meta_z = None
-            if meta_z is not None is not None:
+            if meta_z is not None:
                 df["meta_alpha"] = meta_alpha
                 alpha_blend = meta_z
                 logger.info("[ALPHA] meta alpha applied, overriding factor/ML blend")
