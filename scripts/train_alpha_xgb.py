@@ -2,6 +2,7 @@ import os
 
 import sys
 from pathlib import Path
+import argparse
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -20,19 +21,47 @@ MODEL_PATH = "models/alpha/xgb_v1.pkl"
 EXCLUDE_COLS = ["symbol", "as_of_date", "fwd_ret_5d"]
 
 
-def main():
-    if not os.path.exists(TRAIN_PATH):
-        raise FileNotFoundError(f"Training data not found at {TRAIN_PATH}")
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Train XGB alpha model.")
+    p.add_argument(
+        "--train-path",
+        type=str,
+        default="data/training_data.parquet",
+        help="Path to training data parquet file.",
+    )
+    p.add_argument(
+        "--model-path",
+        type=str,
+        default="models/alpha/xgb_v1.pkl",
+        help="Where to save the joblib bundle (model + features).",
+    )
+    p.add_argument(
+        "--onnx-path",
+        type=str,
+        default="models/alpha/xgb_v1.onnx",
+        help="Optional ONNX export path (best effort).",
+    )
+    return p.parse_args()
 
-    df = pd.read_parquet(TRAIN_PATH)
+def main():
+    args = parse_args()
+    train_path = args.train_path
+    model_path = args.model_path
+    onnx_path = args.onnx_path
+
+    if not os.path.exists(train_path):
+        raise FileNotFoundError(f"Training data not found at {train_path}")
+
+    df = pd.read_parquet(train_path)
     if df.empty:
-        raise ValueError(f"Training data at {TRAIN_PATH} has 0 rows; cannot train.")
+        raise ValueError(f"Training data at {train_path} has 0 rows; cannot train.")
 
     # Drop rows without labels
     df = df.dropna(subset=["fwd_ret_5d"])
 
-    # Use numeric columns as features, excluding IDs and target
+    # Use numeric columns as features, excluding IDs and label
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    EXCLUDE_COLS = ["fwd_ret_5d", "symbol", "as_of_date"]
     feature_cols = [c for c in numeric_cols if c not in EXCLUDE_COLS]
 
     if not feature_cols:
@@ -55,18 +84,33 @@ def main():
         n_jobs=-1,
     )
 
-    print(f"Training XGB model on {len(feature_cols)} features and {len(X_train)} rows...")
+    print(
+        f"Training XGB model on {len(feature_cols)} features and {len(X_train)} rows..."
+    )
     model.fit(X_train, y_train)
 
     y_pred = model.predict(X_val)
     r2 = r2_score(y_val, y_pred)
     print(f"Validation R^2: {r2:.4f}")
 
-    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     bundle = {"model": model, "features": feature_cols}
-    joblib.dump(bundle, MODEL_PATH)
-    print(f"Saved model to {MODEL_PATH}")
+    joblib.dump(bundle, model_path)
+    print(f"Saved model bundle to {model_path}")
 
+    # Optional ONNX export (best-effort)
+    try:
+        from skl2onnx import convert_sklearn  # type: ignore
+        from skl2onnx.common.data_types import FloatTensorType  # type: ignore
+
+        initial_type = [("float_input", FloatTensorType([None, len(feature_cols)]))]
+        onx = convert_sklearn(model, initial_types=initial_type)
+        os.makedirs(os.path.dirname(onnx_path), exist_ok=True)
+        with open(onnx_path, "wb") as f:
+            f.write(onx.SerializeToString())
+        print(f"Exported ONNX model to {onnx_path}")
+    except Exception as exc:
+        print(f"ONNX export skipped or failed: {exc}")
 
 if __name__ == "__main__":
     main()
