@@ -3,6 +3,14 @@ from typing import List
 
 import pandas as pd
 
+import sys
+from pathlib import Path
+
+# --- Ensure project root is on sys.path ---
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from technic_v4 import data_engine
 from technic_v4.engine.scoring import compute_scores
 
