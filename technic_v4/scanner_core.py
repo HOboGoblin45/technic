@@ -149,27 +149,35 @@ def _prepare_universe(config: "ScanConfig", settings=None) -> List[UniverseRow]:
 
 def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.DataFrame:
     """
-    Cross-sectional alpha blend:
+    Cross-sectional alpha blend with optional multi-horizon ML alpha.
+
     - factor_alpha = zscore of baseline TechRating (v1 heuristic)
-    - ml_alpha     = XGB model prediction (5d fwd return)
+    - ml_alpha_5d  = XGB 5d model
+    - ml_alpha_10d = XGB 10d model (if available)
+    - ml_alpha_z   = w5 * z(ml_5d) + w10 * z(ml_10d) when both available
     - alpha_blend  = blend(factor_alpha, ml_alpha_z; TECHNIC_ALPHA_WEIGHT)
     - TechRating   = v2 hybrid score using alpha_blend
 
     Columns produced:
-        factor_alpha   : cross-sectional z-score of baseline TechRating
-        AlphaScore     : raw ML predictions (for API / scoreboard)
-        ml_alpha_z     : z-scored ML alpha (when available)
-        meta_alpha     : optional meta-ensemble alpha (if enabled)
-        alpha_blend    : final cross-sectional alpha driver
-        TechRating_raw : original TechRating before alpha blending
-        TechRating     : blended TechRating v2 (hybrid)
+        factor_alpha       : z-score of baseline TechRating
+        Alpha5d            : raw 5d ML alpha (if available)
+        Alpha10d           : raw 10d ML alpha (if available)
+        AlphaScore_5d      : alias of Alpha5d
+        AlphaScore_10d     : alias of Alpha10d
+        AlphaScore         : blended raw ML alpha (5d/10d)
+        ml_alpha_5d_z      : zscore of 5d alpha
+        ml_alpha_10d_z     : zscore of 10d alpha (if available)
+        ml_alpha_z         : blended ML zscore used in alpha_blend
+        alpha_blend        : final cross-sectional alpha driver
+        TechRating_raw     : original TechRating before alpha blending
+        TechRating         : blended TechRating v2 (hybrid)
     """
     if df is None or df.empty:
         return df
 
     settings = get_settings()
     logger.info(
-        "[ALPHA] use_ml_alpha=%s use_meta_alpha=%s alpha_weight=%.2f",
+        "[ALPHA] settings: use_ml_alpha=%s use_meta_alpha=%s alpha_weight=%.2f",
         settings.use_ml_alpha,
         settings.use_meta_alpha,
         getattr(settings, "alpha_weight", 0.5),
@@ -188,7 +196,7 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
 
     df["factor_alpha"] = factor_alpha
 
-    # Regime one-hot features (for ML/meta models)
+    # Regime one-hot features (for meta models if needed)
     if regime:
         trend = str(regime.get("trend", "")).upper()
         vol = str(regime.get("vol", "")).upper()
@@ -213,54 +221,88 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
             if col in df.columns:
                 df[col] = 1.0
 
-    # --- ML alpha (XGB) ---------------------------------------------------
-    ml_alpha: Optional[pd.Series] = None
-    ml_alpha_z: Optional[pd.Series] = None
+    # --- ML alpha (5d + 10d) -------------------------------------------------
+    ml_5d = None
+    ml_10d = None
+    ml_5d_z = None
+    ml_10d_z = None
+    ml_alpha_z = None
+
+    # Initialize columns so downstream code always sees them
+    df["Alpha5d"] = np.nan
+    df["Alpha10d"] = np.nan
+    df["AlphaScore_5d"] = np.nan
+    df["AlphaScore_10d"] = np.nan
+    df["ml_alpha_5d_z"] = np.nan
+    df["ml_alpha_10d_z"] = np.nan
+    df["ml_alpha_z"] = np.nan
 
     if settings.use_ml_alpha:
+        # 5d alpha
         try:
-            ml_alpha = alpha_inference.score_alpha(df)
+            ml_5d = alpha_inference.score_alpha(df)
         except Exception:
-            logger.warning("[ALPHA] score_alpha() failed", exc_info=True)
-            ml_alpha = None
+            logger.warning("[ALPHA] score_alpha() 5d failed", exc_info=True)
+            ml_5d = None
 
-    if ml_alpha is not None and not ml_alpha.empty:
-        # Raw model prediction (5d forward return) – this is the "true" AlphaScore
-        ml_alpha = pd.to_numeric(ml_alpha, errors="coerce")
-        df["AlphaScore"] = ml_alpha
+        if ml_5d is not None and not ml_5d.empty:
+            ml_5d = pd.to_numeric(ml_5d, errors="coerce")
+            df["Alpha5d"] = ml_5d
+            df["AlphaScore_5d"] = ml_5d
+            try:
+                ml_5d_z = zscore(ml_5d)
+                df["ml_alpha_5d_z"] = ml_5d_z
+            except Exception:
+                logger.warning("[ALPHA] zscore() on 5d ML alpha failed", exc_info=True)
+                ml_5d_z = None
 
+        # 10d alpha (optional second model)
         try:
-            ml_alpha_z = zscore(ml_alpha)
+            ml_10d = alpha_inference.score_alpha_10d(df)
+        except Exception:
+            logger.warning("[ALPHA] score_alpha_10d() failed", exc_info=True)
+            ml_10d = None
+
+        if ml_10d is not None and not ml_10d.empty:
+            ml_10d = pd.to_numeric(ml_10d, errors="coerce")
+            df["Alpha10d"] = ml_10d
+            df["AlphaScore_10d"] = ml_10d
+            try:
+                ml_10d_z = zscore(ml_10d)
+                df["ml_alpha_10d_z"] = ml_10d_z
+            except Exception:
+                logger.warning("[ALPHA] zscore() on 10d ML alpha failed", exc_info=True)
+                ml_10d_z = None
+
+        # Combine into a single ML z-score + raw AlphaScore
+        if ml_5d_z is not None and ml_10d_z is not None:
+            w5 = 0.4
+            w10 = 0.6
+            ml_alpha_z = w5 * ml_5d_z + w10 * ml_10d_z
+            # Raw AlphaScore: blend raw predictions as well
+            df["AlphaScore"] = (w5 * ml_5d + w10 * ml_10d)
+            logger.info(
+                "[ALPHA] ML alpha (5d+10d) blended with w5=%.2f, w10=%.2f", w5, w10
+            )
+        elif ml_5d_z is not None:
+            ml_alpha_z = ml_5d_z
+            df["AlphaScore"] = ml_5d
+            logger.info("[ALPHA] ML alpha (5d only) applied")
+        elif ml_10d_z is not None:
+            ml_alpha_z = ml_10d_z
+            df["AlphaScore"] = ml_10d
+            logger.info("[ALPHA] ML alpha (10d only) applied")
+        else:
+            logger.info("[ALPHA] ML alpha unavailable; factor-only alpha will be used")
+
+        if ml_alpha_z is not None:
             df["ml_alpha_z"] = ml_alpha_z
-        except Exception:
-            logger.warning("[ALPHA] zscore() on ML alpha failed", exc_info=True)
-            ml_alpha_z = None
-            df["ml_alpha_z"] = np.nan
-        logger.info("[ALPHA] ML alpha available for %d rows", ml_alpha.notna().sum())
-    else:
-        # Ensure AlphaScore exists for downstream consumers (API / eval)
-        if "AlphaScore" not in df.columns:
-            df["AlphaScore"] = np.nan
-        df["ml_alpha_z"] = np.nan
-        logger.info("[ALPHA] ML alpha unavailable; factor-only alpha will be used")
 
-    # --- Blend factor alpha and ML alpha ----------------------------------
-    alpha_blend = factor_alpha.copy()
+    # If AlphaScore is still missing, fall back to factor-based proxy
+    if "AlphaScore" not in df.columns:
+        df["AlphaScore"] = np.nan
 
-    if ml_alpha_z is not None:
-        w = getattr(settings, "alpha_weight", 0.5)
-        try:
-            w = float(w)
-        except Exception:
-            w = 0.5
-        w = max(0.0, min(1.0, w))  # clamp to [0,1]
-
-        alpha_blend = (1.0 - w) * factor_alpha + w * ml_alpha_z
-        logger.info("[ALPHA] blended factor + ML with TECHNIC_ALPHA_WEIGHT=%.2f", w)
-    else:
-        logger.info("[ALPHA] using factor_alpha only (no ML alpha)")
-
-    # --- Optional meta alpha override ------------------------------------
+    # --- Optional meta alpha override ---------------------------------------
     if settings.use_meta_alpha:
         try:
             meta_alpha = alpha_inference.score_meta_alpha(df)
@@ -275,12 +317,29 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
                 meta_z = None
             if meta_z is not None:
                 df["meta_alpha"] = meta_alpha
-                alpha_blend = meta_z
+                ml_alpha_z = meta_z
+                df["ml_alpha_z"] = ml_alpha_z
                 logger.info("[ALPHA] meta alpha applied, overriding factor/ML blend")
+
+    # --- Build alpha_blend and TechRating v2 --------------------------------
+    alpha_blend = factor_alpha.copy()
+
+    if ml_alpha_z is not None:
+        w = getattr(settings, "alpha_weight", 0.35)
+        try:
+            w = float(w)
+        except Exception:
+            w = 0.5
+        w = max(0.0, min(1.0, w))  # clamp to [0,1]
+
+        alpha_blend = (1.0 - w) * factor_alpha + w * ml_alpha_z
+        logger.info("[ALPHA] blended factor + ML with TECHNIC_ALPHA_WEIGHT=%.2f", w)
+    else:
+        logger.info("[ALPHA] using factor_alpha only (no ML alpha)")
 
     df["alpha_blend"] = alpha_blend
 
-    # --- Map alpha_blend into TechRating v2 ------------------------------
+    # Regime-aware scaling of alpha weight in TechRating blend
     alpha_weight_tr = 0.4
     if regime:
         if regime.get("vol") == "HIGH_VOL":
@@ -744,6 +803,87 @@ def _finalize_results(
         # Prefer tradeable, but don't drop everything if none match
         if not tradeable_df.empty:
             results_df = tradeable_df
+
+    # --- PlayStyle classification: Stable vs Explosive -----------------------
+    def _classify_playstyle(row: pd.Series) -> str:
+        # Prefer scaled risk_score if present, else RiskScore
+        rs = row.get("risk_score", None)
+        if rs is None or pd.isna(rs):
+            rs = row.get("RiskScore", None)
+        try:
+            rs_val = float(rs) if rs is not None and not pd.isna(rs) else None
+        except Exception:
+            rs_val = None
+
+        a5 = row.get("Alpha5d", None)
+        a10 = row.get("Alpha10d", None)
+        try:
+            a5_val = float(a5) if a5 is not None and not pd.isna(a5) else None
+        except Exception:
+            a5_val = None
+        try:
+            a10_val = float(a10) if a10 is not None and not pd.isna(a10) else None
+        except Exception:
+            a10_val = None
+
+        expl = row.get("ExplosivenessScore", None)
+        vol = row.get("VolatilityScore", None)
+        try:
+            expl_val = float(expl) if expl is not None and not pd.isna(expl) else None
+        except Exception:
+            expl_val = None
+        try:
+            vol_val = float(vol) if vol is not None and not pd.isna(vol) else None
+        except Exception:
+            vol_val = None
+
+        is_stable = False
+        is_explosive = False
+
+        # Stability: low risk, horizons agree, and consistent positive (or negative) alpha
+        if a5_val is not None and a10_val is not None:
+            same_sign = a5_val * a10_val > 0
+            if (
+                rs_val is not None
+                and rs_val >= 0.75
+                and same_sign
+                and (a5_val is not None and a5_val > 0)
+                and (a10_val is not None and a10_val > 0)
+            ):
+                is_stable = True
+
+        # Explosive: high volatility / explosiveness or very low risk_score
+        if rs_val is not None and rs_val <= 0.45:
+            is_explosive = True
+        if expl_val is not None and expl_val >= 1.5:
+            is_explosive = True
+        if vol_val is not None and vol_val >= 1.5:
+            is_explosive = True
+        if a5_val is not None and a10_val is not None:
+            # Large disagreement between horizons → volatile / uncertain
+            if abs(a5_val - a10_val) >= 0.02:
+                is_explosive = True
+
+        if is_stable and not is_explosive:
+            return "Stable"
+        if is_explosive and not is_stable:
+            return "Explosive"
+        if is_stable and is_explosive:
+            return "Hybrid"
+        return "Neutral"
+
+    playstyles = results_df.apply(_classify_playstyle, axis=1)
+    results_df["PlayStyle"] = playstyles
+    results_df["IsStable"] = playstyles == "Stable"
+    results_df["IsHighRisk"] = playstyles == "Explosive"
+
+    # Prefer Stable setups in ranking by giving them a small score boost
+    if "PlayStyle" in results_df.columns:
+        stable_boost = results_df["PlayStyle"].eq("Stable").astype(float) * 0.05
+        explosive_penalty = results_df["PlayStyle"].eq("Explosive").astype(float) * 0.05
+
+        # Add to MuTotal or TechRating to slightly tilt toward stable names
+        results_df["MuTotal"] = results_df["MuTotal"] + stable_boost - explosive_penalty
 
     # Risk-adjusted sorting + diversification fallback
     vol_col = "vol_realized_20" if "vol_realized_20" in results_df.columns else None

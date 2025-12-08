@@ -63,10 +63,10 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
     Build training rows for the alpha model using the real ticker universe.
 
     For each symbol:
-      - Pull up to ~600 days of daily history
+      - Pull daily history
       - For each as-of date:
           * run compute_scores on history up to that date
-          * compute a forward 5-day return (fwd_ret_5d)
+          * compute forward 5-day and 10-day returns (fwd_ret_5d, fwd_ret_10d)
     """
     rows: list[dict] = []
 
@@ -78,12 +78,14 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
 
     print(f"Building training data for {len(symbols)} symbols (max_symbols={args.max_symbols})")
 
+    # We will compute both 5d and 10d forward returns; use the larger horizon for loop bounds
+    max_fwd_days = max(args.fwd_days, 10)
+
     for symbol in symbols:
         print(f"Processing {symbol}...")
 
-        # Pull a decent amount of daily history (e.g., ~2+ years)
-        # Ensure we have enough for lookback + forward window
-        days = max(args.lookback_days + args.fwd_days + 50, 300)
+        # Pull enough daily history for lookback + forward window
+        days = max(args.lookback_days + max_fwd_days + 50, 300)
         hist = data_engine.get_price_history(symbol, days=days, freq="daily")
         if hist is None or hist.empty:
             print(f"  no history for {symbol}, skipping.")
@@ -99,27 +101,38 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
         n_hist = len(df_hist)
         print(f"  history length: {n_hist}")
 
-        if n_hist <= args.lookback_days + args.fwd_days:
-            print(f"  not enough history for {symbol} (need > {args.lookback_days + args.fwd_days}), skipping.")
+        if n_hist <= args.lookback_days + max_fwd_days:
+            print(
+                f"  not enough history for {symbol} (need > {args.lookback_days + max_fwd_days}), skipping."
+            )
             continue
 
-        # For each as-of index, take all history up to that point,
-        # run compute_scores on that window, and use the last row as features.
         n_rows_before = len(rows)
-        for idx in range(args.lookback_days, n_hist - args.fwd_days):
+        # Loop so that both 5d and 10d horizons are in-bounds
+        for idx in range(args.lookback_days, n_hist - max_fwd_days):
             window = df_hist.iloc[: idx + 1]
 
             scored = compute_scores(window, trade_style=args.trade_style, fundamentals=None)
             if scored is None or scored.empty:
                 continue
 
-            # latest scored row corresponds to the as-of date
             as_of_row = scored.iloc[-1]
 
-            # as-of date and forward close
+            # As-of close and forward closes
             as_of_close = float(window["Close"].iloc[-1])
-            fwd_close = float(df_hist["Close"].iloc[idx + args.fwd_days])
-            fwd_ret = (fwd_close - as_of_close) / as_of_close
+
+            idx_5 = idx + args.fwd_days
+            idx_10 = idx + 10
+
+            # Safety: ensure both forward indices are in range
+            if idx_5 >= n_hist or idx_10 >= n_hist:
+                continue
+
+            fwd_close_5 = float(df_hist["Close"].iloc[idx_5])
+            fwd_close_10 = float(df_hist["Close"].iloc[idx_10])
+
+            fwd_ret_5d = (fwd_close_5 - as_of_close) / as_of_close
+            fwd_ret_10d = (fwd_close_10 - as_of_close) / as_of_close
 
             # ensure there's a Date field
             if "Date" in as_of_row.index:
@@ -130,7 +143,8 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
             feats = as_of_row.to_dict()
             feats["symbol"] = symbol
             feats["as_of_date"] = as_of_date
-            feats["fwd_ret_5d"] = fwd_ret
+            feats["fwd_ret_5d"] = fwd_ret_5d
+            feats["fwd_ret_10d"] = fwd_ret_10d
 
             rows.append(feats)
 

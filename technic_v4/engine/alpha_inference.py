@@ -53,25 +53,38 @@ DEFAULT_ONNX_PATH = Path("models/alpha/lgbm_v1.onnx")
 DEFAULT_META_MODEL_PATH = Path("models/alpha/meta_alpha.pkl")
 DEFAULT_DEEP_MODEL_PATH = Path("models/alpha/deep_alpha.pt")
 
-# Local XGB bundle (non-registry) for alpha_xgb_v1
-_XGB_BUNDLE: Optional[dict] = None
-_XGB_MODEL_PATH = os.getenv("TECHNIC_ALPHA_MODEL_PATH", "models/alpha/xgb_v1.pkl")
+# Local XGB bundles (non-registry) for alpha_xgb_v1 (5d) and alpha_xgb_v1_10d (10d)
+_XGB_BUNDLE_5D: Optional[dict] = None
+_XGB_BUNDLE_10D: Optional[dict] = None
+_XGB_MODEL_PATH_5D = os.getenv("TECHNIC_ALPHA_MODEL_PATH", "models/alpha/xgb_v1.pkl")
+_XGB_MODEL_PATH_10D = os.getenv(
+    "TECHNIC_ALPHA_MODEL_PATH_10D", "models/alpha/xgb_v1_10d.pkl"
+)
 
 
-def load_xgb_bundle() -> dict:
-    """
-    Lazy-load the XGBoost alpha model and feature list from a simple joblib bundle.
+def _load_xgb_bundle(path: str, cache: dict | None) -> tuple[Optional[dict], dict | None]:
+    """Internal helper to load an XGB joblib bundle with simple caching."""
+    if cache is not None:
+        return cache, cache
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Alpha model bundle not found at {path}")
+    logger.info("[ALPHA] loading XGB bundle from %s", path)
+    bundle = joblib.load(path)
+    return bundle, bundle
 
-    Expected format:
-        {"model": <xgb.XGBRegressor>, "features": [<feature_name>, ...]}
-    """
-    global _XGB_BUNDLE
-    if _XGB_BUNDLE is None:
-        if not os.path.exists(_XGB_MODEL_PATH):
-            raise FileNotFoundError(f"Alpha model bundle not found at {_XGB_MODEL_PATH}")
-        logger.info("[ALPHA] loading XGB bundle from %s", _XGB_MODEL_PATH)
-        _XGB_BUNDLE = joblib.load(_XGB_MODEL_PATH)
-    return _XGB_BUNDLE
+
+def load_xgb_bundle_5d() -> dict:
+    """Lazy-load 5d XGB alpha model bundle."""
+    global _XGB_BUNDLE_5D
+    bundle, _XGB_BUNDLE_5D = _load_xgb_bundle(_XGB_MODEL_PATH_5D, _XGB_BUNDLE_5D)
+    return bundle  # type: ignore[return-value]
+
+
+def load_xgb_bundle_10d() -> dict:
+    """Lazy-load 10d XGB alpha model bundle (if present)."""
+    global _XGB_BUNDLE_10D
+    bundle, _XGB_BUNDLE_10D = _load_xgb_bundle(_XGB_MODEL_PATH_10D, _XGB_BUNDLE_10D)
+    return bundle  # type: ignore[return-value]
 
 
 # -------------------------------
@@ -136,12 +149,43 @@ def load_default_alpha_model() -> Optional[BaseAlphaModel]:
         return None
 
 
+def _score_with_bundle(
+    df_features: pd.DataFrame, bundle: dict, label: str = "5d"
+) -> Optional[pd.Series]:
+    """Helper to score df_features with a given XGB bundle."""
+    model = bundle.get("model")
+    feature_cols = bundle.get("features") or []
+
+    if model is None or not feature_cols:
+        logger.warning("[ALPHA] XGB bundle missing model or feature list for %s", label)
+        return None
+
+    missing = [c for c in feature_cols if c not in df_features.columns]
+    if missing:
+        logger.warning(
+            "[ALPHA] missing feature columns for %s XGB model: %s", label, missing
+        )
+        return None
+
+    X = (
+        df_features[feature_cols]
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+    )
+
+    try:
+        preds = model.predict(X)
+        logger.info("[ALPHA] %s XGB prediction succeeded, first few=%s", label, preds[:5])
+        return pd.Series(preds, index=df_features.index)
+    except Exception:
+        logger.warning("[ALPHA] %s XGB prediction failed", label, exc_info=True)
+        return None
+
+
 def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
     """
-    Score ML alpha using the local XGB bundle (models/alpha/xgb_v1.pkl by default).
-
-    Returns a pd.Series of raw forward-return predictions (AlphaScore), indexed
-    to df_features.index, or None on error.
+    Score ML alpha (5-day horizon) using the local XGB bundle (models/alpha/xgb_v1.pkl).
+    This is the primary alpha used when only 5d is available.
     """
     logger.info(
         "[ALPHA] score_alpha called with shape=%s columns=%s",
@@ -149,48 +193,44 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
         list(df_features.columns),
     )
 
-    # Load the bundle
     try:
-        bundle = load_xgb_bundle()
+        bundle = load_xgb_bundle_5d()
     except FileNotFoundError:
         logger.warning(
-            "[ALPHA] XGB bundle not found at %s; returning None", _XGB_MODEL_PATH
+            "[ALPHA] XGB 5d bundle not found at %s; returning None", _XGB_MODEL_PATH_5D
         )
         return None
     except Exception:
-        logger.warning("[ALPHA] failed to load XGB bundle", exc_info=True)
+        logger.warning("[ALPHA] failed to load 5d XGB bundle", exc_info=True)
         return None
 
-    model = bundle.get("model")
-    feature_cols = bundle.get("features") or []
+    return _score_with_bundle(df_features, bundle, label="5d")
 
-    if model is None or not feature_cols:
-        logger.warning("[ALPHA] XGB bundle missing model or feature list")
-        return None
 
-    # Check required features exist
-    missing = [c for c in feature_cols if c not in df_features.columns]
-    if missing:
-        logger.warning(
-            "[ALPHA] missing feature columns for XGB model: %s", missing
-        )
-        return None
-
-    # Build inference matrix
-    X = (
-        df_features[feature_cols]
-        .replace([np.inf, -np.inf], np.nan)
-        .fillna(0.0)
+def score_alpha_10d(df_features: pd.DataFrame) -> Optional[pd.Series]:
+    """
+    Score ML alpha (10-day horizon) using a second XGB bundle (models/alpha/xgb_v1_10d.pkl).
+    Returns None if the model is missing or prediction fails.
+    """
+    logger.info(
+        "[ALPHA] score_alpha_10d called with shape=%s columns=%s",
+        df_features.shape,
+        list(df_features.columns),
     )
 
-    # Prediction with logging; fall back to None on error
     try:
-        preds = model.predict(X)
-        logger.info("[ALPHA] XGB prediction succeeded, first few=%s", preds[:5])
-        return pd.Series(preds, index=df_features.index)
-    except Exception:
-        logger.warning("[ALPHA] XGB prediction failed", exc_info=True)
+        bundle = load_xgb_bundle_10d()
+    except FileNotFoundError:
+        logger.info(
+            "[ALPHA] XGB 10d bundle not found at %s; skipping 10d alpha",
+            _XGB_MODEL_PATH_10D,
+        )
         return None
+    except Exception:
+        logger.warning("[ALPHA] failed to load 10d XGB bundle", exc_info=True)
+        return None
+
+    return _score_with_bundle(df_features, bundle, label="10d")
 
 
 # -------------------------------

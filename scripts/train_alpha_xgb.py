@@ -1,12 +1,7 @@
 import os
-
 import sys
 from pathlib import Path
 import argparse
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 import joblib
 import numpy as np
@@ -15,10 +10,9 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 
-TRAIN_PATH = "data/training_data.parquet"
-MODEL_PATH = "models/alpha/xgb_v1.pkl"
-
-EXCLUDE_COLS = ["symbol", "as_of_date", "fwd_ret_5d"]
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,13 +35,21 @@ def parse_args() -> argparse.Namespace:
         default="models/alpha/xgb_v1.onnx",
         help="Optional ONNX export path (best effort).",
     )
+    p.add_argument(
+        "--label",
+        type=str,
+        default="fwd_ret_5d",
+        help="Label column to train on (e.g. fwd_ret_5d, fwd_ret_10d).",
+    )
     return p.parse_args()
+
 
 def main():
     args = parse_args()
     train_path = args.train_path
     model_path = args.model_path
     onnx_path = args.onnx_path
+    label_col = args.label
 
     if not os.path.exists(train_path):
         raise FileNotFoundError(f"Training data not found at {train_path}")
@@ -56,19 +58,22 @@ def main():
     if df.empty:
         raise ValueError(f"Training data at {train_path} has 0 rows; cannot train.")
 
+    if label_col not in df.columns:
+        raise ValueError(f"Label column '{label_col}' not found in training data.")
+
     # Drop rows without labels
-    df = df.dropna(subset=["fwd_ret_5d"])
+    df = df.dropna(subset=[label_col])
 
     # Use numeric columns as features, excluding IDs and label
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    EXCLUDE_COLS = ["fwd_ret_5d", "symbol", "as_of_date"]
+    EXCLUDE_COLS = [label_col, "symbol", "as_of_date"]
     feature_cols = [c for c in numeric_cols if c not in EXCLUDE_COLS]
 
     if not feature_cols:
         raise ValueError("No numeric feature columns found for training.")
 
     X = df[feature_cols].fillna(0.0)
-    y = df["fwd_ret_5d"]
+    y = df[label_col]
 
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -85,7 +90,8 @@ def main():
     )
 
     print(
-        f"Training XGB model on {len(feature_cols)} features and {len(X_train)} rows..."
+        f"Training XGB model on {len(feature_cols)} features and {len(X_train)} rows "
+        f"for label '{label_col}'..."
     )
     model.fit(X_train, y_train)
 
@@ -111,6 +117,7 @@ def main():
         print(f"Exported ONNX model to {onnx_path}")
     except Exception as exc:
         print(f"ONNX export skipped or failed: {exc}")
+
 
 if __name__ == "__main__":
     main()
