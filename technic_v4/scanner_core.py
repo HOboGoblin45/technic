@@ -255,27 +255,29 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     alpha = factor_alpha
     settings = get_settings()
     use_ml_alpha = settings.use_ml_alpha
+    logger.info("[ALPHA] use_ml_alpha=%s", use_ml_alpha)
     ml_alpha = None
     if use_ml_alpha:
         try:
             feature_cols_available = [c for c in factor_cols if c in df.columns]
-            feature_cols_available += [c for c in df.columns if c.startswith("regime_trend_") or c.startswith("regime_vol_")]
+            feature_cols_available += [
+                c for c in df.columns
+                if c.startswith("regime_trend_") or c.startswith("regime_vol_")
+            ]
+            logger.info(
+                "[ALPHA] feature_cols_available for ML: %s",
+                feature_cols_available,
+            )
             ml_alpha = alpha_inference.score_alpha(df[feature_cols_available])
         except Exception:
+            logger.warning("[ALPHA] error calling score_alpha", exc_info=True)
             ml_alpha = None
         if ml_alpha is not None and not ml_alpha.empty:
             ml_alpha_z = zscore(ml_alpha)
             alpha = 0.5 * factor_alpha + 0.5 * ml_alpha_z
             logger.info("[ALPHA] ML alpha blended with factor alpha")
-
-    # Optional deep alpha blend
-    use_deep_alpha = settings.use_deep_alpha
-    if use_deep_alpha and "alpha_deep" in df.columns:
-        deep_series = df["alpha_deep"]
-        if deep_series.notna().any():
-            deep_z = zscore(deep_series.fillna(deep_series.mean()))
-            alpha = 0.5 * alpha + 0.5 * deep_z
-            logger.info("[ALPHA] Deep alpha blended with existing alpha")
+        else:
+            logger.info("[ALPHA] ML alpha missing or empty, skipping blend")
 
     # Optional meta alpha
     use_meta = settings.use_meta_alpha

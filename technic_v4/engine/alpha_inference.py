@@ -119,37 +119,42 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
     the exact columns the model was trained on. If any are missing, we log and
     return None so the caller can fall back to factor-only alpha.
     """
-    # Load the trained XGB bundle (model + feature list)
+    logger.info(
+        "[ALPHA] score_alpha called with shape=%s columns=%s",
+        df_features.shape,
+        list(df_features.columns),
+    )
+
     try:
         bundle = load_xgb_bundle()
     except FileNotFoundError:
-        logger.warning("[alpha] XGB bundle not found at %s; returning None", _XGB_MODEL_PATH)
+        logger.warning("[ALPHA] XGB bundle not found at %s; returning None", _XGB_MODEL_PATH)
         return None
     except Exception:
-        logger.warning("[alpha] failed to load XGB bundle", exc_info=True)
+        logger.warning("[ALPHA] failed to load XGB bundle", exc_info=True)
         return None
 
     model = bundle.get("model")
     feature_cols = bundle.get("features") or []
 
     if model is None or not feature_cols:
-        logger.warning("[alpha] XGB bundle missing model or feature list")
+        logger.warning("[ALPHA] XGB bundle missing model or feature list")
         return None
 
     # Ensure all training features are present; if not, log and return None
     missing = [c for c in feature_cols if c not in df_features.columns]
     if missing:
-        logger.warning("[alpha] missing feature columns for XGB model: %s", missing)
+        logger.warning("[ALPHA] missing feature columns for XGB model: %s", missing)
         return None
 
-    # Build X in the same feature order as training
     X = df_features[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     try:
         preds = model.predict(X)
+        logger.info("[ALPHA] XGB prediction succeeded, first few=%s", preds[:5])
         return pd.Series(preds, index=df_features.index)
     except Exception:
-        logger.warning("[alpha] XGB prediction failed", exc_info=True)
+        logger.warning("[ALPHA] XGB prediction failed", exc_info=True)
         return None
 
 
