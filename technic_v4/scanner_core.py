@@ -155,6 +155,10 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     if df.empty:
         return df
 
+    # Log settings up front so we can see what the app believes
+    settings = get_settings()
+    logger.info("[ALPHA] settings.use_ml_alpha=%s", settings.use_ml_alpha)
+
     factor_cols = [
         "Ret_5",
         "Ret_21",
@@ -194,6 +198,7 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     ]
     available = [c for c in factor_cols if c in df.columns]
     if not available:
+        logger.info("[ALPHA] no factor columns available; skipping alpha blend")
         return df
 
     zed = pd.DataFrame({c: zscore(df[c]) for c in available})
@@ -254,25 +259,21 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     # Optional ML alpha blend
     alpha = factor_alpha
     settings = get_settings()
+    logger.info("[ALPHA] settings.use_ml_alpha=%s", settings.use_ml_alpha)
     use_ml_alpha = settings.use_ml_alpha
-    logger.info("[ALPHA] use_ml_alpha=%s", use_ml_alpha)
     ml_alpha = None
+
     if use_ml_alpha:
         try:
-            feature_cols_available = [c for c in factor_cols if c in df.columns]
-            feature_cols_available += [
-                c for c in df.columns
-                if c.startswith("regime_trend_") or c.startswith("regime_vol_")
-            ]
-            logger.info(
-                "[ALPHA] feature_cols_available for ML: %s",
-                feature_cols_available,
-            )
-            ml_alpha = alpha_inference.score_alpha(df[feature_cols_available])
+            # Pass the full feature frame to score_alpha; it will select the
+            # exact training feature set from the bundle.
+            ml_alpha = alpha_inference.score_alpha(df)
         except Exception:
             logger.warning("[ALPHA] error calling score_alpha", exc_info=True)
             ml_alpha = None
+
         if ml_alpha is not None and not ml_alpha.empty:
+            # Normalize ML alpha and blend with factor alpha
             ml_alpha_z = zscore(ml_alpha)
             alpha = 0.5 * factor_alpha + 0.5 * ml_alpha_z
             logger.info("[ALPHA] ML alpha blended with factor alpha")
