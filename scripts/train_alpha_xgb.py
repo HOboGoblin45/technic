@@ -1,6 +1,7 @@
 import os
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
@@ -17,9 +18,18 @@ def main():
         raise FileNotFoundError(f"Training data not found at {TRAIN_PATH}")
 
     df = pd.read_parquet(TRAIN_PATH)
+    if df.empty:
+        raise ValueError(f"Training data at {TRAIN_PATH} has 0 rows; cannot train.")
+
+    # Drop rows without labels
     df = df.dropna(subset=["fwd_ret_5d"])
 
-    feature_cols = [c for c in df.columns if c not in EXCLUDE_COLS]
+    # Use numeric columns as features, excluding IDs and target
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    feature_cols = [c for c in numeric_cols if c not in EXCLUDE_COLS]
+
+    if not feature_cols:
+        raise ValueError("No numeric feature columns found for training.")
 
     X = df[feature_cols].fillna(0.0)
     y = df["fwd_ret_5d"]
@@ -38,7 +48,7 @@ def main():
         n_jobs=-1,
     )
 
-    print("Training XGB model...")
+    print(f"Training XGB model on {len(feature_cols)} features and {len(X_train)} rows...")
     model.fit(X_train, y_train)
 
     y_pred = model.predict(X_val)
