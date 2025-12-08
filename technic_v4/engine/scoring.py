@@ -156,7 +156,8 @@ def compute_scores(
     # Backward-compatible ATR fields
     if "Close" in out and pd.notna(atr):
         out["ATR14_pct"] = float(atr)
-        out["ATR14"] = (atr * out["Close"]).iloc[-1]
+        atr_series = atr * out["Close"]
+        out["ATR14"] = atr_series.iloc[-1]
 
     out["TrendScore"] = trend
     out["MomentumScore"] = momentum
