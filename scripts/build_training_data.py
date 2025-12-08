@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
         "--fwd-days",
         type=int,
         default=DEFAULT_FWD_DAYS,
-        help="Forward horizon in trading days for the label (fwd_ret_5d).",
+        help="Forward horizon in trading days for the primary label (fwd_ret_5d).",
     )
     p.add_argument(
         "--trade-style",
@@ -78,13 +78,15 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
 
     print(f"Building training data for {len(symbols)} symbols (max_symbols={args.max_symbols})")
 
-    # We will compute both 5d and 10d forward returns; use the larger horizon for loop bounds
-    max_fwd_days = max(args.fwd_days, 10)
+    # We'll always compute both 5d and 10d; use the larger horizon for loop bounds
+    fwd_5 = args.fwd_days
+    fwd_10 = 10
+    max_fwd_days = max(fwd_5, fwd_10)
 
     for symbol in symbols:
         print(f"Processing {symbol}...")
 
-        # Pull enough daily history for lookback + forward window
+        # Pull enough daily history for lookback + max forward window
         days = max(args.lookback_days + max_fwd_days + 50, 300)
         hist = data_engine.get_price_history(symbol, days=days, freq="daily")
         if hist is None or hist.empty:
@@ -116,13 +118,14 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
             if scored is None or scored.empty:
                 continue
 
+            # latest scored row corresponds to the as-of date
             as_of_row = scored.iloc[-1]
 
-            # As-of close and forward closes
+            # as-of date and forward closes
             as_of_close = float(window["Close"].iloc[-1])
 
-            idx_5 = idx + args.fwd_days
-            idx_10 = idx + 10
+            idx_5 = idx + fwd_5
+            idx_10 = idx + fwd_10
 
             # Safety: ensure both forward indices are in range
             if idx_5 >= n_hist or idx_10 >= n_hist:

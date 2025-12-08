@@ -40,7 +40,7 @@ class Settings:
     alpha_model_name: Optional[str] = field(default=None)
 
     # Alpha blending weight (0..1) for factor vs ML alpha
-    alpha_weight: float = field(default=0.5)
+    alpha_weight: float = field(default=0.35)
 
     # Parallelism control for thread-pool scans
     max_workers: int = field(default=6)
