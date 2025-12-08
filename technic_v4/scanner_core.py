@@ -885,6 +885,11 @@ def _finalize_results(
         # Add to MuTotal or TechRating to slightly tilt toward stable names
         results_df["MuTotal"] = results_df["MuTotal"] + stable_boost - explosive_penalty
 
+    # Mark ultra-high-risk names for a separate "Runners" list
+    if "risk_score" in results_df.columns:
+        ultra_risky_mask = results_df["risk_score"] < 0.03
+        results_df["IsUltraRisky"] = ultra_risky_mask
+
     # Risk-adjusted sorting + diversification fallback
     vol_col = "vol_realized_20" if "vol_realized_20" in results_df.columns else None
     results_df = risk_adjusted_rank(

@@ -66,7 +66,9 @@ def main():
 
     # Use numeric columns as features, excluding IDs and label
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    EXCLUDE_COLS = [label_col, "symbol", "as_of_date"]
+
+    # Always exclude IDs + all forward-return labels
+    EXCLUDE_COLS = {"symbol", "as_of_date", "fwd_ret_5d", "fwd_ret_10d", label_col}
     feature_cols = [c for c in numeric_cols if c not in EXCLUDE_COLS]
 
     if not feature_cols:
