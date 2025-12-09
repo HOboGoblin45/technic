@@ -1189,7 +1189,11 @@ def _finalize_results(
     history_dir = OUTPUT_DIR / "history"
     history_dir.mkdir(exist_ok=True)
     hist_path = history_dir / f"scan_{datetime.utcnow().date()}.csv"
-    results_df.to_csv(hist_path, index=False)
+    try:
+        results_df.to_csv(hist_path, index=False)
+        logger.info("[OUTPUT] Wrote historical snapshot to: %s", hist_path)
+    except Exception:
+        logger.warning("[OUTPUT ERROR] Failed to write historical snapshot CSV", exc_info=True)
 
     # Save CSV
     output_path = OUTPUT_DIR / "technic_scan_results.csv"
