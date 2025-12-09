@@ -1,4 +1,4 @@
-from __future__ import annotations
+ï»¿from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -833,7 +833,7 @@ def _finalize_results(
         results_df["DollarVolume"] = results_df["Close"] * results_df["Volume"]
 
         # Minimum liquidity filter (institution-grade)
-        MIN_DOLLAR_VOL = 5_000_000  # $5M/day minimum
+        MIN_DOLLAR_VOL = 3_000_000  # $3M/day minimum
         results_df = results_df[results_df["DollarVolume"] >= MIN_DOLLAR_VOL]
 
     # Price filter ? investors don't want sub-$5 stocks
@@ -848,7 +848,7 @@ def _finalize_results(
 
     # ATR% ceiling ? block high-volatility junk
         if "ATR14_pct" in results_df.columns:
-            results_df = results_df[results_df["ATR14_pct"] <= 0.15]  # max 15% ATR%
+            results_df = results_df[results_df["ATR14_pct"] <= 0.20]  # max 20% ATR%
 
     # ---------------------------------------------
     # Sort strictly by TechRating before diversification
@@ -965,7 +965,7 @@ def _finalize_results(
     # --------------------------------------------
     # Institutional Core Score (ICS)
     # Combines TechRating, alpha, sector-neutral alpha,
-    # stability, and liquidity into a 0–100 score.
+    # stability, and liquidity into a 0ï¿½100 score.
     # --------------------------------------------
     try:
         # 1) Cross-sectional TechRating percentile
@@ -974,13 +974,13 @@ def _finalize_results(
         else:
             tech_pct = pd.Series(0.0, index=results_df.index)
 
-        # 2) Global alpha percentile (0–1)
+        # 2) Global alpha percentile (0ï¿½1)
         alpha_pct = (
             results_df.get("AlphaScorePct", pd.Series(index=results_df.index, dtype=float))
             .fillna(0.0) / 100.0
         )
 
-        # 3) Sector-neutral alpha percentile (0–1)
+        # 3) Sector-neutral alpha percentile (0ï¿½1)
         sector_alpha_pct = (
             results_df.get("SectorAlphaPct", pd.Series(index=results_df.index, dtype=float))
             .fillna(0.0) / 100.0
@@ -989,7 +989,7 @@ def _finalize_results(
         # 4) Stability term: Stable=1, else 0
         stability_term = results_df.get("IsStable", False).astype(float)
 
-        # 5) Liquidity term: cross-sectional dollar volume percentile (0–1)
+        # 5) Liquidity term: cross-sectional dollar volume percentile (0ï¿½1)
         if "DollarVolume" in results_df.columns:
             dv = pd.to_numeric(results_df["DollarVolume"], errors="coerce")
             liquidity_term = dv.rank(pct=True).fillna(0.0)
@@ -997,9 +997,9 @@ def _finalize_results(
             liquidity_term = pd.Series(0.0, index=results_df.index)
 
         core_score = (
-            0.40 * tech_pct +          # core technical quality
-            0.25 * alpha_pct +         # ML / alpha strength
-            0.15 * sector_alpha_pct +  # sector-relative strength
+            0.30 * tech_pct +          # core technical quality
+            0.20 * alpha_pct +         # ML / alpha strength
+            0.25 * sector_alpha_pct +  # sector-relative strength
             0.10 * stability_term +    # stability preference
             0.10 * liquidity_term      # liquidity quality
         )
@@ -1017,8 +1017,17 @@ def _finalize_results(
     if risk_col is None and "RiskScore" in results_df.columns:
         risk_col = "RiskScore"
 
+    # --------------------------------------------
+    # Sector crowding penalty (diversification boost)
+    # --------------------------------------------
+    if "Sector" in results_df.columns:
+        sector_counts = results_df["Sector"].value_counts(normalize=True)
+        penalty_map = (1 - sector_counts).to_dict()  # crowded sectors get lower score
+        results_df["SectorPenalty"] = results_df["Sector"].map(penalty_map).fillna(1.0)
+        results_df["InstitutionalCoreScore"] *= results_df["SectorPenalty"]
+
     if risk_col:
-        ultra_risky_mask = pd.to_numeric(results_df[risk_col], errors="coerce") < 0.12
+        ultra_risky_mask = pd.to_numeric(results_df[risk_col], errors="coerce") < 0.08
         results_df["IsUltraRisky"] = ultra_risky_mask.fillna(False)
     else:
         results_df["IsUltraRisky"] = False
@@ -1153,6 +1162,14 @@ def _finalize_results(
         logger.info("=====================")
     except Exception:
         pass
+
+    # --------------------------------------------
+    # Save daily historical snapshot for backtesting
+    # --------------------------------------------
+    history_dir = OUTPUT_DIR / "history"
+    history_dir.mkdir(exist_ok=True)
+    hist_path = history_dir / f"scan_{datetime.utcnow().date()}.csv"
+    results_df.to_csv(hist_path, index=False)
 
     # Save CSV
     output_path = OUTPUT_DIR / "technic_scan_results.csv"
