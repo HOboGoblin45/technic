@@ -139,14 +139,23 @@ def backtest_ics_buckets(
 
     fwd_df = pd.DataFrame(fwd_rows)
 
-    # Drop rows with missing ICS or all NaN returns
+    # Drop rows with missing ICS
     mask_valid = fwd_df["InstitutionalCoreScore"].notna()
-    for d in horizons:
-        mask_valid &= fwd_df[f"fwd_ret_{d}d"].notna()
-
     fwd_df = fwd_df[mask_valid]
+
+    # Require at least one forward horizon to be non-NaN for each row
+    if not fwd_df.empty:
+        horizon_cols = [f"fwd_ret_{d}d" for d in horizons]
+        # keep row if it has a valid return in ANY horizon
+        any_valid = fwd_df[horizon_cols].notna().any(axis=1)
+        fwd_df = fwd_df[any_valid]
+
     if fwd_df.empty:
-        raise ValueError("No valid rows with both ICS and forward returns.")
+        print(
+            "Backtest: no rows yet with both ICS and realized forward returns.\n"
+            "This is expected if your scan dates are too recent relative to the chosen horizons."
+        )
+        return pd.DataFrame()
 
     # Bucket by ICS into quantiles
     fwd_df["ICS_bucket"] = pd.qcut(
@@ -172,6 +181,11 @@ def main():
 
     horizons = [5, 10, 21]
     result = backtest_ics_buckets(history_df, horizons=horizons, n_buckets=5)
+
+    if result is None or result.empty:
+        print("\nNo backtest results yet. "
+              "You need older scan history and/or shorter forward horizons.")
+        return
 
     print("\nAverage realized forward returns by ICS bucket:")
     print("(Bucket 0 = lowest ICS, highest = best ideas)")
