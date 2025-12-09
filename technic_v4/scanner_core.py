@@ -1,4 +1,4 @@
-ï»¿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -780,7 +780,7 @@ def _finalize_results(
         # For downstream consumers that expect AlphaScore, fall back to TechRating
         results_df.loc[:, "AlphaScore"] = results_df["TechRating"]
 
-    # Cross-sectional alpha percentile (0ï¿½100) for UI / ranking
+    # Cross-sectional alpha percentile (0?100) for UI / ranking
     if "AlphaScorePct" not in results_df.columns:
         alpha_source = None
         if results_df["AlphaScore"].notna().any():
@@ -793,6 +793,38 @@ def _finalize_results(
         else:
             results_df["AlphaScorePct"] = np.nan
 
+    # --------------------------------------------
+    # Sector-neutral alpha normalization
+    # --------------------------------------------
+    if "Sector" in results_df.columns:
+        try:
+            # Choose alpha source: AlphaScore preferred, fallback to MuTotal
+            alpha_for_sector = None
+            if "AlphaScore" in results_df.columns and results_df["AlphaScore"].notna().any():
+                alpha_for_sector = pd.to_numeric(results_df["AlphaScore"], errors="coerce")
+            elif "MuTotal" in results_df.columns and results_df["MuTotal"].notna().any():
+                alpha_for_sector = pd.to_numeric(results_df["MuTotal"], errors="coerce")
+
+            if alpha_for_sector is not None and alpha_for_sector.notna().any():
+                tmp = results_df.copy()
+                tmp["__alpha_sector"] = alpha_for_sector
+                tmp["__sector_key"] = tmp["Sector"].fillna("UNK")
+
+                sector_ranks = (
+                    tmp.groupby("__sector_key")["__alpha_sector"]
+                    .rank(pct=True)
+                    .fillna(0.0)
+                    * 100.0
+                )
+
+                results_df["SectorAlphaPct"] = sector_ranks
+            else:
+                results_df["SectorAlphaPct"] = np.nan
+        except Exception:
+            results_df["SectorAlphaPct"] = np.nan
+    else:
+        results_df["SectorAlphaPct"] = np.nan
+
     # ============================
     # INSTITUTIONAL FILTERS v1
     # ============================
@@ -804,7 +836,7 @@ def _finalize_results(
         MIN_DOLLAR_VOL = 5_000_000  # $5M/day minimum
         results_df = results_df[results_df["DollarVolume"] >= MIN_DOLLAR_VOL]
 
-    # Price filter ï¿½ investors don't want sub-$5 stocks
+    # Price filter ? investors don't want sub-$5 stocks
     if "Close" in results_df.columns:
         results_df = results_df[results_df["Close"] >= 5.00]
 
@@ -812,9 +844,9 @@ def _finalize_results(
     if "market_cap" in results_df.columns:
         results_df = results_df[results_df["market_cap"] >= 300_000_000]  # $300M minimum
     else:
-        print("WARNING: market_cap missing ï¿½ add it in feature_engine.py")
+        print("WARNING: market_cap missing ? add it in feature_engine.py")
 
-    # ATR% ceiling ï¿½ block high-volatility junk
+    # ATR% ceiling ? block high-volatility junk
         if "ATR14_pct" in results_df.columns:
             results_df = results_df[results_df["ATR14_pct"] <= 0.15]  # max 15% ATR%
 
@@ -929,6 +961,56 @@ def _finalize_results(
 
         # Add to MuTotal or TechRating to slightly tilt toward stable names
         results_df["MuTotal"] = results_df["MuTotal"] + stable_boost - explosive_penalty
+
+    # --------------------------------------------
+    # Institutional Core Score (ICS)
+    # Combines TechRating, alpha, sector-neutral alpha,
+    # stability, and liquidity into a 0–100 score.
+    # --------------------------------------------
+    try:
+        # 1) Cross-sectional TechRating percentile
+        if "TechRating" in results_df.columns:
+            tech_pct = results_df["TechRating"].rank(pct=True).fillna(0.0)
+        else:
+            tech_pct = pd.Series(0.0, index=results_df.index)
+
+        # 2) Global alpha percentile (0–1)
+        alpha_pct = (
+            results_df.get("AlphaScorePct", pd.Series(index=results_df.index, dtype=float))
+            .fillna(0.0) / 100.0
+        )
+
+        # 3) Sector-neutral alpha percentile (0–1)
+        sector_alpha_pct = (
+            results_df.get("SectorAlphaPct", pd.Series(index=results_df.index, dtype=float))
+            .fillna(0.0) / 100.0
+        )
+
+        # 4) Stability term: Stable=1, else 0
+        stability_term = results_df.get("IsStable", False).astype(float)
+
+        # 5) Liquidity term: cross-sectional dollar volume percentile (0–1)
+        if "DollarVolume" in results_df.columns:
+            dv = pd.to_numeric(results_df["DollarVolume"], errors="coerce")
+            liquidity_term = dv.rank(pct=True).fillna(0.0)
+        else:
+            liquidity_term = pd.Series(0.0, index=results_df.index)
+
+        core_score = (
+            0.40 * tech_pct +          # core technical quality
+            0.25 * alpha_pct +         # ML / alpha strength
+            0.15 * sector_alpha_pct +  # sector-relative strength
+            0.10 * stability_term +    # stability preference
+            0.10 * liquidity_term      # liquidity quality
+        )
+
+        results_df["InstitutionalCoreScore"] = (core_score * 100.0).clip(0, 100)
+    except Exception:
+        # Fallback: use TechRating if anything goes wrong
+        if "TechRating" in results_df.columns:
+            results_df["InstitutionalCoreScore"] = results_df["TechRating"]
+        else:
+            results_df["InstitutionalCoreScore"] = 0.0
 
     # Mark ultra-high-risk names for a separate "Runners" list
     risk_col = "risk_score" if "risk_score" in results_df.columns else None
@@ -1282,4 +1364,5 @@ if __name__ == "__main__":
     df, msg = run_scan()
     logger.info(msg)
     logger.info(df.head())
+
 
