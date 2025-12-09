@@ -181,55 +181,61 @@ def _score_with_bundle(
         logger.warning("[ALPHA] %s XGB prediction failed", label, exc_info=True)
         return None
 
-
-def score_alpha(df: pd.DataFrame) -> Optional[pd.Series]:
+def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
     """
-    Score 5d forward-return alpha using the local XGB bundle.
-
-    Returns a pd.Series aligned to df.index or None on failure.
+    Score ML alpha (5-day horizon) using the local XGB bundle (models/alpha/xgb_v1.pkl).
+    This assumes df_features already contains the feature columns referenced by the bundle.
     """
-    if df is None or df.empty:
+    if df_features is None or df_features.empty:
         return None
+
+    logger.info(
+        "[ALPHA] score_alpha called with shape=%s columns=%s",
+        df_features.shape,
+        list(df_features.columns),
+    )
+
     try:
         bundle = load_xgb_bundle_5d()
-    except Exception as exc:
-        logger.warning("[ALPHA] 5d XGB bundle load failed: %s", exc, exc_info=True)
+    except FileNotFoundError:
+        logger.warning(
+            "[ALPHA] XGB 5d bundle not found at %s; returning None", _XGB_MODEL_PATH_5D
+        )
+        return None
+    except Exception:
+        logger.warning("[ALPHA] failed to load 5d XGB bundle", exc_info=True)
         return None
 
-    try:
-        feats = inference_engine.build_alpha_features(df)
-        scores = _score_with_bundle(feats, bundle, label="5d")
-        return scores
-    except Exception as exc:
-        logger.warning("[ALPHA] 5d alpha scoring failed: %s", exc, exc_info=True)
-        return None
+    return _score_with_bundle(df_features, bundle, label="5d")
 
 
-def score_alpha_10d(df: pd.DataFrame) -> Optional[pd.Series]:
+def score_alpha_10d(df_features: pd.DataFrame) -> Optional[pd.Series]:
     """
-    Score 10d forward-return alpha using the local XGB bundle.
-
-    Returns a pd.Series aligned to df.index or None on failure.
+    Score ML alpha (10-day horizon) using a second XGB bundle (models/alpha/xgb_v1_10d.pkl).
+    Returns None if the model is missing or prediction fails.
     """
-    if df is None or df.empty:
+    if df_features is None or df_features.empty:
         return None
+
+    logger.info(
+        "[ALPHA] score_alpha_10d called with shape=%s columns=%s",
+        df_features.shape,
+        list(df_features.columns),
+    )
+
     try:
         bundle = load_xgb_bundle_10d()
     except FileNotFoundError:
-        # 10d model is optional; just skip if missing.
-        logger.info("[ALPHA] 10d XGB bundle not found; skipping 10d ML alpha.")
+        logger.info(
+            "[ALPHA] XGB 10d bundle not found at %s; skipping 10d alpha",
+            _XGB_MODEL_PATH_10D,
+        )
         return None
-    except Exception as exc:
-        logger.warning("[ALPHA] 10d XGB bundle load failed: %s", exc, exc_info=True)
+    except Exception:
+        logger.warning("[ALPHA] failed to load 10d XGB bundle", exc_info=True)
         return None
 
-    try:
-        feats = inference_engine.build_alpha_features(df)
-        scores = _score_with_bundle(feats, bundle, label="10d")
-        return scores
-    except Exception as exc:
-        logger.warning("[ALPHA] 10d alpha scoring failed: %s", exc, exc_info=True)
-        return None
+    return _score_with_bundle(df_features, bundle, label="10d")
 
 # -------------------------------
 # Meta alpha
