@@ -12,6 +12,8 @@ from typing import Optional, Any, Dict
 import numpy as np
 import pandas as pd
 
+from technic_v4 import data_engine
+
 try:  # talib may be unavailable; degrade gracefully
     import talib
 
@@ -123,17 +125,24 @@ def build_features(
     feats["value_ep"] = raw_f.get("earnings_yield") or raw_f.get("ep")
     feats["quality_roe"] = raw_f.get("return_on_equity") or raw_f.get("roe")
 
-    # Market-cap ingestion (Polygon)
-    try:
-        mkt_details = data_engine.get_ticker_details(raw_f.get("symbol", ""))
-        if "market_cap" in mkt_details:
-            feats["market_cap"] = mkt_details["market_cap"]
-        elif hasattr(fundamentals, "raw") and "market_cap" in fundamentals.raw:
-            feats["market_cap"] = fundamentals.raw["market_cap"]
-        else:
-            print("WARNING: market_cap missing for", raw_f.get("symbol"))
-    except Exception:
-        print("WARNING: market_cap lookup failed for", raw_f.get("symbol"))
+            # Market-cap ingestion (Polygon)
+    if "market_cap" not in feats:
+        symbol = raw_f.get("symbol") or "<UNKNOWN>"
+        try:
+            # Prefer Polygon ticker details if available
+            mkt_details = data_engine.get_ticker_details(symbol) if symbol and symbol != "<UNKNOWN>" else {}
+            if mkt_details and "market_cap" in mkt_details:
+                feats["market_cap"] = mkt_details["market_cap"]
+            elif hasattr(fundamentals, "columns") and "market_cap" in fundamentals.columns:  # type: ignore[attr-defined]
+                feats["market_cap"] = fundamentals["market_cap"]  # type: ignore[index]
+            elif hasattr(fundamentals, "raw") and "market_cap" in getattr(fundamentals, "raw", {}):
+                feats["market_cap"] = fundamentals.raw["market_cap"]
+            elif isinstance(raw_f, dict) and "market_cap" in raw_f:
+                feats["market_cap"] = raw_f.get("market_cap")
+            else:
+                print("WARNING: market_cap missing for", symbol)
+        except Exception:
+            print("WARNING: market_cap lookup failed for", symbol)
 
     # Optional TFT multi-horizon forecasts
     settings = get_settings()
@@ -170,3 +179,5 @@ def merge_tft_features(results_df: pd.DataFrame, tft_features: pd.DataFrame) -> 
 
 
 __all__ = ["build_features", "get_latest_features", "merge_tft_features"]
+
+
