@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover
 from technic_v4.data_layer.fundamentals import FundamentalsSnapshot
 from technic_v4.config.settings import get_settings
 from technic_v4.alpha import tft_inference
-
+from technic_v4 import data_engine
 
 def _safe_series(df: pd.DataFrame, col: str) -> pd.Series:
     return df[col] if col in df.columns else pd.Series(dtype=float)
@@ -124,16 +124,16 @@ def build_features(
     feats["quality_roe"] = raw_f.get("return_on_equity") or raw_f.get("roe")
 
     # Market-cap ingestion (Polygon)
-    if "market_cap" not in feats:
-        try:
-            if hasattr(fundamentals, "columns") and "market_cap" in fundamentals.columns:  # type: ignore[attr-defined]
-                feats["market_cap"] = fundamentals["market_cap"]  # type: ignore[index]
-            elif isinstance(raw_f, dict) and "market_cap" in raw_f:
-                feats["market_cap"] = raw_f.get("market_cap")
-            else:
-                print("WARNING: market_cap missing from Polygon fundamentals")
-        except Exception:
-            print("WARNING: market_cap missing from Polygon fundamentals")
+    try:
+        mkt_details = data_engine.get_ticker_details(raw_f.get("symbol", ""))
+        if "market_cap" in mkt_details:
+            feats["market_cap"] = mkt_details["market_cap"]
+        elif hasattr(fundamentals, "raw") and "market_cap" in fundamentals.raw:
+            feats["market_cap"] = fundamentals.raw["market_cap"]
+        else:
+            print("WARNING: market_cap missing for", raw_f.get("symbol"))
+    except Exception:
+        print("WARNING: market_cap lookup failed for", raw_f.get("symbol"))
 
     # Optional TFT multi-horizon forecasts
     settings = get_settings()

@@ -6,6 +6,8 @@ from datetime import date
 from typing import Optional
 
 import pandas as pd
+import requests
+from technic_v4.config import POLYGON_API_KEY
 
 from technic_v4.data_layer.market_cache import MarketCache
 from technic_v4.data_layer.price_layer import get_stock_history_df as _price_history
@@ -109,6 +111,30 @@ def get_price_history(symbol: str, days: int, freq: str = "daily") -> pd.DataFra
         logger.error("[data_engine] unexpected price history error for %s", symbol, exc_info=True)
         return pd.DataFrame()
 
+def get_ticker_details(symbol: str) -> dict:
+    """
+    Fetch Polygon ticker details including market_cap.
+    Returns the raw 'results' dict or {} on failure.
+    """
+    api_key = POLYGON_API_KEY
+    if not api_key:
+        # No key configured; skip network call
+        return {}
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {}
+
+    try:
+        url = "https://api.polygon.io/v3/reference/tickers/" + sym
+        params = {"apiKey": api_key}
+        resp = requests.get(url, params=params, timeout=5)
+        resp.raise_for_status()
+        data = resp.json() or {}
+        return data.get("results") or {}
+    except Exception as exc:
+        logger.warning("[data_engine] ticker details failed for %s: %s", sym, exc)
+        return {}
 
 def get_fundamentals(symbol: str, as_of_date: Optional[date] = None):
     """Return fundamentals snapshot (latest)."""
@@ -130,4 +156,4 @@ def get_options_chain(symbol: str, as_of_date: Optional[date] = None) -> pd.Data
         return pd.DataFrame()
 
 
-__all__ = ["get_price_history", "get_fundamentals", "get_options_chain"]
+__all__ = ["get_price_history", "get_fundamentals", "get_options_chain", "get_ticker_details"]
