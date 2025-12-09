@@ -887,22 +887,56 @@ def _finalize_results(
 
     # Mark ultra-high-risk names for a separate "Runners" list
     if "risk_score" in results_df.columns:
-        ultra_risky_mask = results_df["risk_score"] < 0.03
-        results_df["IsUltraRisky"] = ultra_risky_mask
+        ultra_risky_mask = pd.to_numeric(results_df["risk_score"], errors="coerce") < 0.03
+        results_df["IsUltraRisky"] = ultra_risky_mask.fillna(False)
+    else:
+        results_df["IsUltraRisky"] = False
 
-    # Risk-adjusted sorting + diversification fallback
-    vol_col = "vol_realized_20" if "vol_realized_20" in results_df.columns else None
-    results_df = risk_adjusted_rank(
-        results_df,
-        return_col="MuTotal",
-        vol_col=vol_col or "TechRating",
-    )
-    sort_col = "risk_score" if "risk_score" in results_df.columns else "TechRating"
-    results_df = results_df.sort_values(sort_col, ascending=False)
-    try:
-        results_df = diversify_by_sector(results_df, sector_col="Sector", score_col=sort_col, top_n=config.max_symbols or 50)
-    except Exception:
-        pass
+    # Remove ultra-risky names from the main candidate pool
+    if "IsUltraRisky" in results_df.columns:
+        main_df = results_df[~results_df["IsUltraRisky"]].copy()
+        runners_df = results_df[results_df["IsUltraRisky"]].copy()
+    else:
+        main_df = results_df.copy()
+        runners_df = pd.DataFrame()
+
+    # Risk-adjusted sorting + diversification fallback on the main list only
+    if not main_df.empty:
+        vol_col = "vol_realized_20" if "vol_realized_20" in main_df.columns else None
+        main_df = risk_adjusted_rank(
+            main_df,
+            return_col="MuTotal",
+            vol_col=vol_col or "TechRating",
+        )
+        sort_col = "risk_score" if "risk_score" in main_df.columns else "TechRating"
+        main_df = main_df.sort_values(sort_col, ascending=False)
+        try:
+            main_df = diversify_by_sector(
+                main_df,
+                sector_col="Sector",
+                score_col=sort_col,
+                top_n=config.max_symbols or 50,
+            )
+        except Exception:
+            pass
+
+    # Optionally save runners to a separate CSV
+    if not runners_df.empty:
+        runners_path = OUTPUT_DIR / "technic_runners.csv"
+        try:
+            runners_df.to_csv(runners_path, index=False)
+            logger.info(
+                "[OUTPUT] Wrote %d ultra-risky runners to %s",
+                len(runners_df),
+                runners_path,
+            )
+        except Exception:
+            logger.warning(
+                "[OUTPUT ERROR] Failed to write runners CSV", exc_info=True
+            )
+
+    # From here on, operate on the filtered main_df as results_df
+    results_df = main_df
 
     # Option picks placeholder (populated upstream when chains are available)
     results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
