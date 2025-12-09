@@ -15,7 +15,8 @@ def _env_bool(name: str, default: bool = False) -> bool:
 @dataclass
 class Settings:
     # ML / model flags
-    use_ml_alpha: bool = field(default=False)
+    # Default ON for ML alpha so the engine behaves like a real quant by default.
+    use_ml_alpha: bool = field(default=True)
     use_meta_alpha: bool = field(default=False)
     use_deep_alpha: bool = field(default=False)
     use_onnx_alpha: bool = field(default=False)
