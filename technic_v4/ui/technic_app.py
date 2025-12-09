@@ -4826,6 +4826,67 @@ if results_df is not None and not results_df.empty:
                     "- **Trend strength (TrendStrength50):** Longer-term trend quality\n"
                     "- **Momentum/Volatility scores:** Composite factors inside TechRating"
                 )
+
+        # Investor Core vs Runners tabs
+        runners_path = Path("technic_v4/scanner_output/technic_runners.csv")
+        if runners_path.exists():
+            try:
+                runners_df = pd.read_csv(runners_path)
+            except Exception:
+                runners_df = pd.DataFrame()
+        else:
+            runners_df = pd.DataFrame()
+
+        core_tab, runners_tab = st.tabs(["Investor Core", "Runners / High-Octane"])
+
+        with core_tab:
+            st.subheader("Investor Core — Institutional-Grade Ideas")
+            if not results_df.empty:
+                core_cols = [
+                    "Symbol",
+                    "Signal",
+                    "InstitutionalCoreScore",
+                    "TechRating",
+                    "AlphaScorePct",
+                    "SectorAlphaPct",
+                    "PlayStyle",
+                    "Close",
+                    "MuTotal",
+                    "DollarVolume",
+                    "Sector",
+                    "Industry",
+                ]
+                core_cols = [c for c in core_cols if c in results_df.columns]
+                if core_cols:
+                    st.dataframe(results_df[core_cols], use_container_width=True)
+                    if "InstitutionalCoreScore" in results_df.columns:
+                        st.caption("Top 20 by Institutional Core Score")
+                        st.dataframe(
+                            results_df.sort_values("InstitutionalCoreScore", ascending=False)
+                            .head(20)[core_cols],
+                            use_container_width=True,
+                        )
+            else:
+                st.info("No investor-core results for this scan.")
+
+        with runners_tab:
+            st.subheader("Runners / Ultra-Risky Names")
+            if runners_df is not None and not runners_df.empty:
+                run_cols = [
+                    "Symbol",
+                    "Signal",
+                    "TechRating",
+                    "AlphaScorePct",
+                    "ExplosivenessScore",
+                    "ATR14_pct",
+                    "Close",
+                    "DollarVolume",
+                    "Sector",
+                ]
+                run_cols = [c for c in run_cols if c in runners_df.columns]
+                st.dataframe(runners_df[run_cols], use_container_width=True)
+            else:
+                st.info("No runners captured in this scan.")
         # Quick alpha/weight view
         if "AlphaScore" in results_df.columns:
             quick_cols = [c for c in ["Symbol", "TechRating", "AlphaScore", "risk_score", "Weight", "Explanation"] if c in results_df.columns]
@@ -5727,4 +5788,5 @@ if results_df is not None and not results_df.empty:
                 "Use the CLI: `python -m scripts.research_lab backtest-strategy --help`."
             )
         st.markdown("</div>", unsafe_allow_html=True)
+
 
