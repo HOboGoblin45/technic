@@ -130,10 +130,12 @@ def compute_scores(
 
     explosiveness = max(0.0, feats.get("ret_5d", 0) or 0)
 
+    # Base risk score from ATR% (roughly 1 - ATR*50)
     risk_score = 1 - (feats.get("atr_pct_14", 0) or 0) * 50
 
+    # --- TechRating v3: risk-aware technical composite -------------------
     weights = load_scoring_weights()
-    tech_rating = (
+    tech_raw = (
         weights.get("trend_weight", 0) * trend
         + weights.get("momentum_weight", 0) * momentum
         + weights.get("volume_weight", 0) * volume_score
@@ -142,21 +144,14 @@ def compute_scores(
         + weights.get("breakout_weight", 0) * breakout_score
     )
 
-    # Institutional penalty for borderline junk
-    penalty = 1.0
-    close_last = float(df["Close"].iloc[-1]) if "Close" in df.columns and len(df) else np.nan
-    dollar_volume_last = (
-        float((df["Close"] * df["Volume"]).iloc[-1])
-        if {"Close", "Volume"}.issubset(df.columns) and len(df)
-        else np.nan
-    )
-    if pd.notna(atr) and atr > 0.12:
-        penalty -= 0.35
-    if pd.notna(close_last) and close_last < 7:
-        penalty -= 0.25
-    if pd.notna(dollar_volume_last) and dollar_volume_last < 10_000_000:
-        penalty -= 0.40
-    tech_rating = tech_rating * penalty
+    # risk_score can drift outside [0,1] for very high ATR; clamp it
+    risk_factor = float(np.clip(risk_score, 0.0, 1.0))
+
+    # Smooth risk scaling:
+    # - Very low volatility (risk_factor ~ 1) → scale ~ 1.0
+    # - Very high volatility (risk_factor ~ 0) → scale ~ 0.7
+    risk_scale = 0.7 + 0.3 * risk_factor
+    tech_rating = tech_raw * risk_scale
 
     # Carry forward price fields needed by trade planner
     if "Close" in df.columns:
@@ -186,8 +181,13 @@ def compute_scores(
     out["RiskScore"] = risk_score
     out["risk_score"] = risk_score
     out["IsUltraRisky"] = bool(risk_score < 0.12)
+
+    # Expose both raw and risk-adjusted TechRating for downstream engines
+    out["TechRating_raw"] = tech_raw
     out["TechRating"] = tech_rating
-    out["AlphaScore"] = tech_rating  # placeholder
+
+    # For now, AlphaScore starts as TechRating; later overridden by ML alpha
+    out["AlphaScore"] = tech_rating
     out["TradeType"] = "None"
 
     return out
