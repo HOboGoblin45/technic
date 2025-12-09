@@ -141,6 +141,22 @@ def compute_scores(
         + weights.get("breakout_weight", 0) * breakout_score
     )
 
+    # Institutional penalty for borderline junk
+    penalty = 1.0
+    close_last = float(df["Close"].iloc[-1]) if "Close" in df.columns and len(df) else np.nan
+    dollar_volume_last = (
+        float((df["Close"] * df["Volume"]).iloc[-1])
+        if {"Close", "Volume"}.issubset(df.columns) and len(df)
+        else np.nan
+    )
+    if pd.notna(atr) and atr > 0.12:
+        penalty -= 0.35
+    if pd.notna(close_last) and close_last < 7:
+        penalty -= 0.25
+    if pd.notna(dollar_volume_last) and dollar_volume_last < 10_000_000:
+        penalty -= 0.40
+    tech_rating = tech_rating * penalty
+
     # Carry forward price fields needed by trade planner
     if "Close" in df.columns:
         out["Close"] = float(df["Close"].iloc[-1])
@@ -167,6 +183,8 @@ def compute_scores(
     out["BreakoutScore"] = breakout_score
     out["ExplosivenessScore"] = explosiveness
     out["RiskScore"] = risk_score
+    out["risk_score"] = risk_score
+    out["IsUltraRisky"] = bool(risk_score < 0.12)
     out["TechRating"] = tech_rating
     out["AlphaScore"] = tech_rating  # placeholder
     out["TradeType"] = "None"
