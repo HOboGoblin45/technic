@@ -751,34 +751,54 @@ def _finalize_results(
     results_df = results_df.copy()
 
     # Alpha / risk scaffolding
-    # MuHat: heuristic tech-based drift
-    results_df["MuHat"] = results_df["TechRating"] / 100.0
+    # --------------------------------------------------
+    # MuHat: heuristic tech-based drift (normalized TechRating)
+    tr = pd.to_numeric(results_df.get("TechRating", np.nan), errors="coerce")
+    # Center around ~15 with a 20-point half-range, then clamp
+    mu_hat = ((tr - 15.0) / 20.0).clip(-0.5, 0.5)
+    results_df["MuHat"] = mu_hat
 
-    # MuMl: ML alpha (raw forward-return prediction)
+    # MuMl: ML-based drift (normalized AlphaScore)
     if "AlphaScore" in results_df.columns:
         alpha_series = pd.to_numeric(results_df["AlphaScore"], errors="coerce")
     else:
         results_df["AlphaScore"] = np.nan
-        alpha_series = pd.Series([np.nan] * len(results_df), index=results_df.index)
+        alpha_series = pd.Series(np.nan, index=results_df.index)
 
     if alpha_series.notna().any():
-        results_df["MuMl"] = alpha_series
+        # Normalize ML alpha into a comparable drift band
+        # Assume AlphaScore is an expected forward return; clip extreme tails
+        mu_ml = alpha_series.clip(-0.25, 0.25)
+        results_df["MuMl"] = mu_ml
 
-        # Blend heuristic and ML drift using TECHNIC_ALPHA_WEIGHT
-        w_mu = getattr(settings, "alpha_weight", 0.5)
+        # Regime-aware blend of MuHat and MuMl
+        base_w_mu = getattr(settings, "alpha_weight", 0.35)
         try:
-            w_mu = float(w_mu)
+            base_w_mu = float(base_w_mu)
         except Exception:
-            w_mu = 0.5
-        w_mu = max(0.0, min(1.0, w_mu))
+            base_w_mu = 0.35
+        base_w_mu = max(0.0, min(1.0, base_w_mu))
 
-        results_df["MuTotal"] = (1.0 - w_mu) * results_df["MuHat"] + w_mu * results_df["MuMl"]
+        # Adjust ML weight based on market regime if available
+        w_mu = base_w_mu
+        if regime_tags:
+            trend = str(regime_tags.get("trend") or "").upper()
+            vol = str(regime_tags.get("vol") or "").upper()
+
+            # In steady uptrends with low vol, trust ML a bit more
+            if trend == "TRENDING_UP" and vol == "LOW_VOL":
+                w_mu = min(1.0, base_w_mu + 0.15)
+            # In high-vol regimes, lean a bit more on technicals
+            elif vol == "HIGH_VOL":
+                w_mu = max(0.0, base_w_mu - 0.10)
+
+        results_df["MuTotal"] = (1.0 - w_mu) * mu_hat + w_mu * mu_ml
     else:
-        # No ML alpha available
+        # No ML alpha available; drift = tech-only
         results_df["MuMl"] = np.nan
-        results_df["MuTotal"] = results_df["MuHat"]
+        results_df["MuTotal"] = mu_hat
         # For downstream consumers that expect AlphaScore, fall back to TechRating
-        results_df.loc[:, "AlphaScore"] = results_df["TechRating"]
+        results_df.loc[:, "AlphaScore"] = results_df.get("TechRating", np.nan)
 
     # Cross-sectional alpha percentile (0?100) for UI / ranking
     if "AlphaScorePct" not in results_df.columns:
