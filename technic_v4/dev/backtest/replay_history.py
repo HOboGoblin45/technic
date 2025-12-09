@@ -16,6 +16,13 @@ from typing import Dict, Iterable, List, Optional
 import numpy as np
 import pandas as pd
 
+# Ensure project root on sys.path for direct script execution
+import sys
+
+ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from technic_v4 import data_engine
 from technic_v4.engine.scoring import compute_scores
 from technic_v4.scanner_core import _passes_basic_filters
