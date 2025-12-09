@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+import numpy as np
 
 from technic_v4.engine import feature_engine
 from technic_v4.data_layer.fundamentals import FundamentalsSnapshot

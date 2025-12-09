@@ -780,7 +780,7 @@ def _finalize_results(
         # For downstream consumers that expect AlphaScore, fall back to TechRating
         results_df.loc[:, "AlphaScore"] = results_df["TechRating"]
 
-    # Cross-sectional alpha percentile (0–100) for UI / ranking
+    # Cross-sectional alpha percentile (0�100) for UI / ranking
     if "AlphaScorePct" not in results_df.columns:
         alpha_source = None
         if results_df["AlphaScore"].notna().any():
@@ -804,7 +804,7 @@ def _finalize_results(
         MIN_DOLLAR_VOL = 5_000_000  # $5M/day minimum
         results_df = results_df[results_df["DollarVolume"] >= MIN_DOLLAR_VOL]
 
-    # Price filter — investors don't want sub-$5 stocks
+    # Price filter � investors don't want sub-$5 stocks
     if "Close" in results_df.columns:
         results_df = results_df[results_df["Close"] >= 5.00]
 
@@ -812,11 +812,18 @@ def _finalize_results(
     if "market_cap" in results_df.columns:
         results_df = results_df[results_df["market_cap"] >= 300_000_000]  # $300M minimum
     else:
-        print("WARNING: market_cap missing – add it in feature_engine.py")
+        print("WARNING: market_cap missing � add it in feature_engine.py")
 
-    # ATR% ceiling — block high-volatility junk
-    if "ATR14_pct" in results_df.columns:
-        results_df = results_df[results_df["ATR14_pct"] <= 0.15]  # max 15% ATR%
+    # ATR% ceiling � block high-volatility junk
+        if "ATR14_pct" in results_df.columns:
+            results_df = results_df[results_df["ATR14_pct"] <= 0.15]  # max 15% ATR%
+
+    # ---------------------------------------------
+    # Sort strictly by TechRating before diversification
+    # Ensures top-quality setups dominate the top ranks
+    # ---------------------------------------------
+    if "TechRating" in results_df.columns:
+        results_df = results_df.sort_values("TechRating", ascending=False).copy()
     if regime_tags:
         results_df["RegimeTrend"] = regime_tags.get("trend")
         results_df["RegimeVol"] = regime_tags.get("vol")
@@ -898,7 +905,7 @@ def _finalize_results(
         if vol_val is not None and vol_val >= 1.5:
             is_explosive = True
         if a5_val is not None and a10_val is not None:
-            # Large disagreement between horizons → volatile / uncertain
+            # Large disagreement between horizons ? volatile / uncertain
             if abs(a5_val - a10_val) >= 0.02:
                 is_explosive = True
 
@@ -1275,3 +1282,4 @@ if __name__ == "__main__":
     df, msg = run_scan()
     logger.info(msg)
     logger.info(df.head())
+
