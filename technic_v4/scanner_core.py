@@ -337,6 +337,19 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     else:
         logger.info("[ALPHA] using factor_alpha only (no ML alpha)")
 
+    # Liquidity-based alpha adjustment (downweight thin names)
+    if "DollarVolume" not in df.columns and {"Close", "Volume"}.issubset(df.columns):
+        try:
+            df["DollarVolume"] = df["Close"] * df["Volume"]
+        except Exception:
+            pass
+    if "DollarVolume" in df.columns:
+        try:
+            liquidity_weight = (df["DollarVolume"] / 20_000_000).clip(upper=1.0)
+            alpha_blend = alpha_blend * liquidity_weight
+        except Exception:
+            pass
+
     df["alpha_blend"] = alpha_blend
 
     # Regime-aware scaling of alpha weight in TechRating blend
@@ -779,6 +792,31 @@ def _finalize_results(
             results_df["AlphaScorePct"] = alpha_source.rank(pct=True) * 100.0
         else:
             results_df["AlphaScorePct"] = np.nan
+
+    # ============================
+    # INSTITUTIONAL FILTERS v1
+    # ============================
+    # Compute dollar volume
+    if {"Close", "Volume"}.issubset(results_df.columns):
+        results_df["DollarVolume"] = results_df["Close"] * results_df["Volume"]
+
+        # Minimum liquidity filter (institution-grade)
+        MIN_DOLLAR_VOL = 5_000_000  # $5M/day minimum
+        results_df = results_df[results_df["DollarVolume"] >= MIN_DOLLAR_VOL]
+
+    # Price filter — investors don't want sub-$5 stocks
+    if "Close" in results_df.columns:
+        results_df = results_df[results_df["Close"] >= 5.00]
+
+    # Market-cap filter (skip microcaps)
+    if "market_cap" in results_df.columns:
+        results_df = results_df[results_df["market_cap"] >= 300_000_000]  # $300M minimum
+    else:
+        print("WARNING: market_cap missing – add it in feature_engine.py")
+
+    # ATR% ceiling — block high-volatility junk
+    if "ATR14_pct" in results_df.columns:
+        results_df = results_df[results_df["ATR14_pct"] <= 0.15]  # max 15% ATR%
     if regime_tags:
         results_df["RegimeTrend"] = regime_tags.get("trend")
         results_df["RegimeVol"] = regime_tags.get("vol")
@@ -886,8 +924,12 @@ def _finalize_results(
         results_df["MuTotal"] = results_df["MuTotal"] + stable_boost - explosive_penalty
 
     # Mark ultra-high-risk names for a separate "Runners" list
-    if "risk_score" in results_df.columns:
-        ultra_risky_mask = pd.to_numeric(results_df["risk_score"], errors="coerce") < 0.03
+    risk_col = "risk_score" if "risk_score" in results_df.columns else None
+    if risk_col is None and "RiskScore" in results_df.columns:
+        risk_col = "RiskScore"
+
+    if risk_col:
+        ultra_risky_mask = pd.to_numeric(results_df[risk_col], errors="coerce") < 0.12
         results_df["IsUltraRisky"] = ultra_risky_mask.fillna(False)
     else:
         results_df["IsUltraRisky"] = False
@@ -1006,6 +1048,20 @@ def _finalize_results(
         from technic_v4.alerts import engine as alerts_engine
         alerts = alerts_engine.detect_alerts_from_scan(results_df, regime_tags, locals().get("sb"))
         alerts_engine.log_alerts_to_file(alerts)
+    except Exception:
+        pass
+
+    # Filter summary (console/logger)
+    try:
+        logger.info("=== FILTER SUMMARY ===")
+        logger.info("Remaining symbols: %d", len(results_df))
+        if "Close" in results_df.columns and not results_df.empty:
+            logger.info("Min price: %.2f", float(results_df["Close"].min()))
+        if "DollarVolume" in results_df.columns and not results_df.empty:
+            logger.info("Min dollar volume: %.0f", float(results_df["DollarVolume"].min()))
+        if "ATR14_pct" in results_df.columns and not results_df.empty:
+            logger.info("Max ATR%%: %.4f", float(results_df["ATR14_pct"].max()))
+        logger.info("=====================")
     except Exception:
         pass
 

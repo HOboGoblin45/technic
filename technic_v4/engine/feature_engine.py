@@ -123,6 +123,18 @@ def build_features(
     feats["value_ep"] = raw_f.get("earnings_yield") or raw_f.get("ep")
     feats["quality_roe"] = raw_f.get("return_on_equity") or raw_f.get("roe")
 
+    # Market-cap ingestion (Polygon)
+    if "market_cap" not in feats:
+        try:
+            if hasattr(fundamentals, "columns") and "market_cap" in fundamentals.columns:  # type: ignore[attr-defined]
+                feats["market_cap"] = fundamentals["market_cap"]  # type: ignore[index]
+            elif isinstance(raw_f, dict) and "market_cap" in raw_f:
+                feats["market_cap"] = raw_f.get("market_cap")
+            else:
+                print("WARNING: market_cap missing from Polygon fundamentals")
+        except Exception:
+            print("WARNING: market_cap missing from Polygon fundamentals")
+
     # Optional TFT multi-horizon forecasts
     settings = get_settings()
     if getattr(settings, "use_tft_features", False):
