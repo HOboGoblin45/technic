@@ -34,6 +34,7 @@ from technic_v4.engine.portfolio_optim import (
     inverse_variance_weights,
     hrp_weights,
 )
+from technic_v4.engine.recommendation import build_recommendation
 import concurrent.futures
 
 logger = get_logger()
@@ -524,6 +525,22 @@ def _apply_portfolio_suggestions(
     except Exception:
         df["weight_hrp"] = 0.0
         df["alloc_hrp"] = 0.0
+    return df
+
+
+def _annotate_recommendations(df: pd.DataFrame, sector_cap: float = 0.3) -> pd.DataFrame:
+    """
+    Add a concise recommendation text per row using PlayStyle, scores, drift, ATR, and sector exposure.
+    """
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    sector_over = {}
+    if "weight_suggested" in df.columns and "Sector" in df.columns:
+        sector_over = df.groupby("Sector")["weight_suggested"].sum().to_dict()
+    df["Recommendation"] = [
+        build_recommendation(row, sector_over, sector_cap=sector_cap) for _, row in df.iterrows()
+    ]
     return df
 
 # -----------------------------
@@ -1083,6 +1100,7 @@ def _finalize_results(
 
     # Suggested portfolio weights / allocations (light heuristic)
     results_df = _apply_portfolio_suggestions(results_df, risk)
+    results_df = _annotate_recommendations(results_df)
 
     # Regime context columns (same for all rows in this scan)
     if regime_tags:
