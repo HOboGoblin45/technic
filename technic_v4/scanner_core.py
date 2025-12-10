@@ -14,7 +14,7 @@ from technic_v4 import data_engine
 from technic_v4.config.settings import get_settings
 from .infra.logging import get_logger
 from technic_v4.engine.scoring import compute_scores
-from technic_v4.engine.factor_engine import zscore
+from technic_v4.engine.factor_engine import zscore, compute_factor_bundle
 from technic_v4.engine.regime_engine import classify_regime
 from technic_v4.engine.trade_planner import RiskSettings, plan_trades
 from technic_v4.engine.portfolio_engine import risk_adjusted_rank, diversify_by_sector
@@ -432,6 +432,88 @@ MIN_PRICE = 1.0
 MIN_DOLLAR_VOL = 0.0
 
 
+def _compute_macro_context() -> dict:
+    """
+    Lightweight macro context using ETF proxies.
+    - growth_vs_value: slope of QQQ/SPY ratio over ~3 months
+    - credit_risk_on: HYG/LQD 20d change > 0
+    - curve_slope: SHY/TLT ratio slope (steepening/flattening)
+    - equity_vol_state: SPY 20d vs 60d realized vol
+    """
+    ctx: dict = {}
+    try:
+        spy = data_engine.get_price_history("SPY", days=130, freq="daily")
+        qqq = data_engine.get_price_history("QQQ", days=130, freq="daily")
+        if spy is not None and not spy.empty and qqq is not None and not qqq.empty:
+            spy = spy.sort_index()
+            qqq = qqq.sort_index()
+            df = pd.DataFrame({"spy": spy["Close"], "qqq": qqq["Close"]}).dropna()
+            if len(df) >= 60:
+                ratio = df["qqq"] / df["spy"]
+                x = np.arange(len(ratio.tail(60)))
+                y = ratio.tail(60).values
+                if not np.allclose(y, y[0]):
+                    slope = np.polyfit(x, y, 1)[0]
+                    ctx["macro_growth_vs_value_slope"] = float(slope)
+                    ctx["macro_growth_vs_value_trending_up"] = bool(slope > 0)
+    except Exception:
+        pass
+
+    try:
+        shy = data_engine.get_price_history("SHY", days=130, freq="daily")
+        tlt = data_engine.get_price_history("TLT", days=130, freq="daily")
+        if shy is not None and not shy.empty and tlt is not None and not tlt.empty:
+            df = pd.DataFrame(
+                {
+                    "shy": shy.sort_index()["Close"],
+                    "tlt": tlt.sort_index()["Close"],
+                }
+            ).dropna()
+            if len(df) >= 60:
+                ratio = df["shy"] / df["tlt"]
+                x = np.arange(len(ratio.tail(60)))
+                y = ratio.tail(60).values
+                if not np.allclose(y, y[0]):
+                    slope = np.polyfit(x, y, 1)[0]
+                    ctx["macro_curve_slope"] = float(slope)
+                    ctx["macro_curve_steepening"] = bool(slope > 0)
+                    ctx["macro_curve_flattening"] = bool(slope < 0)
+    except Exception:
+        pass
+
+    try:
+        hyg = data_engine.get_price_history("HYG", days=60, freq="daily")
+        lqd = data_engine.get_price_history("LQD", days=60, freq="daily")
+        if hyg is not None and not hyg.empty and lqd is not None and not lqd.empty:
+            hyg = hyg.sort_index()
+            lqd = lqd.sort_index()
+            df = pd.DataFrame({"hyg": hyg["Close"], "lqd": lqd["Close"]}).dropna()
+            if len(df) >= 20:
+                rel = df["hyg"] / df["lqd"]
+                ret20 = rel.pct_change(20).iloc[-1]
+                ctx["macro_credit_spread_trend"] = float(ret20)
+                ctx["macro_credit_risk_on"] = bool(ret20 > 0)
+                ctx["macro_credit_risk_off"] = bool(ret20 < 0)
+    except Exception:
+        pass
+
+    try:
+        spy = data_engine.get_price_history("SPY", days=80, freq="daily")
+        if spy is not None and not spy.empty and "Close" in spy.columns:
+            rets = spy["Close"].pct_change()
+            vol20 = rets.tail(20).std() * np.sqrt(252)
+            vol60 = rets.tail(60).std() * np.sqrt(252)
+            if pd.notna(vol20) and pd.notna(vol60) and vol60 != 0:
+                ratio = float(vol20 / vol60)
+                ctx["macro_equity_vol_ratio_20_60"] = ratio
+                ctx["macro_equity_high_vol"] = bool(ratio > 1.25)
+                ctx["macro_equity_low_vol"] = bool(ratio < 0.8)
+    except Exception:
+        pass
+
+    return ctx
+
+
 def _passes_basic_filters(df: pd.DataFrame) -> bool:
     """Quick sanity filters before doing full scoring + trade planning."""
     if df is None or df.empty:
@@ -542,6 +624,14 @@ def _scan_symbol(
 
     latest = scored.iloc[-1].copy()
     latest["symbol"] = symbol
+
+    # Add factor bundle (tech/liquidity/fundamental ratios)
+    try:
+        fb = compute_factor_bundle(df, fundamentals)
+        latest.update(fb.factors)
+    except Exception:
+        pass
+
     # Optional deep alpha from recent history
     settings = get_settings()
     if settings.use_deep_alpha:
@@ -771,6 +861,50 @@ def _finalize_results(
     # Work on a copy to avoid SettingWithCopyWarning when results_df is a slice
     results_df = results_df.copy()
 
+    # Regime context columns (same for all rows in this scan)
+    if regime_tags:
+        trend = regime_tags.get("trend")
+        vol_state = regime_tags.get("vol")
+        label = regime_tags.get("label") or (f"{trend}_{vol_state}" if trend and vol_state else None)
+        risk_on = bool(trend == "TRENDING_UP" and vol_state == "LOW_VOL")
+        results_df["regime_label"] = label or ""
+        results_df["regime_risk_on"] = risk_on
+        results_df["regime_risk_off"] = not risk_on
+    else:
+        results_df["regime_label"] = ""
+        results_df["regime_risk_on"] = False
+        results_df["regime_risk_off"] = False
+        results_df["macro_growth_vs_value_slope"] = np.nan
+        results_df["macro_growth_vs_value_trending_up"] = False
+        results_df["macro_credit_spread_trend"] = np.nan
+        results_df["macro_credit_risk_on"] = False
+        results_df["macro_credit_risk_off"] = False
+        results_df["macro_curve_slope"] = np.nan
+        results_df["macro_curve_steepening"] = False
+        results_df["macro_curve_flattening"] = False
+        results_df["macro_equity_vol_ratio_20_60"] = np.nan
+        results_df["macro_equity_high_vol"] = False
+        results_df["macro_equity_low_vol"] = False
+
+    # Carry macro context onto rows if present
+    if regime_tags:
+        for key in [
+            "macro_growth_vs_value_slope",
+            "macro_growth_vs_value_trending_up",
+            "macro_credit_spread_trend",
+            "macro_credit_risk_on",
+            "macro_credit_risk_off",
+            "macro_curve_slope",
+            "macro_curve_steepening",
+            "macro_curve_flattening",
+            "macro_equity_vol_ratio_20_60",
+            "macro_equity_high_vol",
+            "macro_equity_low_vol",
+        ]:
+            val = regime_tags.get(key, np.nan)
+            if key not in results_df.columns:
+                results_df[key] = val
+
     # Alpha / risk scaffolding
     # --------------------------------------------------
     # MuHat: heuristic tech-based drift (normalized TechRating)
@@ -820,6 +954,27 @@ def _finalize_results(
         results_df["MuTotal"] = mu_hat
         # For downstream consumers that expect AlphaScore, fall back to TechRating
         results_df.loc[:, "AlphaScore"] = results_df.get("TechRating", np.nan)
+
+    # Cross-sectional z-scores for value/quality/growth/size factors if present
+    factor_cols = [
+        "value_ep",
+        "value_cfp",
+        "value_earnings_yield",
+        "dividend_yield",
+        "quality_roe",
+        "quality_roa",
+        "quality_gpm",
+        "leverage_de",
+        "interest_coverage",
+        "growth_rev",
+        "growth_eps",
+        "size_log_mcap",
+    ]
+    for col in factor_cols:
+        if col in results_df.columns:
+            series = pd.to_numeric(results_df[col], errors="coerce")
+            if series.notna().any():
+                results_df[f"{col}_z"] = zscore(series)
 
     # Cross-sectional alpha percentile (0?100) for UI / ranking
     if "AlphaScorePct" not in results_df.columns:
@@ -1323,7 +1478,7 @@ def run_scan(
     start_ts = time.time()
     logger.info("Starting scan with config: %s", config)
 
-    # Regime context (best-effort)
+    # Regime context (best-effort) + macro context
     regime_tags = None
     try:
         spy = data_engine.get_price_history(symbol="SPY", days=260, freq="daily")
@@ -1347,6 +1502,14 @@ def run_scan(
                 )
     except Exception:
         pass
+
+    macro_ctx = _compute_macro_context()
+    if macro_ctx:
+        logger.info("[MACRO] %s", macro_ctx)
+        if regime_tags:
+            regime_tags.update(macro_ctx)
+        else:
+            regime_tags = macro_ctx
 
     # 1) Universe (load + sector/industry filters)
     universe: List[UniverseRow] = _prepare_universe(config, settings=settings)
