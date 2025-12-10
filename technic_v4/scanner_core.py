@@ -150,7 +150,11 @@ def _prepare_universe(config: "ScanConfig", settings=None) -> List[UniverseRow]:
     return filtered
 
 
-def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.DataFrame:
+def _apply_alpha_blend(
+    df: pd.DataFrame,
+    regime: Optional[dict] = None,
+    as_of_date: Optional[pd.Timestamp] = None,
+) -> pd.DataFrame:
     """
     Cross-sectional alpha blend with optional multi-horizon ML alpha.
 
@@ -250,11 +254,11 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
             if "Sector" in df.columns:
                 ml_5d_vals = pd.Series(np.nan, index=df.index)
                 for sec, subdf in df.groupby("Sector"):
-                    sub_pred = alpha_inference.score_alpha_contextual(subdf, reg_label, sec)
+                    sub_pred = alpha_inference.score_alpha_contextual(subdf, reg_label, sec, as_of_date=as_of_date)
                     ml_5d_vals.loc[subdf.index] = sub_pred
                 ml_5d = ml_5d_vals
             else:
-                ml_5d = alpha_inference.score_alpha_contextual(df, reg_label, None)
+                ml_5d = alpha_inference.score_alpha_contextual(df, reg_label, None, as_of_date=as_of_date)
         except Exception:
             logger.warning("[ALPHA] score_alpha() 5d failed", exc_info=True)
             ml_5d = None
@@ -334,6 +338,14 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
                 ml_alpha_z = meta_z
                 df["ml_alpha_z"] = ml_alpha_z
                 logger.info("[ALPHA] meta alpha applied, overriding factor/ML blend")
+
+    # Optional meta super model -> win probability (best-effort)
+    try:
+        meta_super = alpha_inference.score_meta_super(df)
+        if meta_super is not None:
+            df["win_prob_10d"] = meta_super
+    except Exception:
+        df["win_prob_10d"] = np.nan
 
     # --- Build alpha_blend and TechRating v2 --------------------------------
     alpha_blend = factor_alpha.copy()
@@ -901,6 +913,7 @@ def _finalize_results(
     risk: RiskSettings,
     regime_tags: Optional[dict],
     settings=None,
+    as_of_date: Optional[pd.Timestamp] = None,
 ) -> Tuple[pd.DataFrame, str]:
     """
     Post-process results: optional TFT merge, alpha blend, filters, trade planning, logging.
@@ -937,7 +950,7 @@ def _finalize_results(
             logger.warning("[TFT] TFT feature merge failed: %s", exc)
 
     # Cross-sectional alpha blend: upgrade TechRating using factor/ML/meta alpha
-    results_df = _apply_alpha_blend(results_df, regime=regime_tags)
+    results_df = _apply_alpha_blend(results_df, regime=regime_tags, as_of_date=as_of_date)
 
     # Keep an unfiltered copy for fallbacks
     base_results = results_df.copy()
@@ -1798,12 +1811,15 @@ def run_scan(
         return pd.DataFrame(), "No results returned. Check universe or data source."
 
     # 4) Finalize results (alpha blend, filters, trade planning, logging)
+    as_of_ts = pd.Timestamp(config.as_of_date) if config.as_of_date else pd.Timestamp.utcnow().normalize()
+
     results_df, status_text = _finalize_results(
         config=config,
         results_df=results_df,
         risk=risk,
         regime_tags=regime_tags,
         settings=settings,
+        as_of_date=as_of_ts,
     )
 
     # Best-effort logging of recommendations for live evaluation
