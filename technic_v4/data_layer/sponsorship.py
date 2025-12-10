@@ -73,6 +73,9 @@ def _thin_to_universe(etf: pd.DataFrame, inst: pd.DataFrame) -> pd.DataFrame:
         df = df.join(inst_counts, how="left")
 
     df = df.fillna(0)
+    for col in ("etf_holder_count", "inst_holder_count"):
+        if col not in df:
+            df[col] = 0
     combined = df["etf_holder_count"] + df["inst_holder_count"]
     df["SponsorshipScore"] = combined.rank(pct=True).astype(float) * 100.0
     thin = df.reset_index().rename(columns={"index": "symbol"})
