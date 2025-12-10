@@ -191,3 +191,108 @@ def compute_scores(
     out["TradeType"] = "None"
 
     return out
+
+
+def build_institutional_core_score(df: pd.DataFrame) -> pd.Series:
+    """
+    Build a single Institutional Core Score (ICS) in [0, 100] for each row.
+
+    ICS blends:
+      - technical quality (TechRating)
+      - factor + ML alpha (alpha_blend / AlphaScore / factor_alpha)
+      - stability (risk_score / RiskScore)
+      - liquidity (DollarVolume)
+      - fundamental quality (QualityScore or related columns)
+      - event term (earnings / dividend flags)
+
+    All inputs are best-effort: if a column is missing, that term falls
+    back to a neutral 50/100.
+    """
+    if df.empty:
+        return pd.Series([], index=df.index, dtype=float)
+
+    idx = df.index
+
+    def _pct_rank(series: pd.Series | None) -> pd.Series:
+        if series is None or series.empty or series.isna().all():
+            return pd.Series(50.0, index=idx)
+        return series.rank(pct=True).astype(float) * 100.0
+
+    # --- Tech term ---
+    tech_src = None
+    for col in ("TechRating", "TechRating_raw"):
+        if col in df.columns:
+            tech_src = df[col]
+            break
+    tech_term = _pct_rank(tech_src)
+
+    # --- Alpha term (factor + ML blend) ---
+    alpha_src = None
+    for col in ("alpha_blend", "AlphaScorePct", "AlphaScore", "ml_alpha_z", "factor_alpha"):
+        if col in df.columns and not df[col].isna().all():
+            alpha_src = df[col]
+            break
+    alpha_term = _pct_rank(alpha_src)
+
+    # --- Stability term (higher is more stable) ---
+    risk_src = None
+    for col in ("risk_score", "RiskScore"):
+        if col in df.columns:
+            risk_src = df[col]
+            break
+
+    if risk_src is None or risk_src.isna().all():
+        stability_term = pd.Series(50.0, index=idx)
+    else:
+        r = risk_src.clip(lower=0.0, upper=1.0)
+        stability_term = (1.0 - r) * 100.0
+
+    # --- Liquidity term (DollarVolume) ---
+    if "DollarVolume" in df.columns:
+        dv = df["DollarVolume"].clip(lower=1.0)
+        liquidity_term = np.log10(dv).rank(pct=True).astype(float) * 100.0
+    else:
+        liquidity_term = pd.Series(50.0, index=idx)
+
+    # --- Fundamental quality term ---
+    quality_src = None
+    for col in ("QualityScore", "fundamental_quality_score", "quality_roe_sector_z"):
+        if col in df.columns and not df[col].isna().all():
+            quality_src = df[col]
+            break
+    quality_term = _pct_rank(quality_src)
+
+    # --- Event term (earnings / dividends) ---
+    event_term = pd.Series(50.0, index=idx)
+
+    if "is_pre_earnings_window" in df.columns:
+        event_term = event_term - 10.0 * df["is_pre_earnings_window"].fillna(False).astype(float)
+
+    if "is_post_earnings_positive_window" in df.columns:
+        event_term = event_term + 5.0 * df["is_post_earnings_positive_window"].fillna(False).astype(float)
+
+    if "has_dividend_ex_soon" in df.columns:
+        event_term = event_term + 2.0 * df["has_dividend_ex_soon"].fillna(False).astype(float)
+
+    if "dividend_yield" in df.columns:
+        dy = df["dividend_yield"].clip(lower=0.0)
+        sweet = dy.between(0.01, 0.06)
+        very_high = dy > 0.08
+        event_term = event_term + 3.0 * sweet.astype(float) - 5.0 * very_high.astype(float)
+
+    # --- Weighted blend ---
+    ics = (
+        0.28 * tech_term
+        + 0.22 * alpha_term
+        + 0.18 * quality_term
+        + 0.12 * stability_term
+        + 0.10 * liquidity_term
+        + 0.10 * event_term
+    )
+
+    ics = ics.clip(lower=0.0, upper=100.0)
+    ics = ics.fillna(ics.median())
+    return ics
+
+
+__all__ = ["compute_scores", "build_institutional_core_score"]

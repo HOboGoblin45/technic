@@ -13,7 +13,7 @@ from technic_v4.universe_loader import load_universe, UniverseRow
 from technic_v4 import data_engine
 from technic_v4.config.settings import get_settings
 from .infra.logging import get_logger
-from technic_v4.engine.scoring import compute_scores
+from technic_v4.engine.scoring import compute_scores, build_institutional_core_score
 from technic_v4.engine.factor_engine import zscore, compute_factor_bundle
 from technic_v4.engine.regime_engine import classify_regime
 from technic_v4.engine.trade_planner import RiskSettings, plan_trades
@@ -22,7 +22,7 @@ from technic_v4.engine.options_engine import score_options
 from technic_v4.engine import ranking_engine
 from technic_v4.engine.options_suggest import suggest_option_trades
 from technic_v4.engine import explainability_engine
-from datetime import datetime
+from datetime import datetime, date
 from technic_v4.engine import alpha_inference
 from technic_v4.engine import explainability
 from technic_v4.engine import meta_experience
@@ -910,6 +910,30 @@ def _scan_symbol(
     return latest
 
 
+def _attach_event_columns(row: pd.Series) -> pd.Series:
+    """
+    Best-effort enrichment of a scored row with earnings / dividend event info.
+    Expects row["Symbol"] to exist.
+    """
+    symbol = str(row.get("Symbol") or "").upper()
+    if not symbol:
+        return row
+
+    try:
+        info = get_event_info(symbol)
+    except Exception:
+        info = {}
+
+    if not info:
+        return row
+
+    for key, value in info.items():
+        if key not in row or pd.isna(row[key]):
+            row[key] = value
+
+    return row
+
+
 def _process_symbol(
     config: "ScanConfig",
     urow: UniverseRow,
@@ -938,6 +962,9 @@ def _process_symbol(
     latest_local["Sector"] = urow.sector or ""
     latest_local["Industry"] = urow.industry or ""
     latest_local["SubIndustry"] = urow.subindustry or ""
+    # Attach symbol label for downstream helpers that expect "Symbol"
+    latest_local["Symbol"] = urow.symbol
+    latest_local = _attach_event_columns(latest_local)
     return latest_local
 
 def _run_symbol_scans(
@@ -1546,55 +1573,12 @@ def _finalize_results(
         # Add to MuTotal or TechRating to slightly tilt toward stable names
         results_df["MuTotal"] = results_df["MuTotal"] + stable_boost - explosive_penalty
 
-    # --------------------------------------------
-    # Institutional Core Score (ICS)
-    # Combines TechRating, alpha, sector-neutral alpha,
-    # stability, and liquidity into a 0�100 score.
-    # --------------------------------------------
-    try:
-        # 1) Cross-sectional TechRating percentile
-        if "TechRating" in results_df.columns:
-            tech_pct = results_df["TechRating"].rank(pct=True).fillna(0.0)
-        else:
-            tech_pct = pd.Series(0.0, index=results_df.index)
-
-        # 2) Global alpha percentile (0�1)
-        alpha_pct = (
-            results_df.get("AlphaScorePct", pd.Series(index=results_df.index, dtype=float))
-            .fillna(0.0) / 100.0
-        )
-
-        # 3) Sector-neutral alpha percentile (0�1)
-        sector_alpha_pct = (
-            results_df.get("SectorAlphaPct", pd.Series(index=results_df.index, dtype=float))
-            .fillna(0.0) / 100.0
-        )
-
-        # 4) Stability term: Stable=1, else 0
-        stability_term = results_df.get("IsStable", False).astype(float)
-
-        # 5) Liquidity term: cross-sectional dollar volume percentile (0�1)
-        if "DollarVolume" in results_df.columns:
-            dv = pd.to_numeric(results_df["DollarVolume"], errors="coerce")
-            liquidity_term = dv.rank(pct=True).fillna(0.0)
-        else:
-            liquidity_term = pd.Series(0.0, index=results_df.index)
-
-        core_score = (
-            0.30 * tech_pct +          # core technical quality
-            0.20 * alpha_pct +         # ML / alpha strength
-            0.25 * sector_alpha_pct +  # sector-relative strength
-            0.10 * stability_term +    # stability preference
-            0.10 * liquidity_term      # liquidity quality
-        )
-
-        results_df["InstitutionalCoreScore"] = (core_score * 100.0).clip(0, 100)
-    except Exception:
-        # Fallback: use TechRating if anything goes wrong
-        if "TechRating" in results_df.columns:
-            results_df["InstitutionalCoreScore"] = results_df["TechRating"]
-        else:
-            results_df["InstitutionalCoreScore"] = 0.0
+    # Institutional Core Score (best-effort)
+    if not results_df.empty:
+        try:
+            results_df["InstitutionalCoreScore"] = build_institutional_core_score(results_df)
+        except Exception:
+            logger.warning("[ICS] Failed to compute InstitutionalCoreScore", exc_info=True)
 
     # Mark ultra-high-risk names for a separate "Runners" list
     risk_col = "risk_score" if "risk_score" in results_df.columns else None

@@ -11,7 +11,8 @@ Produces a short, structured narrative using existing fields:
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+import math
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -110,5 +111,115 @@ def build_recommendation(row: pd.Series, sector_overweights: Dict[str, float], s
         analog_line,
         role_line,
     ]
-    return " ".join(parts)
 
+    # --- Institutional Core Score (ICS) summary ---
+    ics_raw = row.get("InstitutionalCoreScore")
+    try:
+        ics = float(ics_raw) if ics_raw is not None else math.nan
+    except Exception:
+        ics = math.nan
+
+    if not math.isnan(ics):
+        if ics >= 85:
+            ics_label = "institutional\u2011grade core setup"
+        elif ics >= 70:
+            ics_label = "high\u2011quality, liquid setup"
+        elif ics >= 55:
+            ics_label = "solid but mid\u2011tier quality"
+        else:
+            ics_label = "more speculative idea"
+
+        parts.append(f"Institutional Core Score {ics:.0f}/100 ({ics_label}).")
+
+    # --- Fundamental quality summary ---
+    quality_raw: Any = None
+    for q_col in ("QualityScore", "fundamental_quality_score", "quality_roe_sector_z"):
+        if q_col in row and row[q_col] is not None:
+            quality_raw = row[q_col]
+            break
+
+    quality_desc = None
+    if quality_raw is not None:
+        try:
+            q_val = float(quality_raw)
+            # Heuristic: treat 0\u2013100 ranges and z-scores gracefully
+            if abs(q_val) <= 5.0:
+                # assume z-score like metric
+                if q_val >= 1.0:
+                    quality_desc = "strong profitability and balance-sheet quality"
+                elif q_val >= 0.0:
+                    quality_desc = "respectable fundamentals"
+                elif q_val <= -1.0:
+                    quality_desc = "weak or deteriorating fundamentals"
+                else:
+                    quality_desc = "mixed fundamental profile"
+            else:
+                # assume 0-100 style score
+                if q_val >= 75:
+                    quality_desc = "strong profitability and balance-sheet quality"
+                elif q_val >= 55:
+                    quality_desc = "respectable fundamentals"
+                elif q_val >= 40:
+                    quality_desc = "average fundamental quality"
+                else:
+                    quality_desc = "weak or deteriorating fundamentals"
+        except Exception:
+            quality_desc = None
+
+    if quality_desc:
+        parts.append(f"Fundamental quality: {quality_desc}.")
+
+    # --- Earnings / dividend event context ---
+    is_pre_earn = bool(row.get("is_pre_earnings_window", False))
+    is_post_pos = bool(row.get("is_post_earnings_positive_window", False))
+    has_upcoming_earn = bool(row.get("has_upcoming_earnings", False))
+    has_pos_surprise = bool(row.get("has_recent_positive_surprise", False))
+    has_div_soon = bool(row.get("has_dividend_ex_soon", False))
+
+    next_earn = row.get("next_earnings_date")
+    last_earn = row.get("last_earnings_date")
+    div_ex = row.get("dividend_ex_date")
+
+    if is_pre_earn:
+        if next_earn:
+            parts.append(
+                f"Note: the stock is within a few days of earnings (next report around {next_earn}); expect gap risk."
+            )
+        else:
+            parts.append(
+                "Note: price is trading close to an upcoming earnings date; expect gap risk."
+            )
+    elif is_post_pos:
+        msg = "Recent positive earnings surprise with the stock still in the post-earnings drift window"
+        if last_earn:
+            msg += f" (last report around {last_earn})"
+        parts.append(msg + ".")
+    elif has_upcoming_earn and next_earn:
+        parts.append(f"Earnings are upcoming around {next_earn}; treat this as an additional source of volatility.")
+
+    if has_pos_surprise and not is_post_pos:
+        parts.append("Last earnings beat expectations, which is a mild fundamental tailwind.")
+
+    dy_raw = row.get("dividend_yield")
+    dy = None
+    try:
+        if dy_raw is not None:
+            dy = float(dy_raw)
+    except Exception:
+        dy = None
+
+    if dy is not None and dy > 0:
+        pct = dy * 100.0 if dy <= 1.0 else dy  # handle 0.03 vs 3.0 input styles
+        if 1.0 <= pct <= 6.0:
+            text = f"Dividend yield around {pct:.1f}% adds an income component."
+        elif pct > 8.0:
+            text = f"Very high dividend yield (~{pct:.1f}%), often a sign of elevated risk; treat the payout as uncertain."
+        else:
+            text = f"Dividend yield around {pct:.1f}%."
+        if has_div_soon and div_ex:
+            text += f" Ex-dividend date is coming up around {div_ex}."
+        elif has_div_soon:
+            text += " Ex-dividend date is coming up soon."
+        parts.append(text)
+
+    return " ".join(parts)
