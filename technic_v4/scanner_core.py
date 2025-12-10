@@ -28,6 +28,7 @@ from technic_v4.engine import explainability
 from technic_v4.engine import meta_experience
 from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
+from technic_v4.data_layer.events import get_event_info
 import concurrent.futures
 
 logger = get_logger()
@@ -721,6 +722,25 @@ def _scan_symbol(
     try:
         fb = compute_factor_bundle(df, fundamentals)
         latest.update(fb.factors)
+    except Exception:
+        pass
+
+    # Event-aware fields (best-effort)
+    try:
+        ev = get_event_info(symbol)
+        anchor_date = as_of_date if as_of_date is not None else df.index.max()
+        if ev:
+            next_earn = ev.get("next_earnings_date")
+            last_earn = ev.get("last_earnings_date")
+            if pd.notna(next_earn):
+                latest["days_to_earnings"] = (next_earn - anchor_date).days
+                latest["earnings_window"] = 0 <= latest["days_to_earnings"] <= 7
+            if pd.notna(last_earn):
+                latest["days_since_earnings"] = (anchor_date - last_earn).days
+            latest["earnings_surprise_flag"] = bool(ev.get("earnings_surprise_flag", False))
+            div_ex = ev.get("dividend_ex_date")
+            if pd.notna(div_ex):
+                latest["dividend_ex_date_within_7d"] = abs((div_ex - anchor_date).days) <= 7
     except Exception:
         pass
 
