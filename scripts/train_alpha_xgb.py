@@ -230,23 +230,32 @@ def main():
     all_metrics = {}
 
     def _maybe_regime_label(df_in: pd.DataFrame) -> pd.DataFrame:
+        """Attach regime labels, fetching only once for the needed date span."""
         if "regime_label" in df_in.columns:
             return df_in
         df_out = df_in.copy()
         try:
-            spy = data_engine.get_price_history("SPY", days=2600, freq="daily")
-            if spy is None or spy.empty or date_col not in df_out.columns:
+            dates = pd.to_datetime(df_out[date_col])
+            min_dt, max_dt = dates.min(), dates.max()
+            # fetch enough history to cover the span + 1y buffer
+            days_needed = min(9000, max(2600, (max_dt - min_dt).days + 365))
+            spy = data_engine.get_price_history("SPY", days=int(days_needed), freq="daily")
+            if spy is None or spy.empty:
                 df_out.loc[:, "regime_label"] = "UNKNOWN"
                 return df_out
             spy = spy.sort_index()
-            dates = pd.to_datetime(df_out[date_col])
+            spy_max_dt = spy.index.max()
+            regime_map: dict[pd.Timestamp, str] = {}
+            last_label = "UNKNOWN"
             unique_dates = sorted(dates.unique())
-            regime_map = {}
             for dt in unique_dates:
-                spy_subset = spy[spy.index <= dt]
+                # clamp to available history to avoid warnings on future dates
+                effective_dt = min(dt, spy_max_dt)
+                spy_subset = spy[spy.index <= effective_dt]
                 reg = classify_spy_regime(spy_subset)
-                regime_map[dt] = reg.get("label", "UNKNOWN")
-            df_out.loc[:, "regime_label"] = dates.map(regime_map).fillna("UNKNOWN")
+                last_label = reg.get("label", last_label)
+                regime_map[dt] = last_label
+            df_out.loc[:, "regime_label"] = dates.map(regime_map).fillna(last_label)
         except Exception:
             df_out.loc[:, "regime_label"] = "UNKNOWN"
         return df_out
@@ -281,6 +290,18 @@ def main():
             train_end = train_end_win
             val_end = val_end_win
             window_suffix = f"{train_end.year}_roll"
+            # Skip windows with no validation/test coverage
+            if args.regime_split:
+                df_reg = _maybe_regime_label(df_window)
+                if df_reg[(df_reg[date_col] > train_end) & (df_reg[date_col] <= val_end)].empty:
+                    current_start += step
+                    continue
+                if df_reg[df_reg[date_col] > val_end].empty:
+                    current_start += step
+                    continue
+                _run_regime_splits(df_reg, prefix=window_suffix)
+                current_start += step
+                continue
             if args.regime_split:
                 _run_regime_splits(df_window, prefix=window_suffix)
             elif args.sector_split:
