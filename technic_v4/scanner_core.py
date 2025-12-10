@@ -29,6 +29,7 @@ from technic_v4.engine import meta_experience
 from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
 from technic_v4.data_layer.events import get_event_info
+from technic_v4.data_layer.earnings_surprises import get_latest_surprise
 from technic_v4.data_layer.ratings import get_rating_info
 from technic_v4.data_layer.quality import get_quality_info
 from technic_v4.engine.portfolio_optim import (
@@ -932,6 +933,18 @@ def _attach_event_columns(row: pd.Series) -> pd.Series:
     for key, value in info.items():
         if key not in row or pd.isna(row[key]):
             row[key] = value
+
+    # Fallback earnings surprise from bulk if missing
+    if ("earnings_surprise_flag" not in row) or pd.isna(row.get("earnings_surprise_flag")):
+        try:
+            latest_surprise = get_latest_surprise(symbol)
+        except Exception:
+            latest_surprise = {}
+        if latest_surprise:
+            actual = pd.to_numeric(latest_surprise.get("actualEarningResult"), errors="coerce")
+            estimate = pd.to_numeric(latest_surprise.get("estimatedEarning"), errors="coerce")
+            if pd.notna(actual) and pd.notna(estimate):
+                row["earnings_surprise_flag"] = bool(actual > estimate)
 
     return row
 
