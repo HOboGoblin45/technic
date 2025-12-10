@@ -262,6 +262,11 @@ def build_institutional_core_score(df: pd.DataFrame) -> pd.Series:
             break
     quality_term = _pct_rank(quality_src)
 
+    # Blend in sponsorship if available
+    if "SponsorshipScore" in df.columns and not df["SponsorshipScore"].isna().all():
+        sponsor_term = _pct_rank(df["SponsorshipScore"])
+        quality_term = (quality_term + sponsor_term) / 2.0
+
     # --- Event term (earnings / dividends) ---
     event_term = pd.Series(50.0, index=idx)
 

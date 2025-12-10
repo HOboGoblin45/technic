@@ -33,6 +33,7 @@ from technic_v4.data_layer.earnings_surprises import get_latest_surprise, get_su
 from technic_v4.data_layer.fundamental_trend import get_fundamental_trend
 from technic_v4.data_layer.ratings import get_rating_info
 from technic_v4.data_layer.quality import get_quality_info
+from technic_v4.data_layer.sponsorship import get_sponsorship, get_insider_flags
 from technic_v4.engine.portfolio_optim import (
     mean_variance_weights,
     inverse_variance_weights,
@@ -997,6 +998,25 @@ def _attach_ratings_quality(row: pd.Series) -> pd.Series:
         ft = {}
     if ft:
         for key, val in ft.items():
+            if key not in row or pd.isna(row.get(key)):
+                row[key] = val
+
+    # Sponsorship (institutional/etf) and insider flags
+    try:
+        sp = get_sponsorship(symbol)
+    except Exception:
+        sp = {}
+    if sp:
+        for key, val in sp.items():
+            if key not in row or pd.isna(row.get(key)):
+                row[key] = val
+
+    try:
+        ins = get_insider_flags(symbol)
+    except Exception:
+        ins = {}
+    if ins:
+        for key, val in ins.items():
             if key not in row or pd.isna(row.get(key)):
                 row[key] = val
 
