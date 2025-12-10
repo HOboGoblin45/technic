@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 
-BASE = Path("technic_v4/engine/scanner_output")
+BASE = Path("technic_v4/scanner_output")
 MAIN_PATH = BASE / "technic_scan_results.csv"
 RUNNERS_PATH = BASE / "technic_runners.csv"
 
