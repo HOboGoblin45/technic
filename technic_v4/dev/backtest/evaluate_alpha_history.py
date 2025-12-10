@@ -63,6 +63,12 @@ def parse_args() -> argparse.Namespace:
         help="Skip regime stats (avoids SPY fetch / cache warnings).",
     )
     p.add_argument(
+        "--holdout-start",
+        type=str,
+        default="",
+        help="Optional YYYY-MM-DD to treat as holdout period for sanity checks.",
+    )
+    p.add_argument(
         "--out",
         type=str,
         default="",
@@ -168,6 +174,31 @@ def bucket_metrics(df: pd.DataFrame, score_col: str, label_col: str, buckets: in
     return res.reset_index()
 
 
+def multi_bucket_metrics(df: pd.DataFrame, score_cols: List[str], label_cols: List[str], buckets: int = 5) -> Dict[str, pd.DataFrame]:
+    out: Dict[str, pd.DataFrame] = {}
+    for sc in score_cols:
+        if sc not in df.columns:
+            continue
+        df_sc = df.dropna(subset=[sc])
+        if df_sc.empty:
+            continue
+        df_sc = df_sc.copy()
+        df_sc["bucket"] = pd.qcut(df_sc[sc], q=min(buckets, df_sc[sc].nunique()), labels=False, duplicates="drop")
+        grouped = df_sc.groupby("bucket")
+        pieces = []
+        for lc in label_cols:
+            if lc not in df_sc.columns:
+                continue
+            g = grouped[lc].agg(["mean", "median", "count"])
+            g["win_rate"] = grouped[lc].apply(lambda x: float((x > 0).mean()))
+            g.columns = [f"{lc}_{c}" for c in g.columns]
+            pieces.append(g)
+        if pieces:
+            res = pd.concat(pieces, axis=1)
+            out[sc] = res.reset_index()
+    return out
+
+
 def playstyle_metrics(df: pd.DataFrame, label_col: str) -> pd.DataFrame:
     if "PlayStyle" not in df.columns:
         return pd.DataFrame()
@@ -242,6 +273,110 @@ def regime_metrics(df: pd.DataFrame, label_col: str) -> pd.DataFrame:
     return res.reset_index()
 
 
+def attach_macro_regimes(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Macro / rate / credit labels using ETF proxies (QQQ/SPY, HYG/LQD, SHY/TLT).
+    """
+    out = df.copy()
+    try:
+        spy = data_engine.get_price_history("SPY", days=400, freq="daily")
+        qqq = data_engine.get_price_history("QQQ", days=400, freq="daily")
+        hyg = data_engine.get_price_history("HYG", days=400, freq="daily")
+        lqd = data_engine.get_price_history("LQD", days=400, freq="daily")
+        shy = data_engine.get_price_history("SHY", days=400, freq="daily")
+        tlt = data_engine.get_price_history("TLT", days=400, freq="daily")
+    except Exception:
+        spy = qqq = hyg = lqd = shy = tlt = None
+    if spy is None or spy.empty:
+        out["MacroRegime"] = "UNKNOWN"
+        out["RateRegime"] = "UNKNOWN"
+        out["CreditRegime"] = "UNKNOWN"
+        out["VolRegime"] = "UNKNOWN"
+        return out
+
+    spy = spy.sort_index()
+    # precompute ratios
+    ratio_qs = None
+    if qqq is not None and not qqq.empty:
+        ratio_qs = (qqq["Close"] / spy["Close"]).dropna()
+    ratio_hl = None
+    if hyg is not None and lqd is not None and not hyg.empty and not lqd.empty:
+        ratio_hl = (hyg["Close"] / lqd["Close"]).dropna()
+    ratio_curve = None
+    if shy is not None and tlt is not None and not shy.empty and not tlt.empty:
+        ratio_curve = (shy["Close"] / tlt["Close"]).dropna()
+
+    macro_regs = []
+    rate_regs = []
+    credit_regs = []
+    vol_regs = []
+    ret = spy["Close"].pct_change()
+    for dt in out["as_of_date"]:
+        # growth vs value via QQQ/SPY slope over last 60 bars
+        slope = 0.0
+        if ratio_qs is not None:
+            r = ratio_qs.loc[:dt].tail(60)
+            if len(r) >= 10 and not np.allclose(r.values, r.values[0]):
+                x = np.arange(len(r))
+                slope = np.polyfit(x, r.values, 1)[0]
+        macro_regs.append("GROWTH_TILT" if slope > 0 else "VALUE_TILT")
+
+        # credit risk-on/off via HYG/LQD 20d change
+        cr_val = 0.0
+        if ratio_hl is not None:
+            chg = ratio_hl.loc[:dt].pct_change(20)
+            if not chg.empty:
+                cr_val = chg.iloc[-1]
+        credit_regs.append("RISK_ON" if cr_val > 0 else "RISK_OFF")
+
+        # rate regime via SHY/TLT slope
+        slope_curve = 0.0
+        if ratio_curve is not None:
+            rc = ratio_curve.loc[:dt].tail(60)
+            if len(rc) >= 10 and not np.allclose(rc.values, rc.values[0]):
+                x = np.arange(len(rc))
+                slope_curve = np.polyfit(x, rc.values, 1)[0]
+        rate_regs.append("STEEPENING" if slope_curve > 0 else "FLATTENING")
+
+        # vol regime using SPY 20/60 realized ratio
+        vol20 = ret.loc[:dt].tail(20).std() * np.sqrt(252) if len(ret.loc[:dt]) >= 20 else np.nan
+        vol60 = ret.loc[:dt].tail(60).std() * np.sqrt(252) if len(ret.loc[:dt]) >= 60 else np.nan
+        if pd.isna(vol20) or pd.isna(vol60) or vol60 == 0:
+            vol_regs.append("VOL_LOW")
+        else:
+            ratio = vol20 / vol60
+            if ratio > 1.25:
+                vol_regs.append("VOL_SPIKE")
+            elif ratio < 0.8:
+                vol_regs.append("VOL_LOW")
+            else:
+                vol_regs.append("VOL_NEUTRAL")
+
+    out["MacroRegime"] = macro_regs
+    out["RateRegime"] = rate_regs
+    out["CreditRegime"] = credit_regs
+    out["VolRegime"] = vol_regs
+    return out
+
+
+def grouped_metrics(df: pd.DataFrame, group_col: str, label_cols: List[str]) -> pd.DataFrame:
+    if df.empty or group_col not in df.columns:
+        return pd.DataFrame()
+    grouped = df.groupby(group_col)
+    frames = []
+    for lc in label_cols:
+        if lc not in df.columns:
+            continue
+        g = grouped[lc].agg(["mean", "median", "count"])
+        g["win_rate"] = grouped[lc].apply(lambda x: float((x > 0).mean()))
+        g.columns = [f"{lc}_{c}" for c in g.columns]
+        frames.append(g)
+    if not frames:
+        return pd.DataFrame()
+    res = pd.concat(frames, axis=1).reset_index()
+    return res
+
+
 def main() -> None:
     args = parse_args()
     df = load_dataset(Path(args.data))
@@ -258,6 +393,10 @@ def main() -> None:
         raise SystemExit("Dataset is empty after filtering; aborting.")
 
     df = ensure_playstyle(df)
+    label_cols = [label_col]
+    for extra in ["fwd_ret_10d", "fwd_ret_21d"]:
+        if extra in df.columns:
+            label_cols.append(extra)
 
     # Daily cross-sectional metrics
     daily_df = compute_daily_metrics(df, score_col, label_col, top_n=args.top_n)
@@ -299,6 +438,17 @@ def main() -> None:
     else:
         print(buckets.to_string(index=False))
 
+    # Multi-dimensional buckets
+    print("\n=== Multi-buckets (MuTotal, TechRating, AlphaScorePct, PlayStyle, Sector) ===")
+    bucket_targets = ["MuTotal", "TechRating", "AlphaScorePct", "PlayStyle", "Sector"]
+    multi = multi_bucket_metrics(df, bucket_targets, label_cols, buckets=5)
+    if multi:
+        for k, v in multi.items():
+            print(f"\n-- Buckets by {k} --")
+            print(v.to_string(index=False))
+    else:
+        print("No multi-bucket metrics.")
+
     print("\n=== PlayStyle performance ===")
     ps = playstyle_metrics(df, label_col)
     if ps.empty:
@@ -307,6 +457,7 @@ def main() -> None:
         print(ps.to_string(index=False))
 
     regime_summary = None
+    macro_summary: Dict[str, pd.DataFrame] = {}
     if not args.skip_regime:
         print("\n=== Regime performance (SPY trend/vol) ===")
         df_regime = attach_regime(df)
@@ -316,6 +467,39 @@ def main() -> None:
         else:
             regime_summary = reg
             print(reg.to_string(index=False))
+        print("\n=== Macro / Rate / Credit regimes ===")
+        df_macro = attach_macro_regimes(df)
+        for col in ["MacroRegime", "RateRegime", "CreditRegime", "VolRegime"]:
+            gm = grouped_metrics(df_macro, col, label_cols)
+            if gm.empty:
+                continue
+            macro_summary[col] = gm
+            print(f"\n-- {col} --")
+            print(gm.to_string(index=False))
+
+    print("\n=== Sector performance ===")
+    sector_perf = grouped_metrics(df, "Sector", label_cols)
+    if sector_perf.empty:
+        print("No sector info.")
+    else:
+        print(sector_perf.to_string(index=False))
+
+    holdout_summary: Dict[str, pd.DataFrame] = {}
+    if args.holdout_start:
+        try:
+            holdout_start = pd.to_datetime(args.holdout_start)
+            holdout_df = df[df["as_of_date"] >= holdout_start]
+            if not holdout_df.empty:
+                print(f"\n=== Holdout (>= {holdout_start.date()}) ===")
+                hold_buckets = multi_bucket_metrics(holdout_df, [score_col, "MuTotal"], label_cols, buckets=5)
+                for k, v in hold_buckets.items():
+                    print(f"\n-- Holdout buckets by {k} --")
+                    print(v.to_string(index=False))
+                holdout_summary = hold_buckets
+            else:
+                print(f"\nHoldout start {args.holdout_start} yields no rows.")
+        except Exception as exc:
+            print(f"\nHoldout parsing failed: {exc}")
 
     if args.out:
         import json
@@ -336,6 +520,10 @@ def main() -> None:
             "buckets": bucket_metrics(df, score_col, label_col, buckets=5).to_dict(orient="list"),
             "playstyle": playstyle_metrics(df, label_col).to_dict(orient="list"),
             "regime": regime_summary.to_dict(orient="list") if regime_summary is not None else {},
+            "macro": {k: v.to_dict(orient="list") for k, v in macro_summary.items()},
+            "sector": sector_perf.to_dict(orient="list") if not sector_perf.empty else {},
+            "multi": {k: v.to_dict(orient="list") for k, v in multi.items()},
+            "holdout": {k: v.to_dict(orient="list") for k, v in holdout_summary.items()},
         }
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(payload, default=str, indent=2), encoding="utf-8")
