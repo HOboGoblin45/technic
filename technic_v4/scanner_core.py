@@ -26,6 +26,7 @@ from datetime import datetime
 from technic_v4.engine import alpha_inference
 from technic_v4.engine import explainability
 from technic_v4.engine import meta_experience
+from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
 import concurrent.futures
 
@@ -385,6 +386,7 @@ class ScanConfig:
     mode: str = "fast"          # reserved for future ("fast" vs "full")
     max_symbols: int = 6000
     lookback_days: int = 150
+    as_of_date: Optional[str] = None  # optional YYYY-MM-DD to replay as of a past date
 
     # Universe filtering
     sectors: Optional[List[str]] = None
@@ -496,6 +498,7 @@ def _scan_symbol(
     symbol: str,
     lookback_days: int,
     trade_style: str,
+    as_of_date: Optional[pd.Timestamp] = None,
 ) -> Optional[pd.Series]:
     """
     Fetch history, compute indicators + scores, and return the *latest* row
@@ -516,6 +519,15 @@ def _scan_symbol(
 
     if df is None or df.empty:
         return None
+
+    # Clip to as-of date if supplied
+    if as_of_date is not None:
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df = df.copy()
+            df.index = pd.to_datetime(df.index)
+        df = df[df.index <= as_of_date]
+        if df.empty:
+            return None
 
     if not _passes_basic_filters(df):
         return None
@@ -552,10 +564,18 @@ def _process_symbol(
     """
     Wrapper to process a single symbol; returns a Series/row or None.
     """
+    as_of_ts = None
+    if config.as_of_date:
+        try:
+            as_of_ts = pd.Timestamp(config.as_of_date)
+        except Exception:
+            as_of_ts = None
+
     latest_local = _scan_symbol(
         symbol=urow.symbol,
         lookback_days=effective_lookback,
         trade_style=config.trade_style,
+        as_of_date=as_of_ts,
     )
     if latest_local is None:
         return None
@@ -1160,18 +1180,27 @@ def _finalize_results(
         if meta_stats is not None:
             meta_texts = [meta_stats.describe_row(row) for _, row in results_df.iterrows()]
             results_df["MetaSummary"] = meta_texts
+            setup_tags = [setup_library.classify_setup(row, meta_stats) for _, row in results_df.iterrows()]
+            results_df["SetupTag"] = setup_tags
             if "Explanation" not in results_df.columns:
                 results_df["Explanation"] = meta_texts
             if "Explanation" in results_df.columns:
                 filled = []
                 for exp, meta_txt in zip(results_df["Explanation"], meta_texts):
                     exp_str = str(exp) if exp is not None else ""
-                    filled.append(exp_str if exp_str.strip() else meta_txt)
+                    if exp_str.strip():
+                        filled.append(exp_str)
+                    elif meta_txt:
+                        filled.append(meta_txt)
+                    else:
+                        filled.append("")
                 results_df["Explanation"] = filled
         else:
             results_df["MetaSummary"] = ""
+            results_df["SetupTag"] = ""
     except Exception:
         results_df["MetaSummary"] = ""
+        results_df["SetupTag"] = ""
 
     # Optional scoreboard logging
     try:
