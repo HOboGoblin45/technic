@@ -21,6 +21,7 @@ EVENTS_CSV = DATA_DIR / "events_calendar.csv"
 # Range of earnings we care about: past 1y + next 1y
 EARNINGS_LOOKBACK_DAYS = 365
 EARNINGS_LOOKAHEAD_DAYS = 365
+FALLBACK_EARNINGS_LIMIT = int(os.environ.get("EVENTS_FALLBACK_EARNINGS_LIMIT", "300"))
 
 
 # --- HTTP HELPER --------------------------------------------------------------
@@ -50,28 +51,7 @@ def fmp_get(resource: str, params: Dict = None) -> List[dict]:
 
 # --- EARNINGS -----------------------------------------------------------------
 
-def build_earnings_map(symbols: List[str]) -> Dict[str, dict]:
-    """
-    Use ONE bulk call to /stable/earnings-calendar and then
-    split into last/next per symbol.
-
-    Returns:
-      { "AAPL": {
-          "last_date": "YYYY-MM-DD" or "",
-          "next_date": "YYYY-MM-DD" or "",
-          "surprise_positive": bool
-        }, ... }
-    """
-    today = date.today()
-    from_date = (today - timedelta(days=EARNINGS_LOOKBACK_DAYS)).isoformat()
-    to_date = (today + timedelta(days=EARNINGS_LOOKAHEAD_DAYS)).isoformat()
-
-    print(f"[events] Fetching earnings calendar {from_date} -> {to_date}")
-    rows = fmp_get("earnings-calendar", {"from": from_date, "to": to_date})
-
-    sym_set = {s.upper() for s in symbols}
-    buckets: Dict[str, dict] = defaultdict(lambda: {"past": [], "future": []})
-
+def _bucket_earnings_rows(rows: List[dict], sym_set: set[str], buckets: Dict[str, dict], today: date) -> None:
     for row in rows:
         sym = (row.get("symbol") or "").upper()
         if sym not in sym_set:
@@ -95,6 +75,47 @@ def build_earnings_map(symbols: List[str]) -> Dict[str, dict]:
             buckets[sym]["past"].append((d, row))
         else:
             buckets[sym]["future"].append((d, row))
+
+
+def build_earnings_map(symbols: List[str]) -> Dict[str, dict]:
+    """
+    Use ONE bulk call to /stable/earnings-calendar and then
+    split into last/next per symbol.
+
+    Returns:
+      { "AAPL": {
+          "last_date": "YYYY-MM-DD" or "",
+          "next_date": "YYYY-MM-DD" or "",
+          "surprise_positive": bool
+        }, ... }
+    """
+    today = date.today()
+    from_date = (today - timedelta(days=EARNINGS_LOOKBACK_DAYS)).isoformat()
+    to_date = (today + timedelta(days=EARNINGS_LOOKAHEAD_DAYS)).isoformat()
+
+    print(f"[events] Fetching earnings calendar {from_date} -> {to_date}")
+    rows = fmp_get("earnings-calendar", {"from": from_date, "to": to_date})
+
+    sym_set = {s.upper() for s in symbols}
+    buckets: Dict[str, dict] = defaultdict(lambda: {"past": [], "future": []})
+
+    _bucket_earnings_rows(rows, sym_set, buckets, today)
+
+    # Fallback per-symbol call for names missing both last/next (capped to avoid API flood)
+    missing = [s for s in sym_set if not buckets[s]["past"] and not buckets[s]["future"]]
+    if missing:
+        capped = missing[:FALLBACK_EARNINGS_LIMIT] if FALLBACK_EARNINGS_LIMIT > 0 else missing
+        if capped:
+            print(f"[events] Fallback earnings fetch for {len(capped)} symbols (cap={FALLBACK_EARNINGS_LIMIT})")
+        for sym in capped:
+            try:
+                sym_rows = fmp_get(
+                    "earnings-calendar",
+                    {"symbol": sym, "from": from_date, "to": to_date},
+                )
+                _bucket_earnings_rows(sym_rows, {sym}, buckets, today)
+            except Exception as exc:
+                print(f"[events] WARN: fallback earnings failed for {sym}: {exc}")
 
     # Build per-symbol summary
     result: Dict[str, dict] = {}
