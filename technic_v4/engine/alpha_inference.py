@@ -8,6 +8,7 @@ Intended as a drop-in enhancer for the factor-based alpha blend.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
@@ -51,6 +52,7 @@ except Exception:  # pragma: no cover
 DEFAULT_MODEL_PATH = Path("models/alpha/lgbm_v1.pkl")
 DEFAULT_ONNX_PATH = Path("models/alpha/lgbm_v1.onnx")
 DEFAULT_META_MODEL_PATH = Path("models/alpha/meta_alpha.pkl")
+DEFAULT_META_SUPER_PATH = Path("models/alpha/meta_super_ics.pkl")
 DEFAULT_DEEP_MODEL_PATH = Path("models/alpha/deep_alpha.pt")
 
 # Local XGB bundles (non-registry) for alpha_xgb_v2 (5d) and alpha_xgb_v2_10d (10d)
@@ -71,6 +73,39 @@ _XGB_MODEL_PATH_5D_REGIME = {
     "SIDEWAYS_HIGH_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_SIDE_HIVOL", "models/alpha/xgb_v2_SIDEWAYS_HIGH_VOL.pkl"),
 }
 _XGB_MODEL_PATH_5D_SECTOR_PREFIX = "models/alpha/xgb_v2_SECTOR_"
+_MODELS_DIR = Path("models/alpha")
+
+
+def _select_rolling_path(as_of_date: pd.Timestamp | None) -> Optional[str]:
+    if as_of_date is None:
+        return None
+    if not _MODELS_DIR.exists():
+        return None
+    candidates = []
+    for p in _MODELS_DIR.glob("xgb_v2_*_roll*.pkl"):
+        stem = p.stem  # e.g., xgb_v2_2018_roll or xgb_v2_2018_roll_SECTOR_TECH
+        m = re.search(r"xgb_v2_(\d{4})_roll", stem)
+        if not m:
+            continue
+        year = int(m.group(1))
+        candidates.append((year, str(p)))
+    if not candidates:
+        return None
+    asof_year = as_of_date.year
+    # pick the latest train_year <= asof_year, else the latest available
+    prior = [c for c in candidates if c[0] <= asof_year]
+    if prior:
+        year = max(prior, key=lambda x: x[0])[0]
+        # if multiple with same year, pick first
+        for y, path in candidates:
+            if y == year:
+                return path
+    # fallback: latest by year
+    year = max(candidates, key=lambda x: x[0])[0]
+    for y, path in candidates:
+        if y == year:
+            return path
+    return None
 
 
 def _load_xgb_bundle(path: str, cache: dict | None) -> tuple[Optional[dict], dict | None]:
@@ -278,10 +313,14 @@ def score_alpha_sector(df_features: pd.DataFrame, sector: str) -> Optional[pd.Se
     return score_alpha(df_features)
 
 
-def select_xgb_model_path(regime_label: str | None = None, sector: str | None = None) -> str:
+def select_xgb_model_path(
+    regime_label: str | None = None,
+    sector: str | None = None,
+    as_of_date: pd.Timestamp | None = None,
+) -> str:
     """
-    Choose the most specific model path available given regime and sector.
-    Priority: regime bundle > sector bundle > default 5d.
+    Choose the most specific model path available given regime/sector/date.
+    Priority: regime bundle > sector bundle > rolling window bundle (by date) > default 5d.
     """
     # Try regime-specific
     reg = (regime_label or "").upper().replace(" ", "_")
@@ -297,17 +336,25 @@ def select_xgb_model_path(regime_label: str | None = None, sector: str | None = 
         if os.path.exists(sec_path):
             return sec_path
 
+    # Try rolling-window bundle based on as_of_date
+    roll_path = _select_rolling_path(as_of_date)
+    if roll_path:
+        return roll_path
+
     # Default
     return _XGB_MODEL_PATH_5D
 
 
 def score_alpha_contextual(
-    df_features: pd.DataFrame, regime_label: str | None = None, sector: str | None = None
+    df_features: pd.DataFrame,
+    regime_label: str | None = None,
+    sector: str | None = None,
+    as_of_date: pd.Timestamp | None = None,
 ) -> Optional[pd.Series]:
     """
-    Score ML alpha using the most specific bundle available (regime > sector > default).
+    Score ML alpha using the most specific bundle available (regime > sector > rolling > default).
     """
-    path = select_xgb_model_path(regime_label, sector)
+    path = select_xgb_model_path(regime_label, sector, as_of_date=as_of_date)
     try:
         bundle, _ = _load_xgb_bundle(path, None)
         return _score_with_bundle(df_features, bundle, label=f"5d_{Path(path).stem}")
@@ -367,6 +414,22 @@ def load_meta_alpha_model() -> Optional[BaseAlphaModel]:
         return None
 
 
+_META_SUPER_MODEL = None
+
+
+def load_meta_super_model(path: Path = DEFAULT_META_SUPER_PATH):
+    global _META_SUPER_MODEL
+    if _META_SUPER_MODEL is not None:
+        return _META_SUPER_MODEL
+    if not path.exists():
+        return None
+    try:
+        _META_SUPER_MODEL = joblib.load(path)
+        return _META_SUPER_MODEL
+    except Exception:
+        return None
+
+
 def score_meta_alpha(df: pd.DataFrame) -> Optional[pd.Series]:
     model = load_meta_alpha_model()
     if model is None:
@@ -388,6 +451,28 @@ def score_meta_alpha(df: pd.DataFrame) -> Optional[pd.Series]:
     try:
         X = df[cols].replace([np.inf, -np.inf], np.nan).fillna(0)
         return model.predict(X)
+    except Exception:
+        return None
+
+
+def score_meta_super(df: pd.DataFrame) -> Optional[pd.Series]:
+    """
+    Score meta-model ("super-ICS") that outputs win probability (binary clf).
+    """
+    bundle = load_meta_super_model()
+    if bundle is None:
+        return None
+    model = bundle.get("model")
+    feats = bundle.get("features") or []
+    if model is None or not feats:
+        return None
+    missing = [c for c in feats if c not in df.columns]
+    if missing:
+        return None
+    try:
+        X = df[feats].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        probs = model.predict_proba(X)[:, 1]
+        return pd.Series(probs, index=df.index)
     except Exception:
         return None
 
