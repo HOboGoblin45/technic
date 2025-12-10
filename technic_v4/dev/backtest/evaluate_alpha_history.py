@@ -69,6 +69,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional YYYY-MM-DD to treat as holdout period for sanity checks.",
     )
     p.add_argument(
+        "--clip-abs",
+        type=float,
+        default=None,
+        help="Optional absolute cap for forward returns (applies to fwd_ret_* columns), e.g. 0.5 caps to [-0.5, 0.5].",
+    )
+    p.add_argument(
         "--out",
         type=str,
         default="",
@@ -143,6 +149,16 @@ def ensure_playstyle(df: pd.DataFrame) -> pd.DataFrame:
         return df
     df = df.copy()
     df["PlayStyle"] = df.apply(_classify_playstyle_row, axis=1)
+    return df
+
+
+def clip_labels(df: pd.DataFrame, label_cols: List[str], clip_abs: Optional[float]) -> pd.DataFrame:
+    if clip_abs is None:
+        return df
+    df = df.copy()
+    for lc in label_cols:
+        if lc in df.columns:
+            df[lc] = pd.to_numeric(df[lc], errors="coerce").clip(lower=-clip_abs, upper=clip_abs)
     return df
 
 
@@ -404,11 +420,12 @@ def main() -> None:
     if df.empty:
         raise SystemExit("Dataset is empty after filtering; aborting.")
 
-    df = ensure_playstyle(df)
     label_cols = [label_col]
     for extra in ["fwd_ret_10d", "fwd_ret_21d"]:
         if extra in df.columns:
             label_cols.append(extra)
+    df = clip_labels(df, label_cols, args.clip_abs)
+    df = ensure_playstyle(df)
 
     # Daily cross-sectional metrics
     daily_df = compute_daily_metrics(df, score_col, label_col, top_n=args.top_n)
