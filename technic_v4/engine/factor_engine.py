@@ -103,6 +103,24 @@ def _fundamental_ratio(raw: Dict, num_keys: tuple[str, ...], denom_key: str) -> 
     return np.nan
 
 
+def _safe_ratio(raw: Dict, num_keys: tuple[str, ...], denom_keys: tuple[str, ...]) -> float:
+    num = None
+    for k in num_keys:
+        if raw.get(k):
+            num = float(raw[k])
+            break
+    if num is None:
+        return np.nan
+    denom = None
+    for k in denom_keys:
+        if raw.get(k):
+            denom = float(raw[k])
+            break
+    if denom is None or denom == 0:
+        return np.nan
+    return num / denom
+
+
 def _maybe_div_yield(raw: Dict) -> float:
     for key in ("dividend_yield", "dividendYield", "forward_dividend_yield"):
         if raw.get(key):
@@ -162,9 +180,15 @@ def compute_factor_bundle(
     factors["value_cfp"] = _fundamental_ratio(raw_f, ("operating_cash_flow", "ocf"), "market_cap")
     factors["value_earnings_yield"] = _maybe_earnings_yield(raw_f)
     factors["dividend_yield"] = _maybe_div_yield(raw_f)
+    factors["value_fcf_yield"] = _safe_ratio(raw_f, ("free_cash_flow", "fcf", "freeCashFlow"), ("market_cap", "marketCap"))
+    factors["value_ev_ebitda"] = _safe_ratio(raw_f, ("enterprise_value", "ev", "enterpriseValue"), ("ebitda", "EBITDA"))
+    factors["value_ev_sales"] = _safe_ratio(raw_f, ("enterprise_value", "ev", "enterpriseValue"), ("revenue", "sales"))
     factors["quality_roe"] = _fundamental_ratio(raw_f, ("return_on_equity", "roe"), "market_cap")
     factors["quality_roa"] = _fundamental_ratio(raw_f, ("return_on_assets", "roa"), "total_assets")
     factors["quality_gpm"] = _fundamental_ratio(raw_f, ("gross_profit", "grossProfit"), "revenue")
+    factors["quality_margin_ebitda"] = _safe_ratio(raw_f, ("ebitda", "EBITDA"), ("revenue", "sales"))
+    factors["quality_margin_op"] = _safe_ratio(raw_f, ("operating_income", "ebit"), ("revenue", "sales"))
+    factors["quality_margin_net"] = _safe_ratio(raw_f, ("net_income", "netIncome", "ni"), ("revenue", "sales"))
     factors["leverage_de"] = _fundamental_ratio(raw_f, ("total_debt", "debt"), "total_equity")
     factors["interest_coverage"] = _fundamental_ratio(raw_f, ("ebit", "operating_income"), "interest_expense")
     factors["growth_rev"] = raw_f.get("revenue_growth") or raw_f.get("sales_growth") or np.nan
