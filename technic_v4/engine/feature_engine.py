@@ -13,6 +13,9 @@ import numpy as np
 import pandas as pd
 
 from technic_v4 import data_engine
+from technic_v4.infra.logging import get_logger
+import json
+from pathlib import Path
 
 try:  # talib may be unavailable; degrade gracefully
     import talib
@@ -26,6 +29,35 @@ from technic_v4.data_layer.fundamentals import FundamentalsSnapshot
 from technic_v4.config.settings import get_settings
 from technic_v4.alpha import tft_inference
 from technic_v4 import data_engine
+
+logger = get_logger()
+_MARKET_CAP_CACHE: Dict[str, float] = {}
+_MARKET_CAP_PATH = Path("data_cache/market_caps.json")
+
+
+def _load_market_cap_cache() -> Dict[str, float]:
+    global _MARKET_CAP_CACHE
+    if _MARKET_CAP_CACHE:
+        return _MARKET_CAP_CACHE
+    try:
+        if _MARKET_CAP_PATH.exists():
+            with _MARKET_CAP_PATH.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    _MARKET_CAP_CACHE = {k.upper(): float(v) for k, v in data.items() if v is not None}
+    except Exception:
+        logger.warning("[features] failed to load market cap cache", exc_info=True)
+    return _MARKET_CAP_CACHE
+
+
+def _save_market_cap_cache(cache: Dict[str, float]) -> None:
+    try:
+        _MARKET_CAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _MARKET_CAP_PATH.open("w", encoding="utf-8") as f:
+            json.dump(cache, f)
+    except Exception:
+        logger.warning("[features] failed to save market cap cache", exc_info=True)
+
 
 def _safe_series(df: pd.DataFrame, col: str) -> pd.Series:
     return df[col] if col in df.columns else pd.Series(dtype=float)
@@ -125,24 +157,31 @@ def build_features(
     feats["value_ep"] = raw_f.get("earnings_yield") or raw_f.get("ep")
     feats["quality_roe"] = raw_f.get("return_on_equity") or raw_f.get("roe")
 
-            # Market-cap ingestion (Polygon)
+    # Market-cap ingestion (prefers cached/universe map; quiet fallback)
     if "market_cap" not in feats:
-        symbol = raw_f.get("symbol") or "<UNKNOWN>"
+        cache = _load_market_cap_cache()
+        symbol = raw_f.get("symbol") if isinstance(raw_f, dict) else None
+        sym_upper = symbol.upper() if isinstance(symbol, str) else None
         try:
-            # Prefer Polygon ticker details if available
-            mkt_details = data_engine.get_ticker_details(symbol) if symbol and symbol != "<UNKNOWN>" else {}
-            if mkt_details and "market_cap" in mkt_details:
-                feats["market_cap"] = mkt_details["market_cap"]
-            elif hasattr(fundamentals, "columns") and "market_cap" in fundamentals.columns:  # type: ignore[attr-defined]
-                feats["market_cap"] = fundamentals["market_cap"]  # type: ignore[index]
-            elif hasattr(fundamentals, "raw") and "market_cap" in getattr(fundamentals, "raw", {}):
-                feats["market_cap"] = fundamentals.raw["market_cap"]
-            elif isinstance(raw_f, dict) and "market_cap" in raw_f:
-                feats["market_cap"] = raw_f.get("market_cap")
+            if sym_upper and sym_upper in cache:
+                feats["market_cap"] = cache[sym_upper]
             else:
-                print("WARNING: market_cap missing for", symbol)
+                mkt_details = data_engine.get_ticker_details(sym_upper) if sym_upper else {}
+                if mkt_details and "market_cap" in mkt_details:
+                    feats["market_cap"] = mkt_details["market_cap"]
+                    if sym_upper:
+                        cache[sym_upper] = feats["market_cap"]
+                        _save_market_cap_cache(cache)
+                elif hasattr(fundamentals, "columns") and "market_cap" in fundamentals.columns:  # type: ignore[attr-defined]
+                    feats["market_cap"] = fundamentals["market_cap"]  # type: ignore[index]
+                elif hasattr(fundamentals, "raw") and "market_cap" in getattr(fundamentals, "raw", {}):
+                    feats["market_cap"] = fundamentals.raw["market_cap"]
+                elif isinstance(raw_f, dict) and "market_cap" in raw_f:
+                    feats["market_cap"] = raw_f.get("market_cap")
+                else:
+                    feats["market_cap"] = np.nan
         except Exception:
-            print("WARNING: market_cap lookup failed for", symbol)
+            feats["market_cap"] = np.nan
 
     # Optional TFT multi-horizon forecasts
     settings = get_settings()

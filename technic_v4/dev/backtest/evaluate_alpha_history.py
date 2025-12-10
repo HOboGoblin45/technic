@@ -12,12 +12,19 @@ Usage (from repo root):
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+# Ensure project root on sys.path for direct invocation
+import sys
+
+# project root (repo root)
+ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from technic_v4 import data_engine
 from technic_v4.engine import regime_engine
@@ -50,6 +57,17 @@ def parse_args() -> argparse.Namespace:
         default=20,
         help="Cross-sectional precision@N cut for daily metrics.",
     )
+    p.add_argument(
+        "--skip-regime",
+        action="store_true",
+        help="Skip regime stats (avoids SPY fetch / cache warnings).",
+    )
+    p.add_argument(
+        "--out",
+        type=str,
+        default="",
+        help="Optional JSON path to save summary metrics.",
+    )
     return p.parse_args()
 
 
@@ -72,19 +90,54 @@ def compute_daily_metrics(
 ) -> pd.DataFrame:
     rows: List[dict] = []
     grouped = df.groupby("as_of_date")
+    skipped_constant = 0
     for as_of, g in grouped:
         g = g.dropna(subset=[score_col, label_col])
         if g.empty:
             continue
         preds = pd.Series(g[score_col].values, index=g.index)
         actual = pd.Series(g[label_col].values, index=g.index)
+        # Skip days with no cross-sectional variation to avoid noisy warnings
+        if preds.nunique() < 2 or actual.nunique() < 2:
+            skipped_constant += 1
+            continue
         ic = eval_metrics.rank_ic(preds, actual)
         n = min(top_n, len(preds))
         top_idx = preds.nlargest(n).index
         prec = float((actual.loc[top_idx] > 0).mean())
         avg_top = float(actual.loc[top_idx].mean())
         rows.append({"as_of_date": as_of, "ic": ic, "precision_at_n": prec, "avg_top": avg_top})
+    if skipped_constant:
+        print(f"[WARN] Skipped {skipped_constant} days with constant scores or labels.")
     return pd.DataFrame(rows)
+
+
+def _classify_playstyle_row(row: pd.Series) -> str:
+    """Lightweight PlayStyle classifier using RiskScore if PlayStyle missing."""
+    risk_val = row.get("PlayStyle")
+    if isinstance(risk_val, str) and risk_val:
+        return risk_val  # already present
+
+    risk_val = row.get("risk_score", row.get("RiskScore", np.nan))
+    try:
+        rv = float(risk_val)
+    except Exception:
+        rv = np.nan
+    if pd.isna(rv):
+        return "Neutral"
+    if rv >= 0.2:
+        return "Stable"
+    if rv < 0.12:
+        return "Explosive"
+    return "Neutral"
+
+
+def ensure_playstyle(df: pd.DataFrame) -> pd.DataFrame:
+    if "PlayStyle" in df.columns:
+        return df
+    df = df.copy()
+    df["PlayStyle"] = df.apply(_classify_playstyle_row, axis=1)
+    return df
 
 
 def summarize_split(df: pd.DataFrame, name: str, label_col: str, daily_df: pd.DataFrame) -> dict:
@@ -204,6 +257,8 @@ def main() -> None:
     if df.empty:
         raise SystemExit("Dataset is empty after filtering; aborting.")
 
+    df = ensure_playstyle(df)
+
     # Daily cross-sectional metrics
     daily_df = compute_daily_metrics(df, score_col, label_col, top_n=args.top_n)
 
@@ -251,13 +306,40 @@ def main() -> None:
     else:
         print(ps.to_string(index=False))
 
-    print("\n=== Regime performance (SPY trend/vol) ===")
-    df_regime = attach_regime(df)
-    reg = regime_metrics(df_regime, label_col)
-    if reg.empty:
-        print("Regime labeling unavailable.")
-    else:
-        print(reg.to_string(index=False))
+    regime_summary = None
+    if not args.skip_regime:
+        print("\n=== Regime performance (SPY trend/vol) ===")
+        df_regime = attach_regime(df)
+        reg = regime_metrics(df_regime, label_col)
+        if reg.empty:
+            print("Regime labeling unavailable.")
+        else:
+            regime_summary = reg
+            print(reg.to_string(index=False))
+
+    if args.out:
+        import json
+
+        out_path = Path(args.out)
+        payload = {
+            "daily": {
+                "ic_mean": float(daily_df["ic"].mean()) if not daily_df.empty else np.nan,
+                "ic_median": float(daily_df["ic"].median()) if not daily_df.empty else np.nan,
+                "precision_at_n": float(daily_df["precision_at_n"].mean()) if not daily_df.empty else np.nan,
+                "avg_top": float(daily_df["avg_top"].mean()) if not daily_df.empty else np.nan,
+            },
+            "splits": {
+                "train": summarize_split(df[train_mask], "train", label_col, daily_df[daily_df["as_of_date"].isin(df[train_mask]["as_of_date"])]),
+                "val": summarize_split(df[val_mask], "val", label_col, daily_df[daily_df["as_of_date"].isin(df[val_mask]["as_of_date"])]),
+                "test": summarize_split(df[test_mask], "test", label_col, daily_df[daily_df["as_of_date"].isin(df[test_mask]["as_of_date"])]),
+            },
+            "buckets": bucket_metrics(df, score_col, label_col, buckets=5).to_dict(orient="list"),
+            "playstyle": playstyle_metrics(df, label_col).to_dict(orient="list"),
+            "regime": regime_summary.to_dict(orient="list") if regime_summary is not None else {},
+        }
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(payload, default=str, indent=2), encoding="utf-8")
+        print(f"\nSaved summary JSON to {out_path}")
 
 
 if __name__ == "__main__":
