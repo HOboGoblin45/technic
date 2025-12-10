@@ -6,6 +6,8 @@ import pandas as pd
 
 import sys
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing
 
 # --- Ensure project root is on sys.path ---
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +85,12 @@ def parse_args() -> argparse.Namespace:
         default="data/training_data.parquet",
         help="Path to output parquet file.",
     )
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=max(4, multiprocessing.cpu_count() // 2),
+        help="Number of worker threads to parallelize symbols (default: half of CPUs, min 4).",
+    )
     return p.parse_args()
 
 
@@ -119,43 +127,32 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
     fwd_10 = 10
     max_fwd_days = max(fwd_5, fwd_10)
 
-    for symbol in symbols:
-        print(f"Processing {symbol}...")
-
+    def _process_symbol(symbol: str) -> list[dict]:
+        out_rows: list[dict] = []
         # Pull enough daily history for lookback + max forward window
         span_days = (end_dt - start_dt).days + args.lookback_days + max_fwd_days + 10
         requested_days = args.history_days if args.history_days > 0 else span_days
         days = max(requested_days, args.lookback_days + max_fwd_days + 50)
         hist = data_engine.get_price_history(symbol, days=days, freq="daily")
         if hist is None or hist.empty:
-            print(f"  no history for {symbol}, skipping.")
-            continue
+            return out_rows
 
-        # Sort by date index
         df_hist = hist.sort_index().copy()
         if not isinstance(df_hist.index, pd.DatetimeIndex):
             df_hist.index = pd.to_datetime(df_hist.index)
 
         if "Close" not in df_hist.columns:
-            print(f"  no Close column for {symbol}, skipping.")
-            continue
+            return out_rows
 
         n_hist = len(df_hist)
-        print(f"  history length: {n_hist}")
-
         if n_hist <= args.lookback_days + max_fwd_days:
-            print(
-                f"  not enough history for {symbol} (need > {args.lookback_days + max_fwd_days}), skipping."
-            )
-            continue
+            return out_rows
 
-        n_rows_before = len(rows)
-        # Loop so that both 5d and 10d horizons are in-bounds
-        for idx in range(args.lookback_days, n_hist - max_fwd_days, max(1, args.stride)):
+        step = max(1, args.stride)
+        for idx in range(args.lookback_days, n_hist - max_fwd_days, step):
             window = df_hist.iloc[: idx + 1]
             as_of_date = window.index[-1]
 
-            # enforce date window for the as-of point
             if as_of_date < start_dt or as_of_date > end_dt:
                 continue
 
@@ -163,16 +160,11 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
             if scored is None or scored.empty:
                 continue
 
-            # latest scored row corresponds to the as-of date
             as_of_row = scored.iloc[-1]
-
-            # as-of date and forward closes
             as_of_close = float(window["Close"].iloc[-1])
 
             idx_5 = idx + fwd_5
             idx_10 = idx + fwd_10
-
-            # Safety: ensure both forward indices are in range
             if idx_5 >= n_hist or idx_10 >= n_hist:
                 continue
 
@@ -187,11 +179,21 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
             feats["as_of_date"] = as_of_date
             feats["fwd_ret_5d"] = fwd_ret_5d
             feats["fwd_ret_10d"] = fwd_ret_10d
+            out_rows.append(feats)
+        return out_rows
 
-            rows.append(feats)
-
-        n_rows_after = len(rows)
-        print(f"  added {n_rows_after - n_rows_before} training rows for {symbol}")
+    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
+        futures = {ex.submit(_process_symbol, sym): sym for sym in symbols}
+        for fut in as_completed(futures):
+            sym = futures[fut]
+            try:
+                sym_rows = fut.result()
+            except Exception as exc:
+                print(f"{sym}: error {exc}")
+                continue
+            if sym_rows:
+                rows.extend(sym_rows)
+                print(f"{sym}: added {len(sym_rows)} rows")
 
     return pd.DataFrame(rows)
 
