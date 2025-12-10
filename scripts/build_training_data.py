@@ -21,6 +21,7 @@ DEFAULT_LOOKBACK_DAYS = 150
 DEFAULT_FWD_DAYS = 5
 DEFAULT_TRADE_STYLE = "Short-term swing"
 DEFAULT_MAX_SYMBOLS = 300
+DEFAULT_START_DATE = "2010-01-01"
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,6 +51,33 @@ def parse_args() -> argparse.Namespace:
         help="Trade style passed into compute_scores (e.g. 'Short-term swing').",
     )
     p.add_argument(
+        "--start-date",
+        type=str,
+        default=DEFAULT_START_DATE,
+        help="Earliest as-of date to include (YYYY-MM-DD).",
+    )
+    p.add_argument(
+        "--end-date",
+        type=str,
+        default=pd.Timestamp.utcnow().normalize().date().isoformat(),
+        help="Latest as-of date to include (YYYY-MM-DD).",
+    )
+    p.add_argument(
+        "--history-days",
+        type=int,
+        default=0,
+        help=(
+            "Number of calendar days to request from the data source. "
+            "If 0, computed from start/end dates automatically."
+        ),
+    )
+    p.add_argument(
+        "--stride",
+        type=int,
+        default=1,
+        help="Take every Nth as-of day to limit dataset size (1 = daily).",
+    )
+    p.add_argument(
         "--out",
         type=str,
         default="data/training_data.parquet",
@@ -76,7 +104,15 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
     if args.max_symbols and args.max_symbols > 0:
         symbols = symbols[: args.max_symbols]
 
-    print(f"Building training data for {len(symbols)} symbols (max_symbols={args.max_symbols})")
+    start_dt = pd.Timestamp(args.start_date).normalize()
+    end_dt = pd.Timestamp(args.end_date).normalize()
+    if end_dt < start_dt:
+        raise ValueError("end-date must be on or after start-date")
+
+    print(
+        f"Building training data for {len(symbols)} symbols "
+        f"(max_symbols={args.max_symbols}) from {start_dt.date()} to {end_dt.date()}"
+    )
 
     # We'll always compute both 5d and 10d; use the larger horizon for loop bounds
     fwd_5 = args.fwd_days
@@ -87,7 +123,9 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
         print(f"Processing {symbol}...")
 
         # Pull enough daily history for lookback + max forward window
-        days = max(args.lookback_days + max_fwd_days + 50, 300)
+        span_days = (end_dt - start_dt).days + args.lookback_days + max_fwd_days + 10
+        requested_days = args.history_days if args.history_days > 0 else span_days
+        days = max(requested_days, args.lookback_days + max_fwd_days + 50)
         hist = data_engine.get_price_history(symbol, days=days, freq="daily")
         if hist is None or hist.empty:
             print(f"  no history for {symbol}, skipping.")
@@ -95,6 +133,8 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
 
         # Sort by date index
         df_hist = hist.sort_index().copy()
+        if not isinstance(df_hist.index, pd.DatetimeIndex):
+            df_hist.index = pd.to_datetime(df_hist.index)
 
         if "Close" not in df_hist.columns:
             print(f"  no Close column for {symbol}, skipping.")
@@ -111,8 +151,13 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
 
         n_rows_before = len(rows)
         # Loop so that both 5d and 10d horizons are in-bounds
-        for idx in range(args.lookback_days, n_hist - max_fwd_days):
+        for idx in range(args.lookback_days, n_hist - max_fwd_days, max(1, args.stride)):
             window = df_hist.iloc[: idx + 1]
+            as_of_date = window.index[-1]
+
+            # enforce date window for the as-of point
+            if as_of_date < start_dt or as_of_date > end_dt:
+                continue
 
             scored = compute_scores(window, trade_style=args.trade_style, fundamentals=None)
             if scored is None or scored.empty:
@@ -136,12 +181,6 @@ def build_training_rows(args: argparse.Namespace) -> pd.DataFrame:
 
             fwd_ret_5d = (fwd_close_5 - as_of_close) / as_of_close
             fwd_ret_10d = (fwd_close_10 - as_of_close) / as_of_close
-
-            # ensure there's a Date field
-            if "Date" in as_of_row.index:
-                as_of_date = as_of_row["Date"]
-            else:
-                as_of_date = window.index[-1]
 
             feats = as_of_row.to_dict()
             feats["symbol"] = symbol

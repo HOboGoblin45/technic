@@ -53,13 +53,15 @@ DEFAULT_ONNX_PATH = Path("models/alpha/lgbm_v1.onnx")
 DEFAULT_META_MODEL_PATH = Path("models/alpha/meta_alpha.pkl")
 DEFAULT_DEEP_MODEL_PATH = Path("models/alpha/deep_alpha.pt")
 
-# Local XGB bundles (non-registry) for alpha_xgb_v1 (5d) and alpha_xgb_v1_10d (10d)
+# Local XGB bundles (non-registry) for alpha_xgb_v2 (5d) and alpha_xgb_v2_10d (10d)
 _XGB_BUNDLE_5D: Optional[dict] = None
 _XGB_BUNDLE_10D: Optional[dict] = None
-_XGB_MODEL_PATH_5D = os.getenv("TECHNIC_ALPHA_MODEL_PATH", "models/alpha/xgb_v1.pkl")
+_XGB_MODEL_PATH_5D = os.getenv("TECHNIC_ALPHA_MODEL_PATH", "models/alpha/xgb_v2.pkl")
+_XGB_MODEL_PATH_5D_FALLBACK = "models/alpha/xgb_v1.pkl"
 _XGB_MODEL_PATH_10D = os.getenv(
-    "TECHNIC_ALPHA_MODEL_PATH_10D", "models/alpha/xgb_v1_10d.pkl"
+    "TECHNIC_ALPHA_MODEL_PATH_10D", "models/alpha/xgb_v2_10d.pkl"
 )
+_XGB_MODEL_PATH_10D_FALLBACK = "models/alpha/xgb_v1_10d.pkl"
 
 
 def _load_xgb_bundle(path: str, cache: dict | None) -> tuple[Optional[dict], dict | None]:
@@ -76,15 +78,40 @@ def _load_xgb_bundle(path: str, cache: dict | None) -> tuple[Optional[dict], dic
 def load_xgb_bundle_5d() -> dict:
     """Lazy-load 5d XGB alpha model bundle."""
     global _XGB_BUNDLE_5D
-    bundle, _XGB_BUNDLE_5D = _load_xgb_bundle(_XGB_MODEL_PATH_5D, _XGB_BUNDLE_5D)
-    return bundle  # type: ignore[return-value]
+    try:
+        bundle, _XGB_BUNDLE_5D = _load_xgb_bundle(_XGB_MODEL_PATH_5D, _XGB_BUNDLE_5D)
+        return bundle  # type: ignore[return-value]
+    except FileNotFoundError:
+        # Allow clean fallback to the prior v1 bundle
+        if Path(_XGB_MODEL_PATH_5D_FALLBACK).exists():
+            logger.info(
+                "[ALPHA] falling back to 5d XGB bundle at %s", _XGB_MODEL_PATH_5D_FALLBACK
+            )
+            bundle, _XGB_BUNDLE_5D = _load_xgb_bundle(
+                _XGB_MODEL_PATH_5D_FALLBACK, _XGB_BUNDLE_5D
+            )
+            return bundle  # type: ignore[return-value]
+        raise
 
 
 def load_xgb_bundle_10d() -> dict:
     """Lazy-load 10d XGB alpha model bundle (if present)."""
     global _XGB_BUNDLE_10D
-    bundle, _XGB_BUNDLE_10D = _load_xgb_bundle(_XGB_MODEL_PATH_10D, _XGB_BUNDLE_10D)
-    return bundle  # type: ignore[return-value]
+    try:
+        bundle, _XGB_BUNDLE_10D = _load_xgb_bundle(
+            _XGB_MODEL_PATH_10D, _XGB_BUNDLE_10D
+        )
+        return bundle  # type: ignore[return-value]
+    except FileNotFoundError:
+        if Path(_XGB_MODEL_PATH_10D_FALLBACK).exists():
+            logger.info(
+                "[ALPHA] falling back to 10d XGB bundle at %s", _XGB_MODEL_PATH_10D_FALLBACK
+            )
+            bundle, _XGB_BUNDLE_10D = _load_xgb_bundle(
+                _XGB_MODEL_PATH_10D_FALLBACK, _XGB_BUNDLE_10D
+            )
+            return bundle  # type: ignore[return-value]
+        raise
 
 
 # -------------------------------

@@ -83,7 +83,8 @@ def get_stock_history_df(symbol: str, days: int) -> Optional[pd.DataFrame]:
     params = {
         "adjusted": "true",
         "sort": "asc",
-        "limit": 5000,
+        # Allow long spans (decade+) without truncation
+        "limit": 50000,
     }
 
     resp = _polygon_get(path, params)
