@@ -7,7 +7,7 @@ from typing import Optional
 
 import pandas as pd
 import requests
-from technic_v4 import config as technic_config
+import os
 
 from technic_v4.data_layer.market_cache import MarketCache
 from technic_v4.data_layer.price_layer import get_stock_history_df as _price_history
@@ -116,7 +116,7 @@ def get_ticker_details(symbol: str) -> dict:
     Fetch Polygon ticker details including market_cap.
     Returns the raw 'results' dict or {} on failure.
     """
-    api_key = technic_config.POLYGON_API_KEY
+    api_key = os.getenv("POLYGON_API_KEY")
     if not api_key:
         # No key configured; skip network call
         return {}
