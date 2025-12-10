@@ -242,28 +242,18 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     if settings.use_ml_alpha:
         # 5d alpha (regime/sector-aware)
         try:
+            reg_label = None
+            if regime:
+                reg_label = regime.get("label") or regime.get("regime_label")
+
             if "Sector" in df.columns:
                 ml_5d_vals = pd.Series(np.nan, index=df.index)
                 for sec, subdf in df.groupby("Sector"):
-                    sub_pred = None
-                    reg_label = None
-                    if regime:
-                        reg_label = regime.get("label") or regime.get("regime_label")
-                    # Try regime model first, then sector, then default
-                    if reg_label:
-                        sub_pred = alpha_inference.score_alpha_regime(subdf, str(reg_label))
-                    if sub_pred is None:
-                        sub_pred = alpha_inference.score_alpha_sector(subdf, str(sec))
+                    sub_pred = alpha_inference.score_alpha_contextual(subdf, reg_label, sec)
                     ml_5d_vals.loc[subdf.index] = sub_pred
                 ml_5d = ml_5d_vals
             else:
-                reg_label = None
-                if regime:
-                    reg_label = regime.get("label") or regime.get("regime_label")
-                if reg_label:
-                    ml_5d = alpha_inference.score_alpha_regime(df, str(reg_label))
-                else:
-                    ml_5d = alpha_inference.score_alpha(df)
+                ml_5d = alpha_inference.score_alpha_contextual(df, reg_label, None)
         except Exception:
             logger.warning("[ALPHA] score_alpha() 5d failed", exc_info=True)
             ml_5d = None
@@ -1119,6 +1109,8 @@ def _finalize_results(
         return series.rank(pct=True) * 100.0
 
     momentum_cols = [("mom_21", "momentum_rank_21d"), ("mom_63", "momentum_rank_63d")]
+    # Longer horizons (6m ~126d, 12m ~252d) if present
+    momentum_cols.extend([("mom_126", "momentum_rank_126d"), ("mom_252", "momentum_rank_252d")])
     for src, tgt in momentum_cols:
         if src in results_df.columns:
             s = pd.to_numeric(results_df[src], errors="coerce")
@@ -1135,14 +1127,32 @@ def _finalize_results(
 
     if "ATR14_pct" in results_df.columns:
         s = pd.to_numeric(results_df["ATR14_pct"], errors="coerce")
-        results_df["vol_rank"] = _pct_rank(s) if s.notna().any() else np.nan
+        if s.notna().any():
+            results_df["vol_rank"] = _pct_rank(s)
+            if "Sector" in results_df.columns:
+                try:
+                    results_df["vol_rank_sector"] = (
+                        results_df.groupby("Sector")["ATR14_pct"]
+                        .transform(lambda x: _pct_rank(pd.to_numeric(x, errors="coerce")))
+                    )
+                except Exception:
+                    results_df["vol_rank_sector"] = np.nan
     if "DollarVolume" in results_df.columns:
         s = pd.to_numeric(results_df["DollarVolume"], errors="coerce")
-        results_df["volume_rank"] = _pct_rank(s) if s.notna().any() else np.nan
+        if s.notna().any():
+            results_df["volume_rank"] = _pct_rank(s)
+            if "Sector" in results_df.columns:
+                try:
+                    results_df["volume_rank_sector"] = (
+                        results_df.groupby("Sector")["DollarVolume"]
+                        .transform(lambda x: _pct_rank(pd.to_numeric(x, errors="coerce")))
+                    )
+                except Exception:
+                    results_df["volume_rank_sector"] = np.nan
 
     # Valuation rank using earnings yield; fallback to FCF yield
     val_src = None
-    for cand in ["value_earnings_yield", "value_fcf_yield"]:
+    for cand in ["value_earnings_yield", "value_fcf_yield", "value_ev_ebitda", "value_ev_sales"]:
         if cand in results_df.columns:
             val_src = pd.to_numeric(results_df[cand], errors="coerce")
             if val_src.notna().any():
