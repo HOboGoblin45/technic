@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import requests
+from technic_v4.universe_loader import load_universe
 
 # --- CONFIG -------------------------------------------------------------------
 
@@ -225,6 +226,6 @@ def build_events_csv(symbols: List[str]) -> None:
 
 
 if __name__ == "__main__":
-    # TODO: Replace this with your real Technic universe loader
-    test_symbols = ["AAPL", "MSFT", "ODP", "VMEO", "VRNT"]
-    build_events_csv(test_symbols)
+    universe = load_universe()
+    symbols = [row.symbol for row in universe]
+    build_events_csv(symbols)

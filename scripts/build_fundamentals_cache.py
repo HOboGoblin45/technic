@@ -1,12 +1,18 @@
 import json
 import os
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
+from technic_v4.universe_loader import load_universe
+from requests import Session
 
 FMP_API_KEY = os.environ.get("FMP_API_KEY", "YOUR_FMP_API_KEY")
 STABLE_BASE = "https://financialmodelingprep.com/stable"
+REQUEST_DELAY = float(os.environ.get("FUNDAMENTALS_REQUEST_DELAY", "0.25"))
+MAX_RETRIES = 3
+BACKOFF_FACTOR = 2.0
 
 DATA_DIR = Path("data_cache")
 FUND_DIR = DATA_DIR / "fundamentals"
@@ -15,7 +21,7 @@ FUND_DIR.mkdir(exist_ok=True, parents=True)
 
 # --- HTTP HELPER --------------------------------------------------------------
 
-def fmp_get(resource: str, params: Dict = None) -> List[dict]:
+def fmp_get(resource: str, params: Dict = None, session: Optional[Session] = None) -> List[dict]:
     """
     Generic helper for FMP stable API.
 
@@ -27,14 +33,34 @@ def fmp_get(resource: str, params: Dict = None) -> List[dict]:
     url = f"{STABLE_BASE}/{resource.lstrip('/')}"
     q = dict(params or {})
     q["apikey"] = FMP_API_KEY
-    r = requests.get(url, params=q, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    if not isinstance(data, list):
-        if isinstance(data, dict):
-            return [data]
-        return []
-    return data
+    client = session or requests
+
+    attempt = 0
+    while True:
+        try:
+            r = client.get(url, params=q, timeout=20)
+            r.raise_for_status()
+            data = r.json()
+            if not isinstance(data, list):
+                if isinstance(data, dict):
+                    return [data]
+                return []
+            return data
+        except requests.HTTPError as exc:
+            status = getattr(exc.response, "status_code", None)
+            if status == 429 and attempt < MAX_RETRIES:
+                delay = BACKOFF_FACTOR ** attempt
+                retry_after = exc.response.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        delay = max(delay, float(retry_after))
+                    except Exception:
+                        pass
+                print(f"[fundamentals] 429 rate limit on {resource}; sleeping {delay:.2f}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                time.sleep(delay)
+                attempt += 1
+                continue
+            raise
 
 
 def safe_div(a: Optional[float], b: Optional[float]) -> Optional[float]:
@@ -57,23 +83,26 @@ def growth(curr: Optional[float], prev: Optional[float]) -> Optional[float]:
 
 # --- CORE FETCH ---------------------------------------------------------------
 
-def fetch_fundamentals(symbol: str) -> Dict:
+def fetch_fundamentals(symbol: str, session: Optional[Session] = None) -> Dict:
     sym = symbol.upper()
 
     # Pull last 2 ANNUAL statements (Starter supports annual statements). :contentReference[oaicite:3]{index=3}
     income = fmp_get(
         "income-statement",
         {"symbol": sym, "period": "annual", "limit": 2},
+        session=session,
     )
     balance = fmp_get(
         "balance-sheet-statement",
         {"symbol": sym, "period": "annual", "limit": 2},
+        session=session,
     )
     cash = fmp_get(
         "cash-flow-statement",
         {"symbol": sym, "period": "annual", "limit": 2},
+        session=session,
     )
-    profile = fmp_get("profile", {"symbol": sym})
+    profile = fmp_get("profile", {"symbol": sym}, session=session)
 
     inc_cur = income[0] if income else {}
     inc_prev = income[1] if len(income) > 1 else {}
@@ -175,20 +204,31 @@ def fetch_fundamentals(symbol: str) -> Dict:
 
 
 def write_fundamentals(symbols: List[str]) -> None:
-    for sym in symbols:
-        try:
-            data = fetch_fundamentals(sym)
-        except Exception as exc:
-            print(f"[fundamentals] WARN: failed for {sym}: {exc}")
-            continue
+    unique_syms = []
+    seen = set()
+    for s in symbols:
+        u = s.upper()
+        if u and u not in seen:
+            seen.add(u)
+            unique_syms.append(u)
 
-        out_path = FUND_DIR / f"{sym.upper()}.json"
-        with out_path.open("w") as f:
-            json.dump(data, f, indent=2, sort_keys=True)
-        print(f"[fundamentals] Wrote {out_path}")
+    with Session() as session:
+        for sym in unique_syms:
+            try:
+                data = fetch_fundamentals(sym, session=session)
+            except Exception as exc:
+                print(f"[fundamentals] WARN: failed for {sym}: {exc}")
+                continue
+
+            out_path = FUND_DIR / f"{sym}.json"
+            with out_path.open("w") as f:
+                json.dump(data, f, indent=2, sort_keys=True)
+            print(f"[fundamentals] Wrote {out_path}")
+            if REQUEST_DELAY > 0:
+                time.sleep(REQUEST_DELAY)
 
 
 if __name__ == "__main__":
-    # TODO: Replace with your real Technic universe
-    test_symbols = ["AAPL", "MSFT", "ODP", "VMEO", "VRNT"]
-    write_fundamentals(test_symbols)
+    universe = load_universe()
+    symbols = [row.symbol for row in universe]
+    write_fundamentals(symbols)
