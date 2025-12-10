@@ -169,6 +169,39 @@ def build_recommendation(row: pd.Series, sector_overweights: Dict[str, float], s
     if quality_desc:
         parts.append(f"Fundamental quality: {quality_desc}.")
 
+    # --- Sponsorship / ownership ---
+    sponsor = row.get("SponsorshipScore")
+    etf_cnt = row.get("etf_holder_count")
+    inst_cnt = row.get("inst_holder_count")
+    try:
+        sponsor_val = float(sponsor) if sponsor is not None else math.nan
+    except Exception:
+        sponsor_val = math.nan
+
+    if not math.isnan(sponsor_val):
+        holder_note = ""
+        if etf_cnt is not None and inst_cnt is not None:
+            try:
+                holder_note = f" Held by ~{int(etf_cnt)} ETFs and ~{int(inst_cnt)} institutions."
+            except Exception:
+                holder_note = ""
+        if sponsor_val >= 80:
+            parts.append(f"Strong institutional/ETF sponsorship (score ~{sponsor_val:.0f}/100).{holder_note}")
+        elif sponsor_val >= 60:
+            parts.append(f"Solid sponsorship footprint (score ~{sponsor_val:.0f}/100).{holder_note}")
+        elif sponsor_val <= 30:
+            parts.append(f"Low sponsorship; limited fund ownership so far (score ~{sponsor_val:.0f}/100).")
+
+    # --- Insider activity ---
+    has_buy = bool(row.get("has_recent_insider_buy", False))
+    has_heavy_sell = bool(row.get("has_heavy_insider_sell", False))
+    if has_buy and has_heavy_sell:
+        parts.append("Insiders active on both sides recently; monitor follow-through.")
+    elif has_buy:
+        parts.append("Recent cluster of insider buying in the last 90 days.")
+    elif has_heavy_sell:
+        parts.append("Notable recent insider selling; treat momentum with caution.")
+
     # --- Earnings / dividend event context ---
     is_pre_earn = bool(row.get("is_pre_earnings_window", False))
     is_post_pos = bool(row.get("is_post_earnings_positive_window", False))

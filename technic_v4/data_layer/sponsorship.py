@@ -23,6 +23,7 @@ import pandas as pd
 ETF_PATH = Path("data_cache/etf_holder_bulk.csv")
 INST_PATH = Path("data_cache/institutional_ownership_latest.csv")
 INSIDER_PATH = Path("data_cache/insider_trading_latest.csv")
+SPONSOR_THIN_PATH = Path("data_cache/sponsorship_cache.csv")
 
 _SPONSOR_CACHE: Optional[pd.DataFrame] = None
 _INSIDER_CACHE: Optional[pd.DataFrame] = None
@@ -39,14 +40,74 @@ def _load_csv(path: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _thin_to_universe(etf: pd.DataFrame, inst: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filter heavy bulk files down to the Technic universe and persist a slim cache.
+    """
+    try:
+        from technic_v4.universe_loader import load_universe
+    except Exception:
+        return pd.DataFrame()
+
+    try:
+        universe = load_universe()
+        symbols = {row.symbol.upper() for row in universe}
+    except Exception:
+        symbols = set()
+
+    if not symbols:
+        return pd.DataFrame()
+
+    if not etf.empty:
+        etf = etf[etf["symbol"].isin(symbols)]
+    if not inst.empty:
+        inst = inst[inst["symbol"].isin(symbols)]
+
+    etf_counts = etf.groupby("symbol").size().rename("etf_holder_count") if not etf.empty else pd.Series(dtype=int)
+    inst_counts = inst.groupby("symbol").size().rename("inst_holder_count") if not inst.empty else pd.Series(dtype=int)
+
+    df = pd.DataFrame(index=etf_counts.index.union(inst_counts.index))
+    if not etf_counts.empty:
+        df = df.join(etf_counts, how="left")
+    if not inst_counts.empty:
+        df = df.join(inst_counts, how="left")
+
+    df = df.fillna(0)
+    combined = df["etf_holder_count"] + df["inst_holder_count"]
+    df["SponsorshipScore"] = combined.rank(pct=True).astype(float) * 100.0
+    thin = df.reset_index().rename(columns={"index": "symbol"})
+
+    try:
+        thin.to_csv(SPONSOR_THIN_PATH, index=False)
+    except Exception:
+        pass
+    return thin
+
+
 def load_sponsorship() -> pd.DataFrame:
     global _SPONSOR_CACHE
     if _SPONSOR_CACHE is not None:
         return _SPONSOR_CACHE
 
+    # Prefer slim cache if present
+    if SPONSOR_THIN_PATH.exists():
+        try:
+            slim = pd.read_csv(SPONSOR_THIN_PATH)
+            slim["symbol"] = slim["symbol"].astype(str).str.upper()
+            _SPONSOR_CACHE = slim
+            return _SPONSOR_CACHE
+        except Exception:
+            pass
+
     etf = _load_csv(ETF_PATH)
     inst = _load_csv(INST_PATH)
 
+    slim = _thin_to_universe(etf, inst)
+    if not slim.empty:
+        _SPONSOR_CACHE = slim
+        return _SPONSOR_CACHE
+
+    # Fallback: compute across full data if universe unavailable
     etf_counts = etf.groupby("symbol").size().rename("etf_holder_count") if not etf.empty else pd.Series(dtype=int)
     inst_counts = inst.groupby("symbol").size().rename("inst_holder_count") if not inst.empty else pd.Series(dtype=int)
 
