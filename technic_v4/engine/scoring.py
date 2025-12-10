@@ -274,6 +274,16 @@ def build_institutional_core_score(df: pd.DataFrame) -> pd.Series:
     if "has_dividend_ex_soon" in df.columns:
         event_term = event_term + 2.0 * df["has_dividend_ex_soon"].fillna(False).astype(float)
 
+    if "surprise_streak" in df.columns:
+        streak = pd.to_numeric(df["surprise_streak"], errors="coerce").fillna(0.0)
+        streak = streak.clip(lower=-5, upper=5) / 5.0  # -1 to 1
+        event_term = event_term + 4.0 * streak
+
+    if "avg_surprise_bp" in df.columns:
+        avg_bp = pd.to_numeric(df["avg_surprise_bp"], errors="coerce")
+        boost = (avg_bp.clip(lower=-500, upper=500) / 500.0) * 3.0  # cap at +/-500bp
+        event_term = event_term + boost.fillna(0.0)
+
     if "dividend_yield" in df.columns:
         dy = df["dividend_yield"].clip(lower=0.0)
         sweet = dy.between(0.01, 0.06)
