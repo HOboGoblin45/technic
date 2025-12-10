@@ -17,6 +17,24 @@ EVENTS_PATH = Path("data_cache/events_calendar.csv")
 _CACHE: Dict[str, dict] = {}
 
 
+def _parse_date(val):
+    ts = pd.to_datetime(val, errors="coerce")
+    if pd.isna(ts):
+        return pd.NaT
+    return ts.normalize()
+
+
+def _parse_flag(val) -> bool:
+    if pd.isna(val):
+        return False
+    if isinstance(val, str):
+        return val.strip().lower() in {"1", "true", "t", "yes", "y"}
+    try:
+        return bool(int(val))
+    except Exception:
+        return bool(val)
+
+
 def _load_events() -> Dict[str, dict]:
     global _CACHE
     if _CACHE:
@@ -40,14 +58,14 @@ def _load_events() -> Dict[str, dict]:
     # Normalize date columns
     for c in ["next_earnings_date", "last_earnings_date", "dividend_ex_date"]:
         if c in df.columns:
-            df[c] = pd.to_datetime(df[c], errors="coerce")
+            df[c] = df[c].apply(_parse_date)
     cache: Dict[str, dict] = {}
     for _, row in df.iterrows():
         sym = row[sym_col]
         cache[sym] = {
             "next_earnings_date": row.get("next_earnings_date"),
             "last_earnings_date": row.get("last_earnings_date"),
-            "earnings_surprise_flag": bool(row.get("earnings_surprise_flag", False)),
+            "earnings_surprise_flag": _parse_flag(row.get("earnings_surprise_flag", False)),
             "dividend_ex_date": row.get("dividend_ex_date"),
         }
     _CACHE = cache

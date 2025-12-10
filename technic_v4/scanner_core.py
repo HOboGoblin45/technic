@@ -856,15 +856,37 @@ def _scan_symbol(
         if ev:
             next_earn = ev.get("next_earnings_date")
             last_earn = ev.get("last_earnings_date")
-            if pd.notna(next_earn):
-                latest["days_to_earnings"] = (next_earn - anchor_date).days
-                latest["earnings_window"] = 0 <= latest["days_to_earnings"] <= 7
-            if pd.notna(last_earn):
-                latest["days_since_earnings"] = (anchor_date - last_earn).days
-            latest["earnings_surprise_flag"] = bool(ev.get("earnings_surprise_flag", False))
             div_ex = ev.get("dividend_ex_date")
+            surprise_flag = bool(ev.get("earnings_surprise_flag", False))
+
+            # Earnings timing
+            latest["earnings_surprise_flag"] = surprise_flag
+            if pd.notna(next_earn):
+                days_to_next = (next_earn - anchor_date).days
+                latest["days_to_next_earnings"] = days_to_next
+                latest["days_to_earnings"] = days_to_next  # legacy alias
+                latest["pre_earnings_window"] = 0 <= days_to_next <= 7
+                latest["earnings_window"] = latest.get("pre_earnings_window", False)
+            else:
+                latest["days_to_next_earnings"] = np.nan
+                latest["pre_earnings_window"] = False
+            if pd.notna(last_earn):
+                days_since = (anchor_date - last_earn).days
+                latest["days_since_last_earnings"] = days_since
+                latest["days_since_earnings"] = days_since  # legacy alias
+                latest["post_earnings_window"] = 0 <= days_since <= 7
+            else:
+                latest["days_since_last_earnings"] = np.nan
+                latest["post_earnings_window"] = False
+
+            # Dividend timing
             if pd.notna(div_ex):
-                latest["dividend_ex_date_within_7d"] = abs((div_ex - anchor_date).days) <= 7
+                days_to_ex = (div_ex - anchor_date).days
+                latest["days_to_next_ex_dividend"] = days_to_ex
+                latest["dividend_ex_date_within_7d"] = abs(days_to_ex) <= 7
+            else:
+                latest["days_to_next_ex_dividend"] = np.nan
+                latest["dividend_ex_date_within_7d"] = False
     except Exception:
         pass
 
