@@ -62,6 +62,14 @@ _XGB_MODEL_PATH_10D = os.getenv(
     "TECHNIC_ALPHA_MODEL_PATH_10D", "models/alpha/xgb_v2_10d.pkl"
 )
 _XGB_MODEL_PATH_10D_FALLBACK = "models/alpha/xgb_v1_10d.pkl"
+_XGB_MODEL_PATH_5D_REGIME = {
+    "TRENDING_UP_LOW_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_UP_LOVOL", "models/alpha/xgb_v2_TRENDING_UP_LOW_VOL.pkl"),
+    "TRENDING_UP_HIGH_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_UP_HIVOL", "models/alpha/xgb_v2_TRENDING_UP_HIGH_VOL.pkl"),
+    "TRENDING_DOWN_LOW_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_DOWN_LOVOL", "models/alpha/xgb_v2_TRENDING_DOWN_LOW_VOL.pkl"),
+    "TRENDING_DOWN_HIGH_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_DOWN_HIVOL", "models/alpha/xgb_v2_TRENDING_DOWN_HIGH_VOL.pkl"),
+    "SIDEWAYS_LOW_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_SIDE_LOVOL", "models/alpha/xgb_v2_SIDEWAYS_LOW_VOL.pkl"),
+    "SIDEWAYS_HIGH_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_SIDE_HIVOL", "models/alpha/xgb_v2_SIDEWAYS_HIGH_VOL.pkl"),
+}
 
 
 def _load_xgb_bundle(path: str, cache: dict | None) -> tuple[Optional[dict], dict | None]:
@@ -234,6 +242,21 @@ def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
         return None
 
     return _score_with_bundle(df_features, bundle, label="5d")
+
+
+def score_alpha_regime(df_features: pd.DataFrame, regime_label: str) -> Optional[pd.Series]:
+    """
+    Score ML alpha (5d) using a regime-specific XGB bundle if available.
+    Falls back to default 5d bundle on miss.
+    """
+    path = _XGB_MODEL_PATH_5D_REGIME.get(regime_label)
+    if path and os.path.exists(path):
+        try:
+            bundle, _ = _load_xgb_bundle(path, None)
+            return _score_with_bundle(df_features, bundle, label=f"5d_{regime_label}")
+        except Exception:
+            logger.warning("[ALPHA] regime bundle load failed for %s; falling back", regime_label, exc_info=True)
+    return score_alpha(df_features)
 
 
 def score_alpha_10d(df_features: pd.DataFrame) -> Optional[pd.Series]:

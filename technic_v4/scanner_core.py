@@ -242,7 +242,14 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     if settings.use_ml_alpha:
         # 5d alpha
         try:
-            ml_5d = alpha_inference.score_alpha(df)
+            # Try regime-specific model if regime label present
+            reg_label = None
+            if regime:
+                reg_label = regime.get("label") or regime.get("regime_label")
+            if reg_label:
+                ml_5d = alpha_inference.score_alpha_regime(df, str(reg_label))
+            else:
+                ml_5d = alpha_inference.score_alpha(df)
         except Exception:
             logger.warning("[ALPHA] score_alpha() 5d failed", exc_info=True)
             ml_5d = None
@@ -325,6 +332,41 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
 
     # --- Build alpha_blend and TechRating v2 --------------------------------
     alpha_blend = factor_alpha.copy()
+
+    # Value/quality tilt: stronger bias toward high earnings yield + ROE, moderate boost for dividend yield,
+    # and a firmer penalty for leverage. This is always on to favor sturdier value names.
+    val_boost = 0.0
+    # Prefer sector-relative z-scores when present to avoid cross-sector bias
+    earn_col = "value_earnings_yield_sector_z" if "value_earnings_yield_sector_z" in df.columns else "value_earnings_yield_z"
+    roe_col = "quality_roe_sector_z" if "quality_roe_sector_z" in df.columns else "quality_roe_z"
+    div_col = "dividend_yield_sector_z" if "dividend_yield_sector_z" in df.columns else "dividend_yield_z"
+    lev_col = "leverage_de_sector_z" if "leverage_de_sector_z" in df.columns else "leverage_de_z"
+    fcf_col = "value_fcf_yield_sector_z" if "value_fcf_yield_sector_z" in df.columns else "value_fcf_yield_z"
+    ev_ebitda_col = "value_ev_ebitda_sector_z" if "value_ev_ebitda_sector_z" in df.columns else "value_ev_ebitda_z"
+
+    if earn_col in df.columns:
+        val_boost += 0.25 * pd.to_numeric(df[earn_col], errors="coerce").fillna(0.0)
+    if fcf_col in df.columns:
+        val_boost += 0.1 * pd.to_numeric(df[fcf_col], errors="coerce").fillna(0.0)
+    if ev_ebitda_col in df.columns:
+        val_boost += 0.05 * pd.to_numeric(df[ev_ebitda_col], errors="coerce").fillna(0.0)
+    if roe_col in df.columns:
+        val_boost += 0.1 * pd.to_numeric(df[roe_col], errors="coerce").fillna(0.0)
+    if div_col in df.columns:
+        val_boost += 0.05 * pd.to_numeric(df[div_col], errors="coerce").fillna(0.0)
+    if lev_col in df.columns:
+        val_boost -= 0.15 * pd.to_numeric(df[lev_col], errors="coerce").fillna(0.0)
+
+    # Macro risk-on/off tilt: temper in risk-off/high-vol; allow a modest boost in healthy credit + growth regimes.
+    macro_pen = 0.0
+    if regime:
+        if regime.get("macro_equity_high_vol") or regime.get("macro_credit_risk_off") or regime.get("macro_equity_vol_spike"):
+            macro_pen -= 0.1
+        if regime.get("macro_credit_risk_on") and regime.get("macro_growth_vs_value_trending_up"):
+            macro_pen += 0.05
+
+    # Apply tilts to the factor leg
+    alpha_blend = alpha_blend + val_boost + macro_pen
 
     if ml_alpha_z is not None:
         w = getattr(settings, "alpha_weight", 0.35)
@@ -436,9 +478,15 @@ def _compute_macro_context() -> dict:
     """
     Lightweight macro context using ETF proxies.
     - growth_vs_value: slope of QQQ/SPY ratio over ~3 months
+    - ndx_vs_spx_ret20: 20d return of QQQ/SPY
+    - ndx_vs_spx_level: latest QQQ/SPY ratio
     - credit_risk_on: HYG/LQD 20d change > 0
+    - credit_spread_level: latest HYG/LQD ratio
     - curve_slope: SHY/TLT ratio slope (steepening/flattening)
-    - equity_vol_state: SPY 20d vs 60d realized vol
+    - short_curve_slope: SHY/IEF ratio slope (2y/10y proxy)
+    - equity_vol_state: SPY 20d vs 60d realized vol, plus spike flag
+    - equity_vol_level: SPY 20d realized vol (annualized)
+    - vixy_ret20: 20d return of VIXY as a vol gauge
     """
     ctx: dict = {}
     try:
@@ -450,12 +498,15 @@ def _compute_macro_context() -> dict:
             df = pd.DataFrame({"spy": spy["Close"], "qqq": qqq["Close"]}).dropna()
             if len(df) >= 60:
                 ratio = df["qqq"] / df["spy"]
+                ctx["macro_ndx_spx_level"] = float(ratio.iloc[-1])
                 x = np.arange(len(ratio.tail(60)))
                 y = ratio.tail(60).values
                 if not np.allclose(y, y[0]):
                     slope = np.polyfit(x, y, 1)[0]
                     ctx["macro_growth_vs_value_slope"] = float(slope)
                     ctx["macro_growth_vs_value_trending_up"] = bool(slope > 0)
+                if len(ratio) >= 20:
+                    ctx["macro_ndx_spx_ret20"] = float(ratio.pct_change(20).iloc[-1])
     except Exception:
         pass
 
@@ -482,6 +533,28 @@ def _compute_macro_context() -> dict:
         pass
 
     try:
+        shy = data_engine.get_price_history("SHY", days=130, freq="daily")
+        ief = data_engine.get_price_history("IEF", days=130, freq="daily")
+        if shy is not None and not shy.empty and ief is not None and not ief.empty:
+            df = pd.DataFrame(
+                {
+                    "shy": shy.sort_index()["Close"],
+                    "ief": ief.sort_index()["Close"],
+                }
+            ).dropna()
+            if len(df) >= 60:
+                ratio = df["shy"] / df["ief"]
+                x = np.arange(len(ratio.tail(60)))
+                y = ratio.tail(60).values
+                if not np.allclose(y, y[0]):
+                    slope = np.polyfit(x, y, 1)[0]
+                    ctx["macro_curve_short_slope"] = float(slope)
+                    ctx["macro_curve_short_steepening"] = bool(slope > 0)
+                    ctx["macro_curve_short_flattening"] = bool(slope < 0)
+    except Exception:
+        pass
+
+    try:
         hyg = data_engine.get_price_history("HYG", days=60, freq="daily")
         lqd = data_engine.get_price_history("LQD", days=60, freq="daily")
         if hyg is not None and not hyg.empty and lqd is not None and not lqd.empty:
@@ -490,6 +563,7 @@ def _compute_macro_context() -> dict:
             df = pd.DataFrame({"hyg": hyg["Close"], "lqd": lqd["Close"]}).dropna()
             if len(df) >= 20:
                 rel = df["hyg"] / df["lqd"]
+                ctx["macro_credit_spread_level"] = float(rel.iloc[-1])
                 ret20 = rel.pct_change(20).iloc[-1]
                 ctx["macro_credit_spread_trend"] = float(ret20)
                 ctx["macro_credit_risk_on"] = bool(ret20 > 0)
@@ -508,6 +582,20 @@ def _compute_macro_context() -> dict:
                 ctx["macro_equity_vol_ratio_20_60"] = ratio
                 ctx["macro_equity_high_vol"] = bool(ratio > 1.25)
                 ctx["macro_equity_low_vol"] = bool(ratio < 0.8)
+                ctx["macro_equity_vol_level"] = float(vol20)
+                # Detect a short-term vol spike vs 20d average
+                vol5 = rets.tail(5).std() * np.sqrt(252)
+                if pd.notna(vol5) and vol20 and vol20 != 0:
+                    ctx["macro_equity_vol_spike"] = bool((vol5 / vol20) > 1.5)
+    except Exception:
+        pass
+
+    try:
+        vixy = data_engine.get_price_history("VIXY", days=40, freq="daily")
+        if vixy is not None and not vixy.empty and "Close" in vixy.columns:
+            vixy = vixy.sort_index()
+            if len(vixy) >= 20:
+                ctx["macro_vixy_ret20"] = float(vixy["Close"].pct_change(20).iloc[-1])
     except Exception:
         pass
 
@@ -879,27 +967,45 @@ def _finalize_results(
         results_df["macro_credit_spread_trend"] = np.nan
         results_df["macro_credit_risk_on"] = False
         results_df["macro_credit_risk_off"] = False
+        results_df["macro_credit_spread_level"] = np.nan
         results_df["macro_curve_slope"] = np.nan
         results_df["macro_curve_steepening"] = False
         results_df["macro_curve_flattening"] = False
+        results_df["macro_curve_short_slope"] = np.nan
+        results_df["macro_curve_short_steepening"] = False
+        results_df["macro_curve_short_flattening"] = False
         results_df["macro_equity_vol_ratio_20_60"] = np.nan
         results_df["macro_equity_high_vol"] = False
         results_df["macro_equity_low_vol"] = False
+        results_df["macro_equity_vol_spike"] = False
+        results_df["macro_ndx_spx_ret20"] = np.nan
+        results_df["macro_ndx_spx_level"] = np.nan
+        results_df["macro_equity_vol_level"] = np.nan
+        results_df["macro_vixy_ret20"] = np.nan
 
     # Carry macro context onto rows if present
     if regime_tags:
         for key in [
             "macro_growth_vs_value_slope",
             "macro_growth_vs_value_trending_up",
+            "macro_ndx_spx_ret20",
+            "macro_ndx_spx_level",
             "macro_credit_spread_trend",
             "macro_credit_risk_on",
             "macro_credit_risk_off",
+            "macro_credit_spread_level",
             "macro_curve_slope",
             "macro_curve_steepening",
             "macro_curve_flattening",
+            "macro_curve_short_slope",
+            "macro_curve_short_steepening",
+            "macro_curve_short_flattening",
             "macro_equity_vol_ratio_20_60",
             "macro_equity_high_vol",
             "macro_equity_low_vol",
+            "macro_equity_vol_spike",
+            "macro_equity_vol_level",
+            "macro_vixy_ret20",
         ]:
             val = regime_tags.get(key, np.nan)
             if key not in results_df.columns:
@@ -961,9 +1067,15 @@ def _finalize_results(
         "value_cfp",
         "value_earnings_yield",
         "dividend_yield",
+        "value_fcf_yield",
+        "value_ev_ebitda",
+        "value_ev_sales",
         "quality_roe",
         "quality_roa",
         "quality_gpm",
+        "quality_margin_ebitda",
+        "quality_margin_op",
+        "quality_margin_net",
         "leverage_de",
         "interest_coverage",
         "growth_rev",
@@ -975,6 +1087,79 @@ def _finalize_results(
             series = pd.to_numeric(results_df[col], errors="coerce")
             if series.notna().any():
                 results_df[f"{col}_z"] = zscore(series)
+
+    # Sector-relative z-scores for factors to reduce cross-sector bias
+    if "Sector" in results_df.columns:
+        for col in factor_cols:
+            if col in results_df.columns:
+                try:
+                    results_df[f"{col}_sector_z"] = (
+                        results_df.groupby("Sector")[col]
+                        .transform(lambda s: zscore(pd.to_numeric(s, errors="coerce")))
+                    )
+                except Exception:
+                    results_df[f"{col}_sector_z"] = np.nan
+
+    # Cross-sectional percentile ranks for momentum/vol/volume/valuation
+    def _pct_rank(series: pd.Series) -> pd.Series:
+        return series.rank(pct=True) * 100.0
+
+    momentum_cols = [("mom_21", "momentum_rank_21d"), ("mom_63", "momentum_rank_63d")]
+    for src, tgt in momentum_cols:
+        if src in results_df.columns:
+            s = pd.to_numeric(results_df[src], errors="coerce")
+            if s.notna().any():
+                results_df[tgt] = _pct_rank(s)
+                if "Sector" in results_df.columns:
+                    try:
+                        results_df[f"{tgt}_sector"] = (
+                            results_df.groupby("Sector")[src]
+                            .transform(lambda x: _pct_rank(pd.to_numeric(x, errors="coerce")))
+                        )
+                    except Exception:
+                        results_df[f"{tgt}_sector"] = np.nan
+
+    if "ATR14_pct" in results_df.columns:
+        s = pd.to_numeric(results_df["ATR14_pct"], errors="coerce")
+        results_df["vol_rank"] = _pct_rank(s) if s.notna().any() else np.nan
+    if "DollarVolume" in results_df.columns:
+        s = pd.to_numeric(results_df["DollarVolume"], errors="coerce")
+        results_df["volume_rank"] = _pct_rank(s) if s.notna().any() else np.nan
+
+    # Valuation rank using earnings yield; fallback to FCF yield
+    val_src = None
+    for cand in ["value_earnings_yield", "value_fcf_yield"]:
+        if cand in results_df.columns:
+            val_src = pd.to_numeric(results_df[cand], errors="coerce")
+            if val_src.notna().any():
+                break
+    if val_src is not None and val_src.notna().any():
+        results_df["value_rank"] = _pct_rank(val_src)
+        if "Sector" in results_df.columns:
+            try:
+                results_df["value_rank_sector"] = (
+                    results_df.groupby("Sector")[val_src.name]
+                    .transform(lambda x: _pct_rank(pd.to_numeric(x, errors="coerce")))
+                )
+            except Exception:
+                results_df["value_rank_sector"] = np.nan
+
+    # Event-aware placeholders (best-effort; default to NaN/False)
+    for col, default in [
+        ("days_to_earnings", np.nan),
+        ("days_since_earnings", np.nan),
+        ("earnings_surprise_flag", False),
+        ("dividend_ex_date_within_7d", False),
+    ]:
+        if col not in results_df.columns:
+            results_df[col] = default
+    # Earnings window flag if within 7 days of earnings date (stub: relies on days_to_earnings)
+    if "days_to_earnings" in results_df.columns:
+        try:
+            dte = pd.to_numeric(results_df["days_to_earnings"], errors="coerce")
+            results_df["earnings_window"] = dte.between(0, 7, inclusive="both")
+        except Exception:
+            results_df["earnings_window"] = False
 
     # Cross-sectional alpha percentile (0?100) for UI / ranking
     if "AlphaScorePct" not in results_df.columns:
