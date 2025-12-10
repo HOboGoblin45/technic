@@ -29,7 +29,8 @@ from technic_v4.engine import meta_experience
 from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
 from technic_v4.data_layer.events import get_event_info
-from technic_v4.data_layer.earnings_surprises import get_latest_surprise
+from technic_v4.data_layer.earnings_surprises import get_latest_surprise, get_surprise_stats
+from technic_v4.data_layer.fundamental_trend import get_fundamental_trend
 from technic_v4.data_layer.ratings import get_rating_info
 from technic_v4.data_layer.quality import get_quality_info
 from technic_v4.engine.portfolio_optim import (
@@ -946,6 +947,16 @@ def _attach_event_columns(row: pd.Series) -> pd.Series:
             if pd.notna(actual) and pd.notna(estimate):
                 row["earnings_surprise_flag"] = bool(actual > estimate)
 
+    # Attach aggregated surprise stats if available
+    try:
+        stats = get_surprise_stats(symbol)
+    except Exception:
+        stats = {}
+    if stats:
+        for key, val in stats.items():
+            if key not in row or pd.isna(row.get(key)):
+                row[key] = val
+
     return row
 
 
@@ -977,6 +988,16 @@ def _attach_ratings_quality(row: pd.Series) -> pd.Series:
             row["QualityScore"] = q.get("quality_score")
         for key, val in q.items():
             if key not in row or pd.isna(row[key]):
+                row[key] = val
+
+    # Fundamental momentum/trend
+    try:
+        ft = get_fundamental_trend(symbol)
+    except Exception:
+        ft = {}
+    if ft:
+        for key, val in ft.items():
+            if key not in row or pd.isna(row.get(key)):
                 row[key] = val
 
     return row
@@ -1493,7 +1514,7 @@ def _finalize_results(
         results_df["DollarVolume"] = results_df["Close"] * results_df["Volume"]
 
         # Minimum liquidity filter (institution-grade)
-        MIN_DOLLAR_VOL = 3_000_000  # $3M/day minimum
+        MIN_DOLLAR_VOL = 5_000_000  # $5M/day minimum
         results_df = results_df[results_df["DollarVolume"] >= MIN_DOLLAR_VOL]
 
     # Price filter ? investors don't want sub-$5 stocks
