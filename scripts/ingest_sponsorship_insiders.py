@@ -54,6 +54,7 @@ def main():
     parser.add_argument("--inst-pages", type=int, default=3, help="Pages to fetch for institutional ownership latest")
     parser.add_argument("--insider-pages", type=int, default=3, help="Pages to fetch for insider trading latest")
     parser.add_argument("--limit", type=int, default=100, help="Rows per page for paged endpoints")
+    parser.add_argument("--etf-parts", type=int, default=1, help="Number of etf-holder-bulk parts to fetch (parts start at 1)")
     args = parser.parse_args()
 
     api_key = os.getenv("FMP_API_KEY")
@@ -61,14 +62,18 @@ def main():
         raise RuntimeError("FMP_API_KEY is not set")
 
     # ETF holder bulk (part=1)
-    try:
-        etf_url = f"https://financialmodelingprep.com/stable/etf-holder-bulk?part=1&apikey={api_key}"
-        df = fetch_csv(etf_url)
+    etf_frames = []
+    for part in range(1, args.etf_parts + 1):
+        try:
+            etf_url = f"https://financialmodelingprep.com/stable/etf-holder-bulk?part={part}&apikey={api_key}"
+            etf_frames.append(fetch_csv(etf_url))
+        except Exception as exc:
+            print(f"[sponsorship] WARN etf-holder-bulk part {part} failed: {exc}")
+    if etf_frames:
+        df = pd.concat(etf_frames, ignore_index=True)
         out = DATA_DIR / "etf_holder_bulk.csv"
         df.to_csv(out, index=False)
         print(f"[sponsorship] Wrote {out} (rows={len(df)})")
-    except Exception as exc:
-        print(f"[sponsorship] WARN etf-holder-bulk failed: {exc}")
 
     # Institutional ownership latest (paged)
     inst_base = "https://financialmodelingprep.com/stable/institutional-ownership/latest"
