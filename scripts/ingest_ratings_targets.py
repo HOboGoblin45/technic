@@ -24,10 +24,10 @@ import csv
 import os
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, List, Optional, Set
 
-import requests
 import pandas as pd
+import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data_cache"
@@ -37,6 +37,11 @@ OUT_CSV = DATA_DIR / "ratings_targets.csv"
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
 FMP_BASE = "https://financialmodelingprep.com/api/v3"
 FMP_BASE_V4 = "https://financialmodelingprep.com/api/v4"
+STABLE_BASE = "https://financialmodelingprep.com/stable"
+
+# Local bulk cache files (written by prior downloads)
+RATINGS_BULK_CSV = DATA_DIR / "ratings_bulk.csv"
+PRICE_TARGETS_BULK_CSV = DATA_DIR / "price_targets_bulk.csv"
 
 
 def _require_key() -> str:
@@ -49,6 +54,30 @@ def _get_json(url: str, params: Dict) -> dict:
     r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
+
+
+def _read_bulk_csv(path: Path) -> Optional[pd.DataFrame]:
+    if not path.exists():
+        return None
+    try:
+        df = pd.read_csv(path)
+        return df
+    except Exception:
+        return None
+
+
+def _download_stable_csv(resource: str) -> Optional[pd.DataFrame]:
+    """
+    Fetch a stable bulk CSV directly to a DataFrame.
+    """
+    if not FMP_API_KEY:
+        return None
+    url = f"{STABLE_BASE}/{resource}?apikey={FMP_API_KEY}"
+    try:
+        df = pd.read_csv(url)
+        return df
+    except Exception:
+        return None
 
 
 def fetch_rating(symbol: str) -> Dict:
@@ -69,14 +98,18 @@ def fetch_price_targets(symbol: str) -> Dict:
 
 def fetch_bulk_ratings() -> pd.DataFrame:
     """
-    Try bulk ratings endpoint (returns list of dicts).
+    Prefer local stable CSV (rating-bulk); fallback to live stable download; lastly v3 JSON.
     """
-    url = f"{FMP_BASE}/rating"
-    params = {"apikey": _require_key()}
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    df = pd.DataFrame(data) if isinstance(data, list) else pd.DataFrame()
+    df = _read_bulk_csv(RATINGS_BULK_CSV)
+    if df is None:
+        df = _download_stable_csv("rating-bulk")
+    if df is None:
+        url = f"{FMP_BASE}/rating"
+        params = {"apikey": _require_key()}
+        r = requests.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        df = pd.DataFrame(data) if isinstance(data, list) else pd.DataFrame()
     if not df.empty:
         df.columns = [c.lower() for c in df.columns]
     return df
@@ -84,14 +117,18 @@ def fetch_bulk_ratings() -> pd.DataFrame:
 
 def fetch_bulk_price_targets() -> pd.DataFrame:
     """
-    Try bulk price target consensus endpoint (v4).
+    Prefer local stable CSV (price-target-summary-bulk); fallback to live stable download; lastly v4 JSON.
     """
-    url = f"{FMP_BASE_V4}/price-target-consensus"
-    params = {"apikey": _require_key()}
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    df = pd.DataFrame(data) if isinstance(data, list) else pd.DataFrame()
+    df = _read_bulk_csv(PRICE_TARGETS_BULK_CSV)
+    if df is None:
+        df = _download_stable_csv("price-target-summary-bulk")
+    if df is None:
+        url = f"{FMP_BASE_V4}/price-target-consensus"
+        params = {"apikey": _require_key()}
+        r = requests.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        df = pd.DataFrame(data) if isinstance(data, list) else pd.DataFrame()
     if not df.empty:
         df.columns = [c.lower() for c in df.columns]
     return df
@@ -116,7 +153,7 @@ def run(symbols: Iterable[str], append: bool = False, sleep_sec: float = 0.0, st
         end = start + limit if limit > 0 else None
         symbols = symbols[start:end]
 
-    # Try bulk first
+    # Try bulk first (local or stable CSV)
     bulk_df = pd.DataFrame()
     pt_df = pd.DataFrame()
     try:
@@ -135,13 +172,10 @@ def run(symbols: Iterable[str], append: bool = False, sleep_sec: float = 0.0, st
     if not bulk_df.empty or not pt_df.empty:
         df_out = pd.DataFrame(columns=fieldnames)
         if not bulk_df.empty:
-            df_out = df_out.merge(bulk_df, on="symbol", how="right") if "symbol" in df_out.columns else bulk_df
+            df_out = bulk_df
         if not pt_df.empty:
-            if df_out.empty:
-                df_out = pt_df
-            else:
-                df_out = df_out.merge(pt_df, on="symbol", how="outer")
-        # Normalize columns
+            df_out = df_out.merge(pt_df, on="symbol", how="outer") if not df_out.empty else pt_df
+
         df_out = df_out.rename(
             columns={
                 "rating": "rating_recommendation",
@@ -155,11 +189,36 @@ def run(symbols: Iterable[str], append: bool = False, sleep_sec: float = 0.0, st
                 "analystcount": "pt_count",
                 "currency": "pt_currency",
                 "updatedat": "pt_updated",
+                "alltimeavgpricetarget": "pt_avg",
+                "alltimecount": "pt_count",
             }
         )
-        df_out = df_out[fieldnames]
-        df_out.to_csv(OUT_CSV, index=False)
-        print(f"[ratings] Wrote bulk ratings/targets to {OUT_CSV} (rows={len(df_out)})")
+
+        # Construct final frame
+        out_rows = []
+        for _, row in df_out.iterrows():
+            sym = str(row.get("symbol", "")).upper()
+            if not sym:
+                continue
+            out_rows.append(
+                {
+                    "symbol": sym,
+                    "rating_score": row.get("rating_score"),
+                    "rating_recommendation": row.get("rating_recommendation"),
+                    "rating_date": row.get("rating_date"),
+                    "pt_avg": row.get("pt_avg"),
+                    "pt_high": row.get("pt_high"),
+                    "pt_low": row.get("pt_low"),
+                    "pt_median": row.get("pt_median"),
+                    "pt_count": row.get("pt_count"),
+                    "pt_currency": row.get("pt_currency"),
+                    "pt_updated": row.get("pt_updated"),
+                }
+            )
+
+        merged = pd.DataFrame(out_rows, columns=fieldnames)
+        merged.to_csv(OUT_CSV, index=False)
+        print(f"[ratings] Wrote bulk ratings/targets to {OUT_CSV} (rows={len(merged)})")
         return
 
     existing: Set[str] = set()
