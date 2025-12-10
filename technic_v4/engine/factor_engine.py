@@ -103,6 +103,27 @@ def _fundamental_ratio(raw: Dict, num_keys: tuple[str, ...], denom_key: str) -> 
     return np.nan
 
 
+def _maybe_div_yield(raw: Dict) -> float:
+    for key in ("dividend_yield", "dividendYield", "forward_dividend_yield"):
+        if raw.get(key):
+            return float(raw[key])
+    return np.nan
+
+
+def _maybe_earnings_yield(raw: Dict) -> float:
+    if raw.get("earnings_yield"):
+        return float(raw["earnings_yield"])
+    for key in ("pe_ratio", "pe", "pe_ttm"):
+        pe = raw.get(key)
+        try:
+            pe = float(pe)
+        except Exception:
+            pe = None
+        if pe and pe != 0:
+            return 1.0 / pe
+    return np.nan
+
+
 def compute_factor_bundle(
     prices: pd.DataFrame,
     fundamentals: Optional[FundamentalsSnapshot] = None,
@@ -139,8 +160,15 @@ def compute_factor_bundle(
     # Fundamentals (best-effort; may be NaN)
     factors["value_ep"] = _fundamental_ratio(raw_f, ("net_income", "netIncome", "ni"), "market_cap")
     factors["value_cfp"] = _fundamental_ratio(raw_f, ("operating_cash_flow", "ocf"), "market_cap")
+    factors["value_earnings_yield"] = _maybe_earnings_yield(raw_f)
+    factors["dividend_yield"] = _maybe_div_yield(raw_f)
     factors["quality_roe"] = _fundamental_ratio(raw_f, ("return_on_equity", "roe"), "market_cap")
+    factors["quality_roa"] = _fundamental_ratio(raw_f, ("return_on_assets", "roa"), "total_assets")
     factors["quality_gpm"] = _fundamental_ratio(raw_f, ("gross_profit", "grossProfit"), "revenue")
+    factors["leverage_de"] = _fundamental_ratio(raw_f, ("total_debt", "debt"), "total_equity")
+    factors["interest_coverage"] = _fundamental_ratio(raw_f, ("ebit", "operating_income"), "interest_expense")
+    factors["growth_rev"] = raw_f.get("revenue_growth") or raw_f.get("sales_growth") or np.nan
+    factors["growth_eps"] = raw_f.get("eps_growth") or raw_f.get("earnings_growth") or np.nan
     factors["size_log_mcap"] = (
         float(np.log(raw_f.get("market_cap", raw_f.get("marketCap", 0)) or 0))
         if raw_f.get("market_cap") or raw_f.get("marketCap")
