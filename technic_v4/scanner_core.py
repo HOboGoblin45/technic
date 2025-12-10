@@ -29,7 +29,11 @@ from technic_v4.engine import meta_experience
 from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
 from technic_v4.data_layer.events import get_event_info
-from technic_v4.engine.portfolio_optim import mean_variance_weights
+from technic_v4.engine.portfolio_optim import (
+    mean_variance_weights,
+    inverse_variance_weights,
+    hrp_weights,
+)
 import concurrent.futures
 
 logger = get_logger()
@@ -479,15 +483,14 @@ def _apply_portfolio_suggestions(
     df.loc[sub.index, "alloc_suggested"] = alloc
 
     # Risk-parity-style weights using ATR as risk proxy
-    inv_vol = 1.0 / risk_proxy
-    if inv_vol.sum() > 0:
-        rp_weights = inv_vol / inv_vol.sum()
+    try:
+        rp_weights = inverse_variance_weights(risk_proxy, sector=sub.get("Sector"), sector_cap=sector_cap)
         rp_alloc = rp_weights * risk.account_size
         df["weight_risk_parity"] = 0.0
         df.loc[sub.index, "weight_risk_parity"] = rp_weights
         df["alloc_risk_parity"] = 0.0
         df.loc[sub.index, "alloc_risk_parity"] = rp_alloc
-    else:
+    except Exception:
         df["weight_risk_parity"] = 0.0
         df["alloc_risk_parity"] = 0.0
 
@@ -506,15 +509,15 @@ def _apply_portfolio_suggestions(
     except Exception:
         df["weight_mean_variance"] = 0.0
         df["alloc_mean_variance"] = 0.0
-    # HRP placeholder (inverse vol with sector cap)
+    # HRP-style sector-clustered weights
     try:
-        iv_w = mean_variance_weights(sub, ret_col="MuTotal", vol_col="ATR14_pct", sector_col="Sector", sector_cap=sector_cap)
-        if not iv_w.empty and iv_w.sum() > 0:
-            iv_alloc = iv_w * risk.account_size
+        hrp_w = hrp_weights(sub, vol_col="ATR14_pct", sector_col="Sector", sector_cap=sector_cap)
+        if not hrp_w.empty and hrp_w.sum() > 0:
+            hrp_alloc = hrp_w * risk.account_size
             df["weight_hrp"] = 0.0
-            df.loc[sub.index, "weight_hrp"] = iv_w
+            df.loc[sub.index, "weight_hrp"] = hrp_w
             df["alloc_hrp"] = 0.0
-            df.loc[sub.index, "alloc_hrp"] = iv_alloc
+            df.loc[sub.index, "alloc_hrp"] = hrp_alloc
         else:
             df["weight_hrp"] = 0.0
             df["alloc_hrp"] = 0.0
