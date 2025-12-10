@@ -278,6 +278,48 @@ def score_alpha_sector(df_features: pd.DataFrame, sector: str) -> Optional[pd.Se
     return score_alpha(df_features)
 
 
+def select_xgb_model_path(regime_label: str | None = None, sector: str | None = None) -> str:
+    """
+    Choose the most specific model path available given regime and sector.
+    Priority: regime bundle > sector bundle > default 5d.
+    """
+    # Try regime-specific
+    reg = (regime_label or "").upper().replace(" ", "_")
+    if reg and reg in _XGB_MODEL_PATH_5D_REGIME:
+        reg_path = _XGB_MODEL_PATH_5D_REGIME.get(reg)
+        if reg_path and os.path.exists(reg_path):
+            return reg_path
+
+    # Try sector-specific
+    sec = (sector or "").upper().replace(" ", "_")
+    if sec:
+        sec_path = f"{_XGB_MODEL_PATH_5D_SECTOR_PREFIX}{sec}.pkl"
+        if os.path.exists(sec_path):
+            return sec_path
+
+    # Default
+    return _XGB_MODEL_PATH_5D
+
+
+def score_alpha_contextual(
+    df_features: pd.DataFrame, regime_label: str | None = None, sector: str | None = None
+) -> Optional[pd.Series]:
+    """
+    Score ML alpha using the most specific bundle available (regime > sector > default).
+    """
+    path = select_xgb_model_path(regime_label, sector)
+    try:
+        bundle, _ = _load_xgb_bundle(path, None)
+        return _score_with_bundle(df_features, bundle, label=f"5d_{Path(path).stem}")
+    except Exception:
+        logger.warning("[ALPHA] contextual scoring failed for %s; falling back to default", path, exc_info=True)
+        try:
+            bundle = load_xgb_bundle_5d()
+            return _score_with_bundle(df_features, bundle, label="5d")
+        except Exception:
+            return None
+
+
 def score_alpha_10d(df_features: pd.DataFrame) -> Optional[pd.Series]:
     """
     Score ML alpha (10-day horizon) using a second XGB bundle (models/alpha/xgb_v1_10d.pkl).
