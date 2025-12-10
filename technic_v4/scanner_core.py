@@ -29,6 +29,8 @@ from technic_v4.engine import meta_experience
 from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
 from technic_v4.data_layer.events import get_event_info
+from technic_v4.data_layer.ratings import get_rating_info
+from technic_v4.data_layer.quality import get_quality_info
 from technic_v4.engine.portfolio_optim import (
     mean_variance_weights,
     inverse_variance_weights,
@@ -934,6 +936,39 @@ def _attach_event_columns(row: pd.Series) -> pd.Series:
     return row
 
 
+def _attach_ratings_quality(row: pd.Series) -> pd.Series:
+    """
+    Best-effort enrichment with ratings/targets and quality score.
+    """
+    symbol = str(row.get("Symbol") or row.get("symbol") or "").upper()
+    if not symbol:
+        return row
+
+    # Ratings / price targets
+    try:
+        rt = get_rating_info(symbol)
+    except Exception:
+        rt = {}
+    for key, val in rt.items():
+        if key not in row or pd.isna(row[key]):
+            row[key] = val
+
+    # Quality score
+    try:
+        q = get_quality_info(symbol)
+    except Exception:
+        q = {}
+    if q:
+        # Prefer to expose quality_score as QualityScore for ICS
+        if ("QualityScore" not in row or pd.isna(row.get("QualityScore"))) and "quality_score" in q:
+            row["QualityScore"] = q.get("quality_score")
+        for key, val in q.items():
+            if key not in row or pd.isna(row[key]):
+                row[key] = val
+
+    return row
+
+
 def _process_symbol(
     config: "ScanConfig",
     urow: UniverseRow,
@@ -965,6 +1000,7 @@ def _process_symbol(
     # Attach symbol label for downstream helpers that expect "Symbol"
     latest_local["Symbol"] = urow.symbol
     latest_local = _attach_event_columns(latest_local)
+    latest_local = _attach_ratings_quality(latest_local)
     return latest_local
 
 def _run_symbol_scans(
