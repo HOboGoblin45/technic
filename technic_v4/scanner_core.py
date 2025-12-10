@@ -187,6 +187,7 @@ def _apply_alpha_blend(
     """
     if df is None or df.empty:
         return df
+    df = df.copy().reset_index(drop=True)
 
     settings = get_settings()
     logger.info(
@@ -449,7 +450,7 @@ def _apply_portfolio_suggestions(
     """
     if df is None or df.empty:
         return df
-    df = df.copy()
+    df = df.copy().reset_index(drop=True)
     mask = df.get("PositionSize", 0) > 0
     if mask.sum() == 0:
         df["weight_suggested"] = 0.0
@@ -848,6 +849,13 @@ def _scan_symbol(
         latest.update(fb.factors)
     except Exception:
         pass
+
+    # Market cap (best-effort from fundamentals cache)
+    try:
+        raw_f = getattr(fundamentals, "raw", {}) if fundamentals is not None else {}
+        latest["market_cap"] = raw_f.get("market_cap", np.nan)
+    except Exception:
+        latest["market_cap"] = np.nan
 
     # Event-aware fields (best-effort)
     try:
