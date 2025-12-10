@@ -25,6 +25,7 @@ from technic_v4.engine import explainability_engine
 from datetime import datetime
 from technic_v4.engine import alpha_inference
 from technic_v4.engine import explainability
+from technic_v4.engine import meta_experience
 from technic_v4.engine import ray_runner
 import concurrent.futures
 
@@ -1152,6 +1153,25 @@ def _finalize_results(
             results_df["Explanation"] = explanations
         except Exception:
             results_df["Explanation"] = ""
+
+    # Meta-layer summaries from historical buckets (best-effort)
+    try:
+        meta_stats = meta_experience.load_meta_experience()
+        if meta_stats is not None:
+            meta_texts = [meta_stats.describe_row(row) for _, row in results_df.iterrows()]
+            results_df["MetaSummary"] = meta_texts
+            if "Explanation" not in results_df.columns:
+                results_df["Explanation"] = meta_texts
+            if "Explanation" in results_df.columns:
+                filled = []
+                for exp, meta_txt in zip(results_df["Explanation"], meta_texts):
+                    exp_str = str(exp) if exp is not None else ""
+                    filled.append(exp_str if exp_str.strip() else meta_txt)
+                results_df["Explanation"] = filled
+        else:
+            results_df["MetaSummary"] = ""
+    except Exception:
+        results_df["MetaSummary"] = ""
 
     # Optional scoreboard logging
     try:
