@@ -179,11 +179,23 @@ def multi_bucket_metrics(df: pd.DataFrame, score_cols: List[str], label_cols: Li
     for sc in score_cols:
         if sc not in df.columns:
             continue
-        df_sc = df.dropna(subset=[sc])
+        df_sc = df.dropna(subset=[sc]).copy()
         if df_sc.empty:
             continue
-        df_sc = df_sc.copy()
-        df_sc["bucket"] = pd.qcut(df_sc[sc], q=min(buckets, df_sc[sc].nunique()), labels=False, duplicates="drop")
+        # coerce to numeric where possible; for non-numeric (e.g., sector, PlayStyle) use categories
+        if pd.api.types.is_numeric_dtype(df_sc[sc]):
+            series = pd.to_numeric(df_sc[sc], errors="coerce")
+            series = series.dropna()
+            df_sc = df_sc.loc[series.index]
+            if df_sc.empty or series.nunique() <= 1:
+                continue
+            df_sc["bucket"] = pd.qcut(series, q=min(buckets, series.nunique()), labels=False, duplicates="drop")
+        else:
+            # categorical buckets: top categories get their own bucket, rest grouped
+            freq = df_sc[sc].value_counts()
+            top_vals = freq.head(min(buckets, len(freq))).index
+            df_sc["bucket"] = df_sc[sc].apply(lambda x: x if x in top_vals else "OTHER")
+
         grouped = df_sc.groupby("bucket")
         pieces = []
         for lc in label_cols:
