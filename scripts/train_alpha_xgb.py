@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from technic_v4 import data_engine
 from technic_v4.evaluation import metrics as eval_metrics
 from technic_v4.engine.regime_engine import classify_spy_regime
 
@@ -231,29 +232,33 @@ def main():
     def _maybe_regime_label(df_in: pd.DataFrame) -> pd.DataFrame:
         if "regime_label" in df_in.columns:
             return df_in
+        df_out = df_in.copy()
         try:
             spy = data_engine.get_price_history("SPY", days=2600, freq="daily")
-            if spy is not None and not spy.empty and date_col in df_in.columns:
-                spy = spy.sort_index()
-                reg_labels = []
-                for dt in df_in[date_col]:
-                    spy_subset = spy[spy.index <= dt]
-                    reg = classify_spy_regime(spy_subset)
-                    reg_labels.append(reg.get("label", "UNKNOWN"))
-                df_in = df_in.copy()
-                df_in["regime_label"] = reg_labels
-            else:
-                df_in["regime_label"] = "UNKNOWN"
+            if spy is None or spy.empty or date_col not in df_out.columns:
+                df_out.loc[:, "regime_label"] = "UNKNOWN"
+                return df_out
+            spy = spy.sort_index()
+            dates = pd.to_datetime(df_out[date_col])
+            unique_dates = sorted(dates.unique())
+            regime_map = {}
+            for dt in unique_dates:
+                spy_subset = spy[spy.index <= dt]
+                reg = classify_spy_regime(spy_subset)
+                regime_map[dt] = reg.get("label", "UNKNOWN")
+            df_out.loc[:, "regime_label"] = dates.map(regime_map).fillna("UNKNOWN")
         except Exception:
-            df_in["regime_label"] = "UNKNOWN"
-        return df_in
+            df_out.loc[:, "regime_label"] = "UNKNOWN"
+        return df_out
 
-    def _run_regime_splits(df_in: pd.DataFrame):
+    def _run_regime_splits(df_in: pd.DataFrame, prefix: str | None = None):
         df_reg = _maybe_regime_label(df_in)
         for reg_lab, df_sub in df_reg.groupby("regime_label"):
             if df_sub.empty:
                 continue
             suffix = reg_lab.replace(" ", "_")
+            if prefix:
+                suffix = f"{prefix}_{suffix}"
             all_metrics[suffix] = train_one_split(df_sub, suffix=suffix)
 
     if args.rolling:
@@ -277,7 +282,7 @@ def main():
             val_end = val_end_win
             window_suffix = f"{train_end.year}_roll"
             if args.regime_split:
-                _run_regime_splits(df_window)
+                _run_regime_splits(df_window, prefix=window_suffix)
             elif args.sector_split:
                 df_sec = df_window
                 if "Sector" not in df_sec.columns:

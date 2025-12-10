@@ -29,6 +29,7 @@ from technic_v4.engine import meta_experience
 from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
 from technic_v4.data_layer.events import get_event_info
+from technic_v4.engine.portfolio_optim import mean_variance_weights
 import concurrent.futures
 
 logger = get_logger()
@@ -429,6 +430,97 @@ def _apply_alpha_blend(
     df["TechRating_raw"] = base_tr
     df["TechRating"] = blended_tr
 
+    return df
+
+
+def _apply_portfolio_suggestions(
+    df: pd.DataFrame, risk: RiskSettings, sector_cap: float = 0.3
+) -> pd.DataFrame:
+    """
+    Compute simple suggested portfolio weights/allocations:
+      - Momentum/expected-return tilt: MuTotal (or AlphaScore) / ATR risk proxy
+      - Sector cap to avoid concentration
+      - Risk-parity style weights based on ATR14_pct
+    """
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    mask = df.get("PositionSize", 0) > 0
+    if mask.sum() == 0:
+        df["weight_suggested"] = 0.0
+        df["alloc_suggested"] = 0.0
+        return df
+
+    sub = df[mask].copy()
+    ret_proxy = pd.to_numeric(sub.get("MuTotal", sub.get("AlphaScore", 0.0)), errors="coerce").fillna(0.0)
+    ret_proxy = ret_proxy.clip(lower=0.0)
+    risk_proxy = pd.to_numeric(sub.get("ATR14_pct", 0.02), errors="coerce").fillna(0.02)
+    risk_proxy = risk_proxy.replace(0, 0.02)
+
+    weight_raw = ret_proxy / risk_proxy
+    if weight_raw.sum() <= 0:
+        weight_raw = pd.Series(1.0, index=sub.index)
+
+    # Sector cap
+    sec = sub.get("Sector")
+    if sec is not None:
+        total_raw = weight_raw.sum()
+        sector_sum = weight_raw.groupby(sec).transform("sum")
+        cap_val = sector_cap * total_raw
+        scale = np.where(sector_sum > 0, np.minimum(1.0, cap_val / sector_sum), 1.0)
+        weight_raw = weight_raw * scale
+
+    weights = weight_raw / weight_raw.sum()
+    alloc = weights * risk.account_size
+
+    df["weight_suggested"] = 0.0
+    df.loc[sub.index, "weight_suggested"] = weights
+    df["alloc_suggested"] = 0.0
+    df.loc[sub.index, "alloc_suggested"] = alloc
+
+    # Risk-parity-style weights using ATR as risk proxy
+    inv_vol = 1.0 / risk_proxy
+    if inv_vol.sum() > 0:
+        rp_weights = inv_vol / inv_vol.sum()
+        rp_alloc = rp_weights * risk.account_size
+        df["weight_risk_parity"] = 0.0
+        df.loc[sub.index, "weight_risk_parity"] = rp_weights
+        df["alloc_risk_parity"] = 0.0
+        df.loc[sub.index, "alloc_risk_parity"] = rp_alloc
+    else:
+        df["weight_risk_parity"] = 0.0
+        df["alloc_risk_parity"] = 0.0
+
+    # Mean-variance style weights (diagonal covariance proxy)
+    try:
+        mv_w = mean_variance_weights(sub, ret_col="MuTotal", vol_col="ATR14_pct", sector_col="Sector", sector_cap=sector_cap)
+        if not mv_w.empty and mv_w.sum() > 0:
+            mv_alloc = mv_w * risk.account_size
+            df["weight_mean_variance"] = 0.0
+            df.loc[sub.index, "weight_mean_variance"] = mv_w
+            df["alloc_mean_variance"] = 0.0
+            df.loc[sub.index, "alloc_mean_variance"] = mv_alloc
+        else:
+            df["weight_mean_variance"] = 0.0
+            df["alloc_mean_variance"] = 0.0
+    except Exception:
+        df["weight_mean_variance"] = 0.0
+        df["alloc_mean_variance"] = 0.0
+    # HRP placeholder (inverse vol with sector cap)
+    try:
+        iv_w = mean_variance_weights(sub, ret_col="MuTotal", vol_col="ATR14_pct", sector_col="Sector", sector_cap=sector_cap)
+        if not iv_w.empty and iv_w.sum() > 0:
+            iv_alloc = iv_w * risk.account_size
+            df["weight_hrp"] = 0.0
+            df.loc[sub.index, "weight_hrp"] = iv_w
+            df["alloc_hrp"] = 0.0
+            df.loc[sub.index, "alloc_hrp"] = iv_alloc
+        else:
+            df["weight_hrp"] = 0.0
+            df["alloc_hrp"] = 0.0
+    except Exception:
+        df["weight_hrp"] = 0.0
+        df["alloc_hrp"] = 0.0
     return df
 
 # -----------------------------
@@ -985,6 +1077,9 @@ def _finalize_results(
 
     # Work on a copy to avoid SettingWithCopyWarning when results_df is a slice
     results_df = results_df.copy()
+
+    # Suggested portfolio weights / allocations (light heuristic)
+    results_df = _apply_portfolio_suggestions(results_df, risk)
 
     # Regime context columns (same for all rows in this scan)
     if regime_tags:
