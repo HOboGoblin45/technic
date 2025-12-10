@@ -240,16 +240,30 @@ def _apply_alpha_blend(df: pd.DataFrame, regime: Optional[dict] = None) -> pd.Da
     df["ml_alpha_z"] = np.nan
 
     if settings.use_ml_alpha:
-        # 5d alpha
+        # 5d alpha (regime/sector-aware)
         try:
-            # Try regime-specific model if regime label present
-            reg_label = None
-            if regime:
-                reg_label = regime.get("label") or regime.get("regime_label")
-            if reg_label:
-                ml_5d = alpha_inference.score_alpha_regime(df, str(reg_label))
+            if "Sector" in df.columns:
+                ml_5d_vals = pd.Series(np.nan, index=df.index)
+                for sec, subdf in df.groupby("Sector"):
+                    sub_pred = None
+                    reg_label = None
+                    if regime:
+                        reg_label = regime.get("label") or regime.get("regime_label")
+                    # Try regime model first, then sector, then default
+                    if reg_label:
+                        sub_pred = alpha_inference.score_alpha_regime(subdf, str(reg_label))
+                    if sub_pred is None:
+                        sub_pred = alpha_inference.score_alpha_sector(subdf, str(sec))
+                    ml_5d_vals.loc[subdf.index] = sub_pred
+                ml_5d = ml_5d_vals
             else:
-                ml_5d = alpha_inference.score_alpha(df)
+                reg_label = None
+                if regime:
+                    reg_label = regime.get("label") or regime.get("regime_label")
+                if reg_label:
+                    ml_5d = alpha_inference.score_alpha_regime(df, str(reg_label))
+                else:
+                    ml_5d = alpha_inference.score_alpha(df)
         except Exception:
             logger.warning("[ALPHA] score_alpha() 5d failed", exc_info=True)
             ml_5d = None

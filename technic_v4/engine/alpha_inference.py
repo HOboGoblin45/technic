@@ -70,6 +70,7 @@ _XGB_MODEL_PATH_5D_REGIME = {
     "SIDEWAYS_LOW_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_SIDE_LOVOL", "models/alpha/xgb_v2_SIDEWAYS_LOW_VOL.pkl"),
     "SIDEWAYS_HIGH_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_SIDE_HIVOL", "models/alpha/xgb_v2_SIDEWAYS_HIGH_VOL.pkl"),
 }
+_XGB_MODEL_PATH_5D_SECTOR_PREFIX = "models/alpha/xgb_v2_SECTOR_"
 
 
 def _load_xgb_bundle(path: str, cache: dict | None) -> tuple[Optional[dict], dict | None]:
@@ -256,6 +257,24 @@ def score_alpha_regime(df_features: pd.DataFrame, regime_label: str) -> Optional
             return _score_with_bundle(df_features, bundle, label=f"5d_{regime_label}")
         except Exception:
             logger.warning("[ALPHA] regime bundle load failed for %s; falling back", regime_label, exc_info=True)
+    return score_alpha(df_features)
+
+
+def score_alpha_sector(df_features: pd.DataFrame, sector: str) -> Optional[pd.Series]:
+    """
+    Score ML alpha (5d) using a sector-specific XGB bundle if available.
+    Falls back to default 5d bundle on miss.
+    """
+    sec = (sector or "").upper().replace(" ", "_")
+    if not sec:
+        return score_alpha(df_features)
+    path = f"{_XGB_MODEL_PATH_5D_SECTOR_PREFIX}{sec}.pkl"
+    if os.path.exists(path):
+        try:
+            bundle, _ = _load_xgb_bundle(path, None)
+            return _score_with_bundle(df_features, bundle, label=f"5d_SECTOR_{sec}")
+        except Exception:
+            logger.warning("[ALPHA] sector bundle load failed for %s; falling back", sec, exc_info=True)
     return score_alpha(df_features)
 
 

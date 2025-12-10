@@ -103,6 +103,11 @@ def parse_args() -> argparse.Namespace:
         help="Train separate models per regime (TRENDING_UP_LOW_VOL, HIGH_VOL, SIDEWAYS).",
     )
     p.add_argument(
+        "--sector-split",
+        action="store_true",
+        help="Train separate models per sector (requires 'Sector' column).",
+    )
+    p.add_argument(
         "--rolling",
         action="store_true",
         help="Enable rolling windows; emits one model per window (suffix includes end year).",
@@ -273,12 +278,32 @@ def main():
             window_suffix = f"{train_end.year}_roll"
             if args.regime_split:
                 _run_regime_splits(df_window)
+            elif args.sector_split:
+                df_sec = df_window
+                if "Sector" not in df_sec.columns:
+                    df_sec = df_sec.copy()
+                    df_sec["Sector"] = "UNKNOWN"
+                for sec, df_sub in df_sec.groupby("Sector"):
+                    if df_sub.empty:
+                        continue
+                    suffix = f"{window_suffix}_SECTOR_{str(sec).upper().replace(' ', '_')}"
+                    all_metrics[suffix] = train_one_split(df_sub, suffix=suffix)
             else:
                 all_metrics[window_suffix] = train_one_split(df_window, suffix=window_suffix)
             current_start += step
     else:
         if args.regime_split:
             _run_regime_splits(df)
+        elif args.sector_split:
+            df_sec = df
+            if "Sector" not in df_sec.columns:
+                df_sec = df_sec.copy()
+                df_sec["Sector"] = "UNKNOWN"
+            for sec, df_sub in df_sec.groupby("Sector"):
+                if df_sub.empty:
+                    continue
+                suffix = f"SECTOR_{str(sec).upper().replace(' ', '_')}"
+                all_metrics[suffix] = train_one_split(df_sub, suffix=suffix)
         else:
             all_metrics["base"] = train_one_split(df, suffix="")
 
