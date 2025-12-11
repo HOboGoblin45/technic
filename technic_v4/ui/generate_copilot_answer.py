@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from typing import Any
+import os
 import pandas as pd
 
 from openai import OpenAI
-from config_secrets import OPENAI_API_KEY
+
+# Optional local module for secrets; ignored if missing
+try:  # noqa: SIM105
+    import config_secrets  # type: ignore
+except Exception:  # pragma: no cover - best effort import
+    config_secrets = None
 
 
 # --- Single shared LLM client for Copilot ------------------------------------
@@ -17,7 +23,13 @@ def get_llm_client() -> OpenAI:
     """
     global _llm_client
     if _llm_client is None:
-        _llm_client = OpenAI(api_key=OPENAI_API_KEY.strip())
+        # Prefer environment variable; fallback to optional config_secrets module.
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key and config_secrets and getattr(config_secrets, "OPENAI_API_KEY", None):
+            api_key = getattr(config_secrets, "OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY not set. Set env var or config_secrets.OPENAI_API_KEY.")
+        _llm_client = OpenAI(api_key=api_key.strip())
     return _llm_client
 
 
@@ -31,6 +43,8 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
 
     The answer is allowed to outline an example trade plan, but must always
     make it clear this is educational information, not personalized advice.
+    It should reflect institutional signals such as ICS, win_prob_10d, QualityScore,
+    and event context when available.
     """
 
     # Allow calls without a row (e.g., lightweight /api/copilot ping)
@@ -56,6 +70,17 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
     regime_trend = getter("RegimeTrend", None)
     regime_vol = getter("RegimeVol", None)
 
+    # Higher-level signals
+    ics = getter("InstitutionalCoreScore", None)
+    ics_tier = getter("ICS_Tier", getter("Tier", None))
+    win_prob_10d = getter("win_prob_10d", None)
+    quality = getter("QualityScore", getter("fundamental_quality_score", None))
+    playstyle = getter("PlayStyle", None)
+    is_ultra_risky = getter("IsUltraRisky", False)
+    event_summary = getter("EventSummary", None)
+    event_flags = getter("EventFlags", None)
+    fundamental_snapshot = getter("FundamentalSnapshot", None)
+
     # Optional trade-plan fields if present on the row
     entry = getter("EntryPrice", None)
     stop = getter("StopPrice", None)
@@ -69,6 +94,18 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         metrics_lines.append(f"- Last price: {last:.2f}")
     if techrating is not None and not pd.isna(techrating):
         metrics_lines.append(f"- TechRating: {techrating:.2f}")
+    if ics is not None and not pd.isna(ics):
+        metrics_lines.append(f"- InstitutionalCoreScore: {ics:.1f}")
+    if ics_tier:
+        metrics_lines.append(f"- ICS tier: {ics_tier}")
+    if win_prob_10d is not None and not pd.isna(win_prob_10d):
+        metrics_lines.append(f"- 10-day win probability (meta): {float(win_prob_10d):.2%}")
+    if quality is not None and not pd.isna(quality):
+        metrics_lines.append(f"- QualityScore (fundamentals): {float(quality):.1f}")
+    if playstyle:
+        metrics_lines.append(f"- PlayStyle: {playstyle}")
+    if is_ultra_risky:
+        metrics_lines.append("- Risk profile: ULTRA-RISKY / speculative")
     metrics_lines.append(f"- Signal: {signal}")
     metrics_lines.append(f"- Match mode: {matchmode}")
     metrics_lines.append(f"- Setup tags: {setuptags or 'None'}")
@@ -96,6 +133,9 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         "  reward/risk, and notional position size using the metrics you are given.\n"
         "- Use the 'Model drivers' (feature contributions) when explaining why a setup is ranked; "
         "  ground your reasoning strictly in those drivers and the metrics provided.\n"
+        "- Treat InstitutionalCoreScore (ICS) and QualityScore as high-level strength/quality gauges; "
+        "  win_prob_10d is a probabilistic helper from a meta-model, never a guarantee.\n"
+        "- If ICS/QualityScore/win_prob_10d point in different directions, explain the nuance briefly.\n"
         "- If volatility context is provided (IV rank, regime), incorporate it into the rationale and risks.\n"
         "- Every answer must clearly state that this is an educational example, not "
         '  personalized financial advice, and that the user is responsible for their own decisions.\n'
@@ -115,6 +155,17 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         vol_context.append(f"Regime: trend={regime_trend}, vol={regime_vol}")
     vol_block = "; ".join(vol_context) if vol_context else "None provided."
 
+    context_bits: list[str] = []
+    if event_summary:
+        context_bits.append(f"Events: {event_summary}")
+    elif event_flags:
+        context_bits.append(f"Event flags: {event_flags}")
+    if fundamental_snapshot:
+        context_bits.append(f"Fundamentals: {fundamental_snapshot}")
+    context_block = ""
+    if context_bits:
+        context_block = "Context:\n" + "\n".join(f"- {line}" for line in context_bits) + "\n\n"
+
     user_msg = f"""
 Current symbol: {symbol}
 
@@ -127,7 +178,7 @@ Model drivers (SHAP-based):
 Volatility/Risk context:
 {vol_block}
 
-User question:
+{context_block}User question:
 {question}
 """.strip()
 
@@ -147,7 +198,7 @@ User question:
         final_answer = resp.choices[0].message.content.strip()
         return final_answer
 
-    except Exception as exc:  # noqa: BLE001 – show a friendly fallback
+    except Exception as exc:  # noqa: BLE001 show a friendly fallback
         return (
             "Quant Copilot ran into an error while talking to the AI backend. "
             "Please try again in a moment.\n\n"

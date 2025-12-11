@@ -10,7 +10,8 @@ from pydantic import BaseModel
 from technic_v4.config.settings import get_settings
 from technic_v4.config.product import PRODUCT
 from technic_v4.config.pricing import PLANS
-from technic_v4.scanner_core import ScanConfig, run_scan
+from technic_v4.scanner_core import ScanConfig, run_scan, OUTPUT_DIR as SCAN_OUTPUT_DIR
+from technic_v4.ui.generate_copilot_answer import generate_copilot_answer
 
 app = FastAPI(
     title="Technic API",
@@ -42,6 +43,11 @@ class ScanRequest(BaseModel):
     max_symbols: int = 25
     trade_style: str = "Short-term swing"
     min_tech_rating: float = 0.0
+
+
+class CopilotRequest(BaseModel):
+    question: str
+    symbol: Optional[str] = None
 
 
 class ScanResultRow(BaseModel):
@@ -150,6 +156,28 @@ def _format_scan_results(df: pd.DataFrame) -> List[ScanResultRow]:
     return rows
 
 
+def _load_latest_scan_row(symbol: str) -> Optional[pd.Series]:
+    """
+    Best-effort: load the latest technic_scan_results.csv and return the first row
+    matching the given symbol (case-insensitive). Returns None on any failure.
+    """
+    try:
+        path = SCAN_OUTPUT_DIR / "technic_scan_results.csv"
+        if not path.exists():
+            return None
+        df = pd.read_csv(path)
+        if "Symbol" not in df.columns:
+            return None
+        sym = symbol.upper().strip()
+        mask = df["Symbol"].astype(str).str.upper().str.strip() == sym
+        sub = df.loc[mask]
+        if sub.empty:
+            return None
+        return sub.iloc[0]
+    except Exception:
+        return None
+
+
 @app.post("/v1/scan", response_model=ScanResponse)
 def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> ScanResponse:
     """
@@ -165,6 +193,37 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
     disclaimer = " ".join(PRODUCT.disclaimers)
 
     return ScanResponse(status=status_text, disclaimer=disclaimer, results=_format_scan_results(df))
+
+
+@app.post("/v1/copilot")
+async def copilot(request: CopilotRequest, api_key: str = Depends(get_api_key)):
+    """
+    Generate a Copilot answer for a question, optionally scoped to a symbol from
+    the latest scan output.
+
+    Request:
+      {
+        "question": "Explain this setup in plain language",
+        "symbol": "ODP"  // optional
+      }
+    Response:
+      {
+        "answer": "…human-readable explanation…"
+      }
+    """
+    if not request.question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    row = None
+    if request.symbol:
+        row = _load_latest_scan_row(request.symbol)
+
+    try:
+        answer = generate_copilot_answer(question=request.question, row=row)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Copilot error: {exc}") from exc
+
+    return {"answer": answer}
 
 
 # -----------------------------
