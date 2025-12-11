@@ -47,6 +47,7 @@ final technicApi = TechnicApi();
 final GlobalKey<_TechnicShellState> _shellKey = GlobalKey<_TechnicShellState>();
 final ValueNotifier<String?> copilotPrefill = ValueNotifier<String?>(null);
 final ValueNotifier<String?> copilotStatus = ValueNotifier<String?>(null);
+final ValueNotifier<ScanResult?> copilotContext = ValueNotifier<ScanResult?>(null);
 final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(false);
 final ValueNotifier<String?> userId = ValueNotifier<String?>(null);
 
@@ -1575,7 +1576,12 @@ Future<void> _loadUniverseStats() async {
                 )
               else
                 ...scans.map(
-                  (r) => _scanResultCard(context, r, () => _analyzeWithCopilot(r)),
+                  (r) => _scanResultCard(context, r, () {
+                        copilotContext.value = r;
+                        copilotPrefill.value =
+                            'Explain the ${r.signal.toLowerCase()} setup in ${r.ticker} and outline an example trade using today\'s Technic scan metrics.';
+                        _shellKey.currentState?.setTab(2);
+                      }),
                 ),
               if (hasScans)
                 _infoCard(
@@ -2300,6 +2306,72 @@ class _CopilotPageState extends State<CopilotPage> with AutomaticKeepAliveClient
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        ValueListenableBuilder<ScanResult?>(
+          valueListenable: copilotContext,
+          builder: (context, ctx, _) {
+            if (ctx == null) return const SizedBox.shrink();
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              ctx.ticker,
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${ctx.signal} • ${ctx.playStyle ?? "Swing"}',
+                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                            if (ctx.institutionalCoreScore != null)
+                              Text(
+                                'ICS ${ctx.institutionalCoreScore!.toStringAsFixed(0)}/100'
+                                '${ctx.icsTier != null ? " (${ctx.icsTier})" : ""}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: tone(brandPrimary, 0.9),
+                                ),
+                              ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => copilotContext.value = null,
+                          tooltip: 'Clear context',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Win ~${ctx.winProb10d != null ? (ctx.winProb10d! * 100).toStringAsFixed(0) : "--"}% • '
+                      'Quality ${ctx.qualityScore?.toStringAsFixed(1) ?? "--"} • '
+                      'ATR ${(ctx.atrPct != null ? (ctx.atrPct! * 100).toStringAsFixed(1) : "--")}%',
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                    ),
+                    if ((ctx.eventSummary ?? ctx.eventFlags ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        ctx.eventSummary ?? ctx.eventFlags ?? '',
+                        style: TextStyle(fontSize: 11, color: tone(brandAccent, 0.9)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
         const SizedBox(height: 16),
         if (_copilotError)
           _infoCard(
@@ -2339,6 +2411,34 @@ class _CopilotPageState extends State<CopilotPage> with AutomaticKeepAliveClient
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    ValueListenableBuilder<String?>(
+                      valueListenable: copilotPrefill,
+                      builder: (context, suggestion, _) {
+                        if (suggestion == null || suggestion.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  suggestion,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  _controller.text = suggestion;
+                                  copilotPrefill.value = null;
+                                },
+                                child: const Text('Use suggestion'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                     TextField(
                       controller: _controller,
                       maxLines: 4,
@@ -2364,6 +2464,12 @@ class _CopilotPageState extends State<CopilotPage> with AutomaticKeepAliveClient
                               ),
                       ),
                       onSubmitted: (_) => _sendPrompt(),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Copilot explains what Technic sees in this setup and outlines an example trade. '
+                      'Responses are educational, not financial advice.',
+                      style: TextStyle(color: tone(Colors.white, 0.6), fontSize: 12),
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -2942,6 +3048,23 @@ class ScanResult {
   final String target;
   final String note;
   final List<double> sparkline;
+  final double? institutionalCoreScore;
+  final String? icsTier;
+  final double? winProb10d;
+  final double? qualityScore;
+  final String? playStyle;
+  final bool? isUltraRisky;
+  final String? profileName;
+  final String? profileLabel;
+  final String? sector;
+  final String? industry;
+  final double? techRating;
+  final double? alphaScore;
+  final double? atrPct;
+  final String? eventSummary;
+  final String? eventFlags;
+  final String? fundamentalSnapshot;
+  final List<dynamic>? optionStrategies;
   const ScanResult(
     this.ticker,
     this.signal,
@@ -2951,10 +3074,34 @@ class ScanResult {
     this.target,
     this.note, [
     this.sparkline = const [],
+    this.institutionalCoreScore,
+    this.icsTier,
+    this.winProb10d,
+    this.qualityScore,
+    this.playStyle,
+    this.isUltraRisky,
+    this.profileName,
+    this.profileLabel,
+    this.sector,
+    this.industry,
+    this.techRating,
+    this.alphaScore,
+    this.atrPct,
+    this.eventSummary,
+    this.eventFlags,
+    this.fundamentalSnapshot,
+    this.optionStrategies,
   ]);
 
   factory ScanResult.fromJson(Map<String, dynamic> json) {
     String num(dynamic v) => v == null ? '' : v.toString();
+    double? dbl(dynamic v) => v == null ? null : double.tryParse(v.toString());
+    bool? bl(dynamic v) {
+      if (v == null) return null;
+      if (v is bool) return v;
+      final s = v.toString().toLowerCase();
+      return s == 'true' || s == '1';
+    }
     final rawSpark = json['sparkline'] ?? json['spark'] ?? [];
     final spark = rawSpark is List
         ? rawSpark.map((e) => double.tryParse(e.toString()) ?? 0).toList()
@@ -2968,6 +3115,23 @@ class ScanResult {
       num(json['target']),
       json['note']?.toString() ?? '',
       spark,
+      dbl(json['InstitutionalCoreScore'] ?? json['ics'] ?? json['ICS']),
+      json['ICS_Tier']?.toString() ?? json['Tier']?.toString(),
+      dbl(json['win_prob_10d']),
+      dbl(json['QualityScore'] ?? json['fundamental_quality_score']),
+      json['PlayStyle']?.toString(),
+      bl(json['IsUltraRisky']),
+      json['Profile']?.toString(),
+      json['ProfileLabel']?.toString(),
+      json['Sector']?.toString(),
+      json['Industry']?.toString(),
+      dbl(json['TechRating']),
+      dbl(json['AlphaScore']),
+      dbl(json['ATR14_pct']),
+      json['EventSummary']?.toString(),
+      json['EventFlags']?.toString(),
+      json['FundamentalSnapshot']?.toString(),
+      json['OptionStrategies'] as List<dynamic>?,
     );
   }
 
@@ -2980,6 +3144,23 @@ class ScanResult {
         'target': target,
         'note': note,
         'sparkline': sparkline,
+        'InstitutionalCoreScore': institutionalCoreScore,
+        'ICS_Tier': icsTier,
+        'win_prob_10d': winProb10d,
+        'QualityScore': qualityScore,
+        'PlayStyle': playStyle,
+        'IsUltraRisky': isUltraRisky,
+        'Profile': profileName,
+        'ProfileLabel': profileLabel,
+        'Sector': sector,
+        'Industry': industry,
+        'TechRating': techRating,
+        'AlphaScore': alphaScore,
+        'ATR14_pct': atrPct,
+        'EventSummary': eventSummary,
+        'EventFlags': eventFlags,
+        'FundamentalSnapshot': fundamentalSnapshot,
+        'OptionStrategies': optionStrategies,
       };
 }
 
@@ -4041,87 +4222,238 @@ Widget _savedScreenCard(
 }
 
 Widget _scanResultCard(BuildContext context, ScanResult r, VoidCallback onAnalyze) {
-  return _infoCard(
-    title: '${r.ticker} | ${r.signal}',
-    subtitle: _fmtField(r.rrr),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: const [
-            Icon(Icons.info_outline, size: 14, color: Colors.white70),
-            SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                'Scores blend trend, momentum, volatility, and risk signals.',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            Chip(
-              label: Text('Entry: ${r.entry}'),
-              backgroundColor: tone(Colors.white, 0.05),
-              visualDensity: VisualDensity.compact,
-            ),
-            Chip(
-              label: Text('Target: ${r.target}'),
-              backgroundColor: tone(Colors.white, 0.05),
-              visualDensity: VisualDensity.compact,
-            ),
-            Chip(
-              label: Text('Stop: ${r.stop}'),
-              backgroundColor: tone(Colors.redAccent, 0.12),
-              visualDensity: VisualDensity.compact,
-            ),
-            Chip(
-              label: Text(r.rrr),
-              backgroundColor: tone(Colors.greenAccent, 0.12),
-              visualDensity: VisualDensity.compact,
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Icon(Icons.bolt, size: 16, color: brandPrimary),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _fmtField(r.note),
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                  if (r.sparkline.isNotEmpty)
-                    SizedBox(
-                      height: 24,
-                      child: Sparkline(
-                        data: r.sparkline,
-                        positive: r.sparkline.last >= r.sparkline.first,
+  final theme = Theme.of(context);
+  final isDark = theme.brightness == Brightness.dark;
+  final muted = theme.textTheme.bodySmall?.copyWith(
+    color: isDark ? Colors.white70 : Colors.black54,
+  );
+
+  final ics = r.institutionalCoreScore;
+  String tierLabel = r.icsTier ?? r.profileLabel ?? r.profileName ?? '';
+  if (tierLabel.isEmpty && ics != null) {
+    if (ics >= 80) {
+      tierLabel = 'Tier 1';
+    } else if (ics >= 65) {
+      tierLabel = 'Tier 2';
+    } else {
+      tierLabel = 'Watch';
+    }
+  }
+  Color tierColor;
+  if (ics != null && ics >= 80) {
+    tierColor = tone(brandPrimary, 0.25);
+  } else if (ics != null && ics >= 65) {
+    tierColor = tone(brandAccent, 0.18);
+  } else {
+    tierColor = tone(Colors.grey, isDark ? 0.25 : 0.18);
+  }
+
+  final winProb = r.winProb10d;
+  final quality = r.qualityScore;
+  double? atrPct = r.atrPct;
+  if (atrPct != null && atrPct < 1) atrPct *= 100;
+
+  final desc = [
+    r.signal,
+    if (r.playStyle != null && r.playStyle!.isNotEmpty) '• ${r.playStyle}',
+    if (ics != null && winProb != null)
+      '• ICS ${ics.toStringAsFixed(0)}/100, win ~${(winProb * 100).toStringAsFixed(0)}%',
+  ].where((e) => e.isNotEmpty).join(' ');
+
+  final eventChips = <Widget>[];
+  if ((r.eventSummary ?? '').isNotEmpty) {
+    eventChips.add(
+      FilterChip(
+        label: Text(r.eventSummary!),
+        selected: false,
+        visualDensity: VisualDensity.compact,
+        backgroundColor: tone(brandPrimary, 0.12),
+        onSelected: (_) {},
+      ),
+    );
+  } else if ((r.eventFlags ?? '').isNotEmpty) {
+    eventChips.add(
+      FilterChip(
+        label: Text(r.eventFlags!),
+        selected: false,
+        visualDensity: VisualDensity.compact,
+        backgroundColor: tone(Colors.orange, 0.12),
+        onSelected: (_) {},
+      ),
+    );
+  }
+  if (r.optionStrategies != null && r.optionStrategies!.isNotEmpty) {
+    eventChips.add(
+      FilterChip(
+        label: const Text('Options idea available'),
+        selected: false,
+        visualDensity: VisualDensity.compact,
+        backgroundColor: tone(brandAccent, 0.14),
+        onSelected: (_) {},
+      ),
+    );
+  }
+
+  return Card(
+    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+    child: Padding(
+      padding: const EdgeInsets.all(14.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.ticker,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.1,
                       ),
                     ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      '${r.sector ?? ''}${(r.sector != null && r.industry != null) ? '  •  ' : ''}${r.industry ?? ''}',
+                      style: muted?.copyWith(fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            TextButton(
-              onPressed: onAnalyze,
-              child: const Text('Analyze with Copilot'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.info_outline, color: Colors.white70),
-              onPressed: () => _showScanDetail(context, r, onAnalyze),
+              if (tierLabel.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: tierColor,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${tierLabel}${ics != null ? ' • ${ics.toStringAsFixed(0)}/100' : ''}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              _miniStat('TechRating', r.techRating),
+              _miniStat('AlphaScore', r.alphaScore),
+              if (winProb != null) _miniStat('Win prob 10d', winProb * 100, suffix: '%'),
+              if (quality != null) _miniStat('Quality', quality),
+              if (atrPct != null) _miniStat('ATR%', atrPct, suffix: '%'),
+              if (r.profileLabel != null || r.profileName != null)
+                _miniStat('Profile', null,
+                    labelOnly: r.profileLabel ?? r.profileName ?? ''),
+              if (r.isUltraRisky == true)
+                Chip(
+                  label: const Text('ULTRA-RISKY'),
+                  backgroundColor: tone(Colors.red, 0.18),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+          if (eventChips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: eventChips,
             ),
           ],
-        ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      desc.isNotEmpty ? desc : _fmtField(r.note),
+                      style: muted,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        Chip(
+                          label: Text('Entry ${r.entry}'),
+                          backgroundColor: tone(Colors.greenAccent, 0.12),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        Chip(
+                          label: Text('Target ${r.target}'),
+                          backgroundColor: tone(brandPrimary, 0.14),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        Chip(
+                          label: Text('Stop ${r.stop}'),
+                          backgroundColor: tone(Colors.redAccent, 0.12),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        if (r.rrr.isNotEmpty)
+                          Chip(
+                            label: Text(r.rrr),
+                            backgroundColor: tone(Colors.orange, 0.12),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    onPressed: onAnalyze,
+                    tooltip: 'Ask Copilot',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.info_outline),
+                    onPressed: () => _showScanDetail(context, r, onAnalyze),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _miniStat(String label, double? value, {String suffix = '', String? labelOnly}) {
+  final display = labelOnly ??
+      (value != null
+          ? '${value.toStringAsFixed(value.abs() >= 100 ? 0 : 1)}$suffix'
+          : '--');
+  return Chip(
+    label: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+        Text(display, style: const TextStyle(fontSize: 12)),
       ],
     ),
+    visualDensity: VisualDensity.compact,
+    backgroundColor: tone(Colors.white, 0.06),
   );
 }
 

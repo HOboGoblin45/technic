@@ -145,13 +145,21 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         "- If a risk profile is provided, explain why the setup fits that profile and use tone appropriate "
         "  to the risk level (more cautious for conservative, more volatility-tolerant for aggressive).\n"
         "- If volatility context is provided (IV rank, regime), incorporate it into the rationale and risks.\n"
+        "- Start with a 1–2 sentence 'Headline' verdict that names the symbol, side (long/short/neutral), "
+        "  ICS tier + score, approximate 10-day win probability, and whether it fits a conservative, balanced, "
+        "  or aggressive profile.\n"
+        "- Prefer a structured answer with short sections such as: Headline, Summary, Example trade plan, "
+        "  Why this setup, Events & timing, and Key risks.\n"
+        "- If event flags indicate earnings or major events in the next ~7-10 days, emphasize timing risk in the "
+        "  'Events & timing' section and caution against taking large new positions right before earnings.\n"
+        "- If a recent positive earnings surprise is flagged, you may mention it as a supportive tailwind but "
+        "  avoid overconfidence.\n"
+        "- Keep the overall answer compact (typically 3–6 short paragraphs or bullet lists).\n"
         "- Every answer must clearly state that this is an educational example, not "
         '  personalized financial advice, and that the user is responsible for their own decisions.\n'
         "- Do NOT guarantee profits or certainty about future price moves.\n"
         "- Never reference having access to live data, order books, or private information; "
         "  you only see the metrics listed.\n"
-        "- Prefer a structured answer with short sections such as: Summary, Example trade plan, "
-        "  Why this setup, and Key risks.\n"
     )
 
     # Model drivers (from SHAP or similar) and context
@@ -200,7 +208,7 @@ Volatility/Risk context:
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.3,
-            max_tokens=650,
+            max_tokens=480,
         )
 
         final_answer = resp.choices[0].message.content.strip()
