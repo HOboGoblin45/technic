@@ -4,6 +4,12 @@ import datetime as dt
 import math
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+import pandas as pd
+
+from technic_v4.infra.logging import get_logger
+
+logger = get_logger()
+
 
 def _strategy_bands(trade_style: str, signal: Optional[str], tech_rating: Optional[float]) -> Tuple[Tuple[int, int], Tuple[float, float]]:
     """
@@ -249,8 +255,61 @@ def _reason_snippet(option: dict, trade_style: str, dte_range: Tuple[int, int], 
         parts.append(f"spread {spread*100:.1f}%")
     if iv is not None:
         parts.append(f"IV {iv:.2f}")
+    sw = option.get("option_sweetness_score")
+    if sw is not None:
+        parts.append(f"sweetness {sw:.0f}/100")
 
     return " | ".join(parts)
+
+
+def filter_liquid_contracts(
+    chain: pd.DataFrame,
+    *,
+    min_oi: int = 200,
+    min_volume: int = 20,
+    max_spread_pct: float = 0.06,
+    min_dte: int = 30,
+    max_dte: int = 60,
+) -> pd.DataFrame:
+    """Return only reasonably liquid contracts in the target DTE window."""
+    if chain is None or chain.empty:
+        return pd.DataFrame(columns=chain.columns if chain is not None else [])
+
+    df = chain.copy()
+    # Drop missing bid/ask
+    df = df.dropna(subset=["bid", "ask"])
+
+    # Require thresholds
+    if "open_interest" in df.columns:
+        df = df[df["open_interest"].fillna(0) >= min_oi]
+    if "volume" in df.columns:
+        df = df[df["volume"].fillna(0) >= min_volume]
+    if "bid_ask_spread_pct" in df.columns:
+        df = df[df["bid_ask_spread_pct"].fillna(1) <= max_spread_pct]
+    elif "spread_pct" in df.columns:
+        df = df[df["spread_pct"].fillna(1) <= max_spread_pct]
+
+    if "dte" in df.columns:
+        df = df[df["dte"].between(min_dte, max_dte, inclusive="both")]
+
+    if df.empty:
+        return df
+
+    # Sort by OI, volume, then tightest spread
+    spread_col = "bid_ask_spread_pct" if "bid_ask_spread_pct" in df.columns else "spread_pct"
+    sort_cols = []
+    if "open_interest" in df.columns:
+        sort_cols.append("open_interest")
+    if "volume" in df.columns:
+        sort_cols.append("volume")
+    if spread_col in df.columns:
+        sort_cols.append(spread_col)
+
+    if sort_cols:
+        ascending = [False, False, True][: len(sort_cols)]
+        df = df.sort_values(sort_cols, ascending=ascending)
+
+    return df
 
 
 def select_option_candidates(
@@ -274,47 +333,123 @@ def select_option_candidates(
     if direction not in {"call", "put"}:
         direction = "call"
 
-    def _pick(threshold_oi: int, threshold_vol: int) -> List[Dict[str, Any]]:
-        picks: List[Dict[str, Any]] = []
-        for raw in chain:
-            norm = _normalize_contract(raw, underlying_price)
-            if not norm:
-                continue
-            if norm["contract_type"] != direction:
-                continue
-            if norm["open_interest"] is None or norm["open_interest"] < threshold_oi:
-                continue
-            if norm["volume"] is None or norm["volume"] < threshold_vol:
-                continue
-            if norm["dte"] is not None and norm["dte"] < 1:
-                continue
-            spread = norm.get("spread_pct")
-            if spread is None:
-                continue
-            # Relaxed: allow up to 30% (vs 25%) and consider >15% only if OI is decent
-            if spread > 0.30:
-                continue
-            if spread > 0.15 and norm.get("open_interest", 0) < max(200, threshold_oi):
-                continue
+    def compute_option_sweetness(df: pd.DataFrame, target_delta: float = 0.5) -> pd.Series:
+        if df is None or df.empty:
+            return pd.Series([], dtype=float)
 
-            score = _score_option(
-                norm,
-                dte_range=dte_range,
-                delta_range=delta_range,
-                trade_style=trade_style,
-                tech_rating=tech_rating,
-                risk_score=risk_score,
-                price_target=price_target,
-            )
-            norm["score"] = score
-            norm["reason"] = _reason_snippet(norm, trade_style, dte_range, delta_range)
-            picks.append(norm)
-        picks.sort(key=lambda x: x.get("score", 0.0), reverse=True)
-        return picks
+        # Component ranks / helpers
+        oi_rank = df["open_interest"].rank(pct=True).fillna(0) if "open_interest" in df.columns else pd.Series(0, index=df.index)
+        vol_rank = df["volume"].rank(pct=True).fillna(0) if "volume" in df.columns else pd.Series(0, index=df.index)
+        spread_col = "bid_ask_spread_pct" if "bid_ask_spread_pct" in df.columns else "spread_pct" if "spread_pct" in df.columns else None
+        if spread_col:
+            spread_rank = (1 - df[spread_col].rank(pct=True)).fillna(0)
+        else:
+            spread_rank = pd.Series(0, index=df.index)
 
-    picks = _pick(min_oi, min_vol)
-    if not picks:
-        # Relax filters for thin underlyings
-        picks = _pick(max(50, min_oi // 5), max(10, min_vol // 5))
+        liquidity_score = (0.4 * oi_rank + 0.4 * vol_rank + 0.2 * spread_rank) * 100.0
 
+        delta_abs = df["delta"].abs() if "delta" in df.columns else pd.Series(0.0, index=df.index)
+        delta_diff = (delta_abs - target_delta).abs()
+        delta_score = (1 - delta_diff / 0.4).clip(lower=0, upper=1) * 100.0
+
+        if "dte" in df.columns:
+            dte = pd.to_numeric(df["dte"], errors="coerce")
+            dte_score = pd.Series(0.0, index=df.index)
+            # Core band 30-60 -> 100
+            core = dte.between(30, 60)
+            dte_score.loc[core] = 100.0
+            # 20-30 ramp up from 60 -> 100, 60-75 ramp down 100 -> 60
+            lower = dte.between(20, 30)
+            dte_score.loc[lower] = 60.0 + 40.0 * (dte.loc[lower] - 20) / 10
+            upper = dte.between(60, 75)
+            dte_score.loc[upper] = 100.0 - 40.0 * (dte.loc[upper] - 60) / 15
+            dte_score = dte_score.clip(lower=0, upper=100)
+        else:
+            dte_score = pd.Series(0.0, index=df.index)
+
+        if "moneyness" in df.columns:
+            mny = df["moneyness"].abs()
+            # ATM (<=3%) -> 100, linear to 0 at 15%
+            moneyness_score = (1 - (mny / 0.15)).clip(lower=0, upper=1) * 100.0
+            moneyness_score.loc[mny <= 0.03] = 100.0
+        else:
+            moneyness_score = pd.Series(0.0, index=df.index)
+
+        iv_col = None
+        for cand in ("implied_volatility", "iv"):
+            if cand in df.columns:
+                iv_col = cand
+                break
+        if iv_col:
+            iv = pd.to_numeric(df[iv_col], errors="coerce")
+            iv_rank = iv.rank(pct=True).fillna(0.5)
+            iv_score = (1 - iv_rank).clip(lower=0, upper=1) * 100.0
+        else:
+            iv_score = pd.Series(0.0, index=df.index)
+
+        sweetness = (
+            0.30 * liquidity_score
+            + 0.25 * delta_score
+            + 0.20 * dte_score
+            + 0.15 * iv_score
+            + 0.10 * moneyness_score
+        )
+        return sweetness.clip(lower=0, upper=100)
+
+    # Normalize the incoming chain into a DataFrame
+    normalized: List[Dict[str, Any]] = []
+    for raw in chain:
+        norm = _normalize_contract(raw, underlying_price)
+        if norm:
+            normalized.append(norm)
+    df = pd.DataFrame(normalized)
+    if df.empty:
+        logger.info("[options] no contracts after normalization")
+        return []
+    df = df[df["contract_type"] == direction]
+    if df.empty:
+        logger.info("[options] no %s contracts after direction filter", direction)
+        return []
+
+    # Apply liquidity filter
+    df = filter_liquid_contracts(
+        df,
+        min_oi=min_oi,
+        min_volume=min_vol,
+        max_spread_pct=0.06,
+        min_dte=dte_range[0],
+        max_dte=dte_range[1],
+    )
+    if df.empty:
+        logger.info(
+            "[options] liquidity filter removed all contracts (symbol direction=%s, oi>=%s, vol>=%s)",
+            direction,
+            min_oi,
+            min_vol,
+        )
+        return []
+
+    # Compute per-contract sweetness score (0-100)
+    try:
+        df["option_sweetness_score"] = compute_option_sweetness(df)
+    except Exception as exc:
+        logger.warning("[options] sweetness computation failed: %s", exc)
+
+    picks: List[Dict[str, Any]] = []
+    for _idx, row in df.iterrows():
+        option = row.to_dict()
+        score = _score_option(
+            option,
+            dte_range=dte_range,
+            delta_range=delta_range,
+            trade_style=trade_style,
+            tech_rating=tech_rating,
+            risk_score=risk_score,
+            price_target=price_target,
+        )
+        option["score"] = score
+        option["reason"] = _reason_snippet(option, trade_style, dte_range, delta_range)
+        picks.append(option)
+
+    picks.sort(key=lambda x: x.get("score", 0.0), reverse=True)
     return picks
