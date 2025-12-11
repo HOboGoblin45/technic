@@ -1736,15 +1736,16 @@ def _finalize_results(
     # From here on, operate on the filtered main_df as results_df
     results_df = main_df
 
-    # Option picks placeholder (populated upstream when chains are available)
+    # Option picks placeholder (populated below when chains are available)
     results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
     # Optional: suggest simple option trades for strongest longs
     try:
         picks: list = []
         quality_scores = []
         iv_risk_flags = []
-        option_texts = []
-        option_strings = []
+        option_texts = []  # legacy text list; we will surface string via OptionTrade/OptionTradeText
+        option_strings = []  # human-readable string per row
+        no_picks_syms = []
 
         # Ensure event flags for options context
         if "has_upcoming_earnings" not in results_df.columns:
@@ -1768,6 +1769,12 @@ def _finalize_results(
             elif "days_to_next_ex_dividend" in results_df.columns:
                 dtd = pd.to_numeric(results_df["days_to_next_ex_dividend"], errors="coerce")
                 has_div = dtd.between(-7, 7, inclusive="both")
+            # avoid future downcast warning
+            if isinstance(has_div, pd.Series):
+                try:
+                    has_div = has_div.infer_objects(copy=False)
+                except Exception:
+                    pass
             results_df["has_dividend_soon"] = has_div
         for idx, row in results_df.iterrows():
             sig = row.get("Signal")
@@ -1825,6 +1832,13 @@ def _finalize_results(
                     penalty *= 0.8
                 if bool(row.get("is_pre_earnings_window")) and hi_iv:
                     penalty *= 0.75  # additional gap risk penalty
+                    # prefer defined-risk spreads only when gap + high IV
+                    filtered = [p for p in suggested if isinstance(p, dict) and "spread" in str(p.get("strategy_type", "")).lower()]
+                    if filtered:
+                        suggested = filtered
+                    else:
+                        suggested = []
+                        picks[-1] = []
                 qs_adj = qs * penalty if not pd.isna(qs) else np.nan
                 quality_scores.append(qs_adj)
                 # Risk comments to carry with picks
@@ -1878,17 +1892,27 @@ def _finalize_results(
                     option_texts.append("")
                     option_strings.append("")
             else:
+                no_picks_syms.append(str(row.get("Symbol")))
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
-                option_texts.append("")
-                option_strings.append("")
-        results_df["OptionTrade"] = picks
+                option_texts.append("No option idea (filters failed or earnings too close).")
+                option_strings.append("No option idea (filters failed or earnings too close).")
+        # Structured picks (for UI/API)
+        results_df["OptionPicks"] = picks
+        # Quality / risk flags
         results_df["OptionQualityScore"] = quality_scores
         results_df["OptionIVRiskFlag"] = iv_risk_flags
-        results_df["OptionTradeText"] = option_texts
         # Human-readable string for CSV/UI
         results_df["OptionTrade"] = option_strings
+        results_df["OptionTradeText"] = option_strings
+        # Inform if symbols had no option ideas
+        if no_picks_syms:
+            logger.info(
+                "[options] no option candidates for symbols: %s",
+                ", ".join(no_picks_syms[:10]) + ("..." if len(no_picks_syms) > 10 else ""),
+            )
     except Exception:
+        results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
         results_df["OptionTrade"] = ""
         results_df["OptionQualityScore"] = np.nan
         results_df["OptionIVRiskFlag"] = False
