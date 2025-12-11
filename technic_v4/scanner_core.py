@@ -1765,16 +1765,11 @@ def _finalize_results(
         if "has_dividend_soon" not in results_df.columns:
             has_div = False
             if "dividend_ex_date_within_7d" in results_df.columns:
-                has_div = results_df["dividend_ex_date_within_7d"].fillna(False)
+                ser = results_df["dividend_ex_date_within_7d"]
+                has_div = ser.astype("boolean").fillna(False)
             elif "days_to_next_ex_dividend" in results_df.columns:
                 dtd = pd.to_numeric(results_df["days_to_next_ex_dividend"], errors="coerce")
                 has_div = dtd.between(-7, 7, inclusive="both")
-            # avoid future downcast warning
-            if isinstance(has_div, pd.Series):
-                try:
-                    has_div = has_div.infer_objects(copy=False)
-                except Exception:
-                    pass
             results_df["has_dividend_soon"] = has_div
         for idx, row in results_df.iterrows():
             sig = row.get("Signal")
@@ -1907,9 +1902,10 @@ def _finalize_results(
         results_df["OptionTradeText"] = option_strings
         # Inform if symbols had no option ideas
         if no_picks_syms:
+            unique_syms = list(dict.fromkeys(no_picks_syms))  # preserve order, drop duplicates
             logger.info(
                 "[options] no option candidates for symbols: %s",
-                ", ".join(no_picks_syms[:10]) + ("..." if len(no_picks_syms) > 10 else ""),
+                ", ".join(unique_syms[:10]) + ("..." if len(unique_syms) > 10 else ""),
             )
     except Exception:
         results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
@@ -2055,7 +2051,7 @@ def _validate_results(df: pd.DataFrame) -> pd.DataFrame:
         "RegimeTrend": "",
         "RegimeVol": "",
         "MarketRegime": "",
-        "OptionTrade": [],
+        "OptionTrade": "",
         "Rationale": "",
         "Explanation": "",
     }
