@@ -1,0 +1,38 @@
+{
+  "conservative": {
+    "label": "Conservative – Stable, income‑friendly names",
+    "min_ics": 80.0,
+    "min_tech_rating": 22.0,
+    "max_atr_pct": 0.025,
+    "min_price": 15.0,
+    "min_dollar_volume": 10000000,
+    "allow_runners": false,
+    "min_quality_score": 0.0,
+    "min_win_prob_10d": 0.60
+  },
+  "balanced": {
+    "label": "Balanced – Mix of stability and growth",
+    "min_ics": 75.0,
+    "min_tech_rating": 20.0,
+    "max_atr_pct": 0.035,
+    "min_price": 10.0,
+    "min_dollar_volume": 5000000,
+    "allow_runners": true,
+    "min_quality_score": -5.0,
+    "min_win_prob_10d": 0.55
+  },
+  "aggressive": {
+    "label": "Aggressive – Higher beta, faster movers",
+    "min_ics": 70.0,
+    "min_tech_rating": 18.0,
+    "max_atr_pct": 0.06,
+    "min_price": 5.0,
+    "min_dollar_volume": 3000000,
+    "allow_runners": true,
+    "min_quality_score": -10.0,
+    "min_win_prob_10d": 0.52
+  },
+  "defaults": {
+    "profile": "balanced"
+  }
+}

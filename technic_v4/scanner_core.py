@@ -26,6 +26,7 @@ from datetime import datetime, date
 from technic_v4.engine import alpha_inference
 from technic_v4.engine import explainability
 from technic_v4.engine import meta_experience
+from technic_v4.config.risk_profiles import get_risk_profile
 from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
 from technic_v4.data_layer.events import get_event_info
@@ -2203,6 +2204,8 @@ def run_scan(
         config = ScanConfig()
 
     settings = get_settings()
+    risk_profile = get_risk_profile(config.profile if config else None)
+    logger.info("[PROFILE] Using risk profile '%s': %s", risk_profile.name, risk_profile.label)
     start_ts = time.time()
     logger.info("Starting scan with config: %s", config)
 
