@@ -1134,7 +1134,7 @@ def _run_symbol_scans(
             cfg_workers = int(cfg_workers) if cfg_workers is not None else None
         except Exception:
             cfg_workers = None
-        max_workers = max(MAX_WORKERS, cfg_workers) if cfg_workers else MAX_WORKERS
+        max_workers = MAX_WORKERS if cfg_workers is None else max(MAX_WORKERS, cfg_workers)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             for status, symbol, latest, urow in ex.map(_worker, enumerate(universe, start=1)):
                 attempted += 1
@@ -1158,7 +1158,7 @@ def _run_symbol_scans(
         engine_mode,
         elapsed,
         per_symbol,
-        getattr(settings, "max_workers", None),
+        max_workers,
         getattr(settings, "use_ray", False),
     )
 
