@@ -19,7 +19,17 @@ def _days_to_exp(exp_str: str) -> Optional[int]:
         return None
 
 
-def suggest_option_trades(symbol: str, spot_price: float, bullish: bool = True) -> List[Dict[str, Any]]:
+def suggest_option_trades(
+    symbol: str,
+    spot_price: float,
+    bullish: bool = True,
+    dte_min: int = 30,
+    dte_max: int = 60,
+    moneyness_tol: float = 0.07,
+    min_oi: int = 200,
+    min_volume: int = 20,
+    max_spread_pct: float = 0.06,
+) -> List[Dict[str, Any]]:
     """
     Best-effort option idea generator. Returns a small list of JSON-serializable dicts.
     """
@@ -50,17 +60,17 @@ def suggest_option_trades(symbol: str, spot_price: float, bullish: bool = True) 
         df["mid_tmp"] = (pd.to_numeric(df[bid_col], errors="coerce") + pd.to_numeric(df[ask_col], errors="coerce")) / 2
         mid_col = "mid_tmp"
 
-    # Filter expiries 30-90 days
+    # Filter expiries
     df["days_to_exp"] = df[exp_col].apply(_days_to_exp)
-    df = df[df["days_to_exp"].between(30, 90, inclusive="both")]
+    df = df[df["days_to_exp"].between(dte_min, dte_max, inclusive="both")]
     if df.empty:
         return []
 
     # Liquidity filter
     if oi_col and oi_col in df.columns:
-        df = df[df[oi_col].fillna(0) >= 200]  # min OI
+        df = df[df[oi_col].fillna(0) >= min_oi]
     if "volume" in df.columns:
-        df = df[df["volume"].fillna(0) >= 100]
+        df = df[df["volume"].fillna(0) >= min_volume]
     # Bid-ask spread filter
     if bid_col and ask_col and bid_col in df.columns and ask_col in df.columns:
         bid = pd.to_numeric(df[bid_col], errors="coerce")
@@ -68,7 +78,7 @@ def suggest_option_trades(symbol: str, spot_price: float, bullish: bool = True) 
         mid = (bid + ask) / 2
         spread_pct = (ask - bid) / mid.replace(0, pd.NA)
         df = df.assign(spread_pct=spread_pct)
-        df = df[df["spread_pct"].fillna(0) <= 0.12]  # tighter max spread
+        df = df[df["spread_pct"].fillna(0) <= max_spread_pct]
     if df.empty:
         return []
 
@@ -85,16 +95,17 @@ def suggest_option_trades(symbol: str, spot_price: float, bullish: bool = True) 
     if df.empty:
         return []
 
-    # Near-the-money filter (within 10% of spot)
+    # Near-the-money filter (moneyness within tolerance)
     try:
-        df = df[(df[strike_col].astype(float) >= spot_price * 0.9) & (df[strike_col].astype(float) <= spot_price * 1.1)]
+        moneyness = df[strike_col].astype(float) / float(spot_price)
+        df = df[moneyness.sub(1.0).abs() <= moneyness_tol]
     except Exception:
         pass
 
     if df.empty:
         return []
 
-    # "Sweetness" score
+    # "Sweetness" score (0-100) combining liquidity, delta, DTE, IV rank, moneyness
     df = df.copy()
     delta_abs = df[delta_col].abs() if delta_col and delta_col in df.columns else pd.Series(0.5, index=df.index)
     iv = pd.to_numeric(df[iv_col], errors="coerce") if iv_col and iv_col in df.columns else pd.Series(np.nan, index=df.index)
@@ -103,47 +114,71 @@ def suggest_option_trades(symbol: str, spot_price: float, bullish: bool = True) 
     spread_rank = (1 - df.get("spread_pct", pd.Series(0, index=df.index)).rank(pct=True).fillna(0))
 
     iv_rank = iv.rank(pct=True).fillna(0)
-    df["quality_score"] = (
-        (1 - (delta_abs - 0.5).abs()) * 0.35
-        + oi.rank(pct=True).fillna(0) * 0.25
-        + vol.rank(pct=True).fillna(0) * 0.15
-        + (1 - iv_rank) * 0.15
-        + spread_rank * 0.10
+
+    # Component scores 0-1
+    delta_score = (1 - (delta_abs - 0.5).abs() / 0.25).clip(lower=0, upper=1)
+    # DTE score: centered around 45 days within [dte_min, dte_max], penalize far tails
+    dte = pd.to_numeric(df["days_to_exp"], errors="coerce")
+    dte_score = (1 - (dte - ((dte_min + dte_max) / 2)).abs() / ((dte_max - dte_min) / 2)).clip(lower=0, upper=1)
+    moneyness = pd.to_numeric(df[strike_col], errors="coerce") / float(spot_price)
+    moneyness_score = (1 - (moneyness - 1.0).abs() / (moneyness_tol + 1e-9)).clip(lower=0, upper=1)
+    liquidity_score = (
+        oi.rank(pct=True).fillna(0) * 0.4
+        + vol.rank(pct=True).fillna(0) * 0.4
+        + spread_rank * 0.2
     )
+    iv_score = (1 - iv_rank).clip(lower=0, upper=1)
 
-    df = df.sort_values("quality_score") if "quality_score" in df.columns else df
-    pick = df.iloc[-1]
+    df["option_sweetness_score"] = (
+        0.30 * liquidity_score
+        + 0.25 * delta_score
+        + 0.20 * dte_score
+        + 0.15 * iv_score
+        + 0.10 * moneyness_score
+    ) * 100.0
 
-    premium = float(pick.get(mid_col) or pick.get("last_trade_price") or 0.0)
-    strike = float(pick[strike_col])
-    expiry = str(pick[exp_col])
-    delta_val = float(pick[delta_col]) if delta_col and delta_col in pick else None
-    iv_val = float(pick[iv_col]) if iv_col and iv_col in pick else None
-    quality_val = float(pick.get("quality_score")) if "quality_score" in pick else None
-    iv_rank_val = float(iv_rank.loc[pick.name]) if pick.name in iv_rank.index else None
-    iv_risk_flag = bool(iv_val and iv_val > 1.0)
-    spread_val = float(pick.get("spread_pct")) if "spread_pct" in pick else None
-    oi_val = float(pick.get(oi_col)) if oi_col and oi_col in pick else None
-    vol_val = float(pick.get("volume")) if "volume" in pick else None
+    df = df.sort_values("option_sweetness_score") if "option_sweetness_score" in df.columns else df
+    top = df.tail(3) if len(df) > 3 else df
 
-    long_call = {
-        "strategy_type": "long_call" if bullish else "long_put",
-        "symbol": symbol,
-        "strike": strike,
-        "expiry": expiry,
-        "delta": delta_val,
-        "iv": iv_val,
-        "premium": premium,
-        "max_loss": premium * 100 if premium else None,
-        "max_gain": None,  # uncapped
-        "days_to_exp": pick.get("days_to_exp"),
-        "option_quality_score": quality_val,
-        "iv_risk_flag": iv_risk_flag,
-        "iv_rank": iv_rank_val,
-        "spread_pct": spread_val,
-        "open_interest": oi_val,
-        "volume": vol_val,
-    }
+    picks: List[Dict[str, Any]] = []
+    for _, pick in top.iterrows():
+        premium = float(pick.get(mid_col) or pick.get("last_trade_price") or 0.0)
+        strike = float(pick[strike_col])
+        expiry = str(pick[exp_col])
+        delta_val = float(pick[delta_col]) if delta_col and delta_col in pick else None
+        iv_val = float(pick[iv_col]) if iv_col and iv_col in pick else None
+        quality_val = float(pick.get("option_sweetness_score")) if "option_sweetness_score" in pick else None
+        iv_rank_val = float(iv_rank.loc[pick.name]) if pick.name in iv_rank.index else None
+        iv_risk_flag = bool(iv_val and iv_val > 1.0)
+        spread_val = float(pick.get("spread_pct")) if "spread_pct" in pick else None
+        oi_val = float(pick.get(oi_col)) if oi_col and oi_col in pick else None
+        vol_val = float(pick.get("volume")) if "volume" in pick else None
+        mny_val = float(moneyness.loc[pick.name]) if pick.name in moneyness.index else None
+
+        high_iv_flag = bool((iv_rank_val is not None and iv_rank_val >= 0.9) or (iv_val and iv_val > 1.5))
+
+        picks.append(
+            {
+                "strategy_type": "long_call" if bullish else "long_put",
+                "symbol": symbol,
+                "strike": strike,
+                "expiry": expiry,
+                "delta": delta_val,
+                "iv": iv_val,
+                "premium": premium,
+                "max_loss": premium * 100 if premium else None,
+                "max_gain": None,  # uncapped
+                "days_to_exp": pick.get("days_to_exp"),
+                "option_sweetness_score": quality_val,
+                "iv_risk_flag": iv_risk_flag,
+                "iv_rank": iv_rank_val,
+                "spread_pct": spread_val,
+                "open_interest": oi_val,
+                "volume": vol_val,
+                "moneyness": mny_val,
+                "high_iv_flag": high_iv_flag,
+            }
+        )
 
     # Simple vertical spread suggestion (OTM buy/sell)
     spread = None
@@ -163,13 +198,24 @@ def suggest_option_trades(symbol: str, spot_price: float, bullish: bool = True) 
                 "debit": float(debit) if debit is not None else None,
                 "max_loss": float(debit * 100) if debit else None,
                 "max_gain": float((sell_leg[strike_col] - buy_leg[strike_col] - debit) * 100) if debit else None,
+                "days_to_exp": buy_leg.get("days_to_exp"),
+                "iv_rank": iv_rank_val,
+                "spread_pct": spread_val,
             }
     except Exception as exc:
         logger.warning("[options] spread construction failed for %s: %s", symbol, exc)
 
-    picks: List[Dict[str, Any]] = [long_call]
     if spread:
         picks.append(spread)
+
+    # Aggregate OptionQualityScore at underlying level: 0.6*max + 0.4*avg top3 sweetness
+    if picks:
+        sweetness_vals = [p.get("option_sweetness_score") for p in picks if p.get("option_sweetness_score") is not None]
+        if sweetness_vals:
+            max_sw = max(sweetness_vals)
+            avg_top3 = sum(sweetness_vals) / len(sweetness_vals)
+            quality_agg = 0.6 * max_sw + 0.4 * avg_top3
+            picks[0]["option_quality_agg"] = quality_agg
     return picks
 
 
