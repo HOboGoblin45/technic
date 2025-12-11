@@ -132,6 +132,10 @@ class ScanRequest(BaseModel):
     allow_shorts: Optional[bool] = False
     trade_style: Optional[str] = None
     strategy_profile_name: Optional[str] = None
+    profile: Optional[str] = Field(
+        default=None,
+        description="Risk profile to use for the scan: conservative | balanced | aggressive. If omitted, the default profile is used.",
+    )
     risk_pct: Optional[float] = None
     target_rr: Optional[float] = None
     use_ml_alpha: Optional[bool] = None
@@ -248,6 +252,7 @@ def create_app() -> "FastAPI":
             risk_pct=req.risk_pct or 1.0,
             target_rr=req.target_rr or 2.0,
             strategy_profile_name=req.strategy_profile_name,
+            profile=req.profile,
         )
         # Feature flags
         if req.use_ml_alpha is not None:
@@ -314,7 +319,7 @@ def create_app() -> "FastAPI":
             except Exception:
                 sb_summary = None
         metadata = {
-            "profile_name": req.strategy_profile_name or cfg.strategy_profile_name,
+            "profile_name": req.profile or req.strategy_profile_name or cfg.strategy_profile_name,
             "timestamp": pd.Timestamp.utcnow().isoformat(),
             "universe_size": total,
             "status": status,
@@ -343,6 +348,7 @@ def create_app() -> "FastAPI":
             risk_pct=req.risk_pct or 1.0,
             target_rr=req.target_rr or 2.0,
             strategy_profile_name=req.strategy_profile_name,
+            profile=req.profile,
         )
         if req.use_ml_alpha is not None:
             os.environ["TECHNIC_USE_ML_ALPHA"] = "1" if req.use_ml_alpha else "0"

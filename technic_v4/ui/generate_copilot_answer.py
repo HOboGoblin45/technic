@@ -80,6 +80,8 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
     event_summary = getter("EventSummary", None)
     event_flags = getter("EventFlags", None)
     fundamental_snapshot = getter("FundamentalSnapshot", None)
+    profile_name = getter("Profile", None)
+    profile_label = getter("ProfileLabel", None)
 
     # Optional trade-plan fields if present on the row
     entry = getter("EntryPrice", None)
@@ -106,6 +108,10 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         metrics_lines.append(f"- PlayStyle: {playstyle}")
     if is_ultra_risky:
         metrics_lines.append("- Risk profile: ULTRA-RISKY / speculative")
+    if profile_label:
+        metrics_lines.append(f"- Risk profile: {profile_label} (key='{profile_name}')")
+    elif profile_name:
+        metrics_lines.append(f"- Risk profile: {profile_name}")
     metrics_lines.append(f"- Signal: {signal}")
     metrics_lines.append(f"- Match mode: {matchmode}")
     metrics_lines.append(f"- Setup tags: {setuptags or 'None'}")
@@ -136,6 +142,8 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         "- Treat InstitutionalCoreScore (ICS) and QualityScore as high-level strength/quality gauges; "
         "  win_prob_10d is a probabilistic helper from a meta-model, never a guarantee.\n"
         "- If ICS/QualityScore/win_prob_10d point in different directions, explain the nuance briefly.\n"
+        "- If a risk profile is provided, explain why the setup fits that profile and use tone appropriate "
+        "  to the risk level (more cautious for conservative, more volatility-tolerant for aggressive).\n"
         "- If volatility context is provided (IV rank, regime), incorporate it into the rationale and risks.\n"
         "- Every answer must clearly state that this is an educational example, not "
         '  personalized financial advice, and that the user is responsible for their own decisions.\n'
