@@ -29,6 +29,7 @@ Response includes status, disclaimer, and results (symbol, signal, techRating, a
 ## Backtesting & shadow mode
 - `python -m technic_v4.evaluation.backtest_compare` compares baseline vs full engine on a fixed universe/date range.
 - `evaluation/shadow_mode.py` can log baseline vs new engine side-by-side (enable `TECHNIC_ENABLE_SHADOW_MODE=true` and append logs to `logs/shadow_signals.csv`).
+- `python -m technic_v4.dev.backtest.run_alpha_score_suite` runs a small backtest suite for **InstitutionalCoreScore**, **TechRating**, **alpha_blend**, **AlphaScorePct**, and **ml_alpha_z** against the historical training dataset (`data/training_data_v2.parquet` or `technic_v4/scanner_output/history/replay_ics.parquet`). JSON summaries are written to `evaluation/alpha_history_suite/` and the key metrics are printed to stdout.
 
 ## Latency benchmarks
 - `python -m technic_v4.evaluation.latency_bench` runs scans across universe sizes and logs elapsed time and result counts.
