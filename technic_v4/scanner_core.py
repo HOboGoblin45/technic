@@ -35,6 +35,7 @@ from technic_v4.data_layer.ratings import get_rating_info
 from technic_v4.data_layer.quality import get_quality_info
 from technic_v4.data_layer.sponsorship import get_sponsorship, get_insider_flags
 from technic_v4.config.thresholds import load_score_thresholds
+from technic_v4.engine.meta_inference import score_win_prob_10d
 from technic_v4.engine.portfolio_optim import (
     mean_variance_weights,
     inverse_variance_weights,
@@ -1217,6 +1218,12 @@ def _finalize_results(
     # Cross-sectional alpha blend: upgrade TechRating using factor/ML/meta alpha
     results_df = _apply_alpha_blend(results_df, regime=regime_tags, as_of_date=as_of_date)
 
+    # Meta inference: win_prob_10d (best-effort)
+    try:
+        results_df = score_win_prob_10d(results_df)
+    except Exception:
+        logger.warning("[META] win_prob_10d scoring failed; leaving empty", exc_info=True)
+
     # Keep an unfiltered copy for fallbacks
     base_results = results_df.copy()
 
@@ -1270,57 +1277,6 @@ def _finalize_results(
             results_df["passes_satellite_threshold"] = (ics_vals >= sat_cut) & (qual_vals >= qual_cut)
     except Exception:
         logger.warning("[THRESHOLDS] Failed to apply score thresholds", exc_info=True)
-
-    # ------------------------------------------------------------------
-    # Classify rows into Investor Core / Satellite / Reject tiers
-    # ------------------------------------------------------------------
-    try:
-        thresholds = load_score_thresholds()
-
-        ics = results_df.get("InstitutionalCoreScore")
-        win_prob_10d = None
-        for col in ("win_prob_10d", "meta_win_prob_10d", "winprob_10d"):
-            if col in results_df.columns:
-                win_prob_10d = results_df[col]
-                break
-
-        quality = None
-        for col in ("QualityScore", "fundamental_quality_score"):
-            if col in results_df.columns:
-                quality = results_df[col]
-                break
-
-        if ics is None:
-            results_df["IsInvestorCore"] = False
-            results_df["IsSatellite"] = False
-            results_df["Tier"] = "REJECT"
-        else:
-            thr10 = thresholds.fwd_ret_10d
-
-            ics_vals = pd.to_numeric(ics, errors="coerce")
-            win_vals = pd.to_numeric(win_prob_10d, errors="coerce") if win_prob_10d is not None else None
-            q_vals = pd.to_numeric(quality, errors="coerce") if quality is not None else None
-
-            quality_ok = (q_vals >= thr10.quality_min) if q_vals is not None else pd.Series(True, index=results_df.index)
-            quality_ok = quality_ok | quality_ok.isna()
-
-            if win_vals is not None:
-                win_ok_core = (win_vals >= thr10.win_prob_min) | win_vals.isna()
-            else:
-                win_ok_core = pd.Series(True, index=results_df.index)
-
-            is_core = (ics_vals >= thr10.ics_core_min) & win_ok_core & quality_ok
-            is_satellite = (ics_vals >= thr10.ics_satellite_min) & ~is_core & quality_ok
-
-            results_df["IsInvestorCore"] = is_core
-            results_df["IsSatellite"] = is_satellite
-
-            tier = pd.Series("REJECT", index=results_df.index)
-            tier.loc[is_satellite] = "SATELLITE"
-            tier.loc[is_core] = "CORE"
-            results_df["Tier"] = tier
-    except Exception:
-        logger.warning("[THRESHOLDS] Failed to classify tiers", exc_info=True)
 
     # Regime context columns (same for all rows in this scan)
     if regime_tags:
@@ -1756,6 +1712,69 @@ def _finalize_results(
         penalty_map = (1 - sector_counts).to_dict()  # crowded sectors get lower score
         results_df["SectorPenalty"] = results_df["Sector"].map(penalty_map).fillna(1.0)
         results_df["InstitutionalCoreScore"] *= results_df["SectorPenalty"]
+
+    # ------------------------------------------------------------------
+    # Classify rows into Investor Core / Satellite / Reject tiers
+    # ------------------------------------------------------------------
+    try:
+        thresholds = load_score_thresholds()
+
+        ics = results_df.get("InstitutionalCoreScore")
+        win_prob_10d = None
+        for col in ("win_prob_10d", "meta_win_prob_10d", "winprob_10d"):
+            if col in results_df.columns:
+                win_prob_10d = results_df[col]
+                break
+
+        quality = None
+        for col in ("QualityScore", "fundamental_quality_score"):
+            if col in results_df.columns:
+                quality = results_df[col]
+                break
+
+        if ics is None:
+            results_df["IsInvestorCore"] = False
+            results_df["IsSatellite"] = False
+            results_df["Tier"] = "REJECT"
+        else:
+            thr10 = thresholds.fwd_ret_10d
+
+            ics_vals = pd.to_numeric(ics, errors="coerce")
+            win_vals = pd.to_numeric(win_prob_10d, errors="coerce") if win_prob_10d is not None else None
+            q_vals = pd.to_numeric(quality, errors="coerce") if quality is not None else None
+
+            quality_ok = (q_vals >= thr10.quality_min) if q_vals is not None else pd.Series(True, index=results_df.index)
+            quality_ok = quality_ok | quality_ok.isna()
+
+            if win_vals is not None:
+                win_ok_core = (win_vals >= thr10.win_prob_min) | win_vals.isna()
+            else:
+                win_ok_core = pd.Series(True, index=results_df.index)
+
+            is_core = (ics_vals >= thr10.ics_core_min) & win_ok_core & quality_ok
+            is_satellite = (ics_vals >= thr10.ics_satellite_min) & ~is_core & quality_ok
+
+            results_df["IsInvestorCore"] = is_core
+            results_df["IsSatellite"] = is_satellite
+
+            tier = pd.Series("REJECT", index=results_df.index)
+            tier.loc[is_satellite] = "SATELLITE"
+            tier.loc[is_core] = "CORE"
+            results_df["Tier"] = tier
+            # Fallback: if no CORE rows at all, promote top ICS names to CORE
+            if (tier == "CORE").sum() == 0:
+                try:
+                    sortable = results_df[pd.to_numeric(results_df[ics_col], errors="coerce").notna()]
+                    sorted_idx = sortable.sort_values(ics_col, ascending=False).index
+                    if len(sorted_idx) == 0:
+                        sorted_idx = results_df.index
+                    core_promote = sorted_idx[: min(50, len(sorted_idx))]
+                    results_df.loc[core_promote, "Tier"] = "CORE"
+                    results_df.loc[core_promote, "IsInvestorCore"] = True
+                except Exception:
+                    logger.warning("[THRESHOLDS] Failed to promote top ICS when no CORE rows present", exc_info=True)
+    except Exception:
+        logger.warning("[THRESHOLDS] Failed to classify tiers", exc_info=True)
 
     if risk_col:
         ultra_risky_mask = pd.to_numeric(results_df[risk_col], errors="coerce") < 0.08
