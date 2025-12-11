@@ -59,6 +59,7 @@ def _thin_to_universe(etf: pd.DataFrame, inst: pd.DataFrame) -> pd.DataFrame:
     if not symbols:
         return pd.DataFrame()
 
+    # ETF bulk counts (ETF symbols list only)
     if not etf.empty:
         etf = etf[etf["symbol"].isin(symbols)]
     if not inst.empty:
@@ -73,9 +74,11 @@ def _thin_to_universe(etf: pd.DataFrame, inst: pd.DataFrame) -> pd.DataFrame:
         try:
             etf_h = pd.read_parquet(ETF_HOLDINGS_PATH)
             etf_h["asset_symbol"] = etf_h["asset_symbol"].astype(str).str.upper()
+            etf_h = etf_h[etf_h["asset_symbol"].isin(symbols)]
             etf_h_agg = etf_h.groupby("asset_symbol").agg(
                 etf_weight_sum_pct=pd.NamedAgg(column="weight_pct", aggfunc="sum"),
                 etf_holder_count_etf=pd.NamedAgg(column="etf_symbol", aggfunc="nunique"),
+                etf_weight_max_pct=pd.NamedAgg(column="weight_pct", aggfunc="max"),
             )
             etf_h_agg.index.name = "symbol"
         except Exception:
@@ -90,11 +93,22 @@ def _thin_to_universe(etf: pd.DataFrame, inst: pd.DataFrame) -> pd.DataFrame:
         df = df.join(etf_h_agg, how="left")
 
     df = df.fillna(0)
-    for col in ("etf_holder_count", "inst_holder_count", "etf_holder_count_etf", "etf_weight_sum_pct"):
+    for col in ("etf_holder_count", "inst_holder_count", "etf_holder_count_etf", "etf_weight_sum_pct", "etf_weight_max_pct"):
         if col not in df:
             df[col] = 0
-    combined = df["etf_holder_count"] + df["inst_holder_count"] + df["etf_holder_count_etf"]
-    df["SponsorshipScore"] = combined.rank(pct=True).astype(float) * 100.0
+
+    # Rank sponsorship using ETF exposure (weights + holder counts)
+    weight_rank = df["etf_weight_sum_pct"].rank(pct=True).fillna(0)
+    holder_rank = df["etf_holder_count_etf"].rank(pct=True).fillna(0)
+    combined_rank = (weight_rank + holder_rank) / 2.0
+
+    # Fallback to legacy counts if exposure missing
+    legacy_rank = (df["etf_holder_count"] + df["inst_holder_count"]).rank(pct=True).fillna(0)
+
+    df["SponsorshipScore"] = (
+        combined_rank.where(~combined_rank.isna(), legacy_rank) * 100.0
+    )
+
     thin = df.reset_index().rename(columns={"index": "symbol"})
 
     try:
