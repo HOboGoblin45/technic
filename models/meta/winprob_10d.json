@@ -1,0 +1,31 @@
+{
+  "dataset": "C:\\Users\\ccres\\OneDrive\\Desktop\\technic-clean\\data\\training_data_v2.parquet",
+  "rows": 1496803,
+  "features": [
+    "TechRating",
+    "ExplosivenessScore",
+    "ATR14_pct",
+    "RiskScore",
+    "risk_score"
+  ],
+  "metrics": {
+    "train": {
+      "auc": 0.5255651493329889,
+      "logloss": 0.687500402004595,
+      "avg_pred": 0.5476113557815552,
+      "win_rate": 0.5475928693730064
+    },
+    "val": {
+      "auc": 0.5161522860948828,
+      "logloss": 0.6913337455774206,
+      "avg_pred": 0.5492258667945862,
+      "win_rate": 0.5325806164261536
+    },
+    "test": {
+      "auc": 0.5154664987794721,
+      "logloss": 0.6919353238265559,
+      "avg_pred": 0.5493648052215576,
+      "win_rate": 0.5295317587219013
+    }
+  }
+}

@@ -169,6 +169,13 @@ def build_recommendation(row: pd.Series, sector_overweights: Dict[str, float], s
     if quality_desc:
         parts.append(f"Fundamental quality: {quality_desc}.")
 
+    # --- Tier context (CORE vs SATELLITE) ---
+    tier = str(row.get("Tier") or "").upper()
+    if tier == "CORE":
+        parts.append("This name is in Technic's Investor Core tier based on ICS, win probability and fundamental quality.")
+    elif tier == "SATELLITE":
+        parts.append("This name is in Technic's Satellite tier – still attractive, but slightly lower conviction than the Core list.")
+
     # --- Sponsorship / ownership ---
     sponsor = row.get("SponsorshipScore")
     etf_cnt = row.get("etf_holder_count")
