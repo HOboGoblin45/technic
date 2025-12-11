@@ -5,6 +5,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
 import requests
 
 BASE_URL = "https://api.polygon.io"
@@ -107,6 +108,144 @@ class OptionChainService:
             next_params = None  # next_url already includes params
 
         return results, meta
+
+    def to_dataframe(self, snapshot: Optional[List[dict]]) -> pd.DataFrame:
+        """
+        Normalize a Polygon options snapshot into a DataFrame with stable, snake_case columns.
+        """
+        columns = [
+            "symbol",
+            "option_symbol",
+            "expiration_date",
+            "side",
+            "strike",
+            "bid",
+            "ask",
+            "last",
+            "mid_price",
+            "bid_ask_spread",
+            "bid_ask_spread_pct",
+            "volume",
+            "open_interest",
+            "implied_volatility",
+            "delta",
+            "gamma",
+            "vega",
+            "theta",
+            "underlying_price",
+            "dte",
+        ]
+
+        if isinstance(snapshot, dict):
+            snapshot = snapshot.get("results") or []
+        if not snapshot:
+            return pd.DataFrame(columns=columns)
+
+        today = dt.date.today()
+        rows: List[Dict[str, Any]] = []
+
+        for item in snapshot:
+            details = item.get("details") or {}
+            last_quote = item.get("last_quote") or {}
+            last_trade = item.get("last_trade") or {}
+            day = item.get("day") or {}
+            greeks = item.get("greeks") or {}
+
+            option_symbol = details.get("ticker") or item.get("ticker") or item.get("option_symbol")
+            expiration_raw = details.get("expiration_date") or item.get("expiration_date")
+            side = details.get("contract_type") or item.get("contract_type") or item.get("side")
+            strike = details.get("strike_price") or item.get("strike")
+
+            bid = last_quote.get("bid")
+            ask = last_quote.get("ask")
+            last = last_trade.get("price") or day.get("close") or item.get("last")
+
+            underlying_info = details.get("underlying_asset") or item.get("underlying_asset") or {}
+            underlying_price = underlying_info.get("price") if isinstance(underlying_info, dict) else None
+            symbol = None
+            if isinstance(underlying_info, dict):
+                symbol = underlying_info.get("ticker")
+            symbol = symbol or item.get("underlying_symbol") or item.get("sym")
+
+            volume = day.get("volume") or item.get("volume") or last_trade.get("volume")
+            open_interest = item.get("open_interest")
+            iv = item.get("implied_volatility") or item.get("iv")
+
+            delta = greeks.get("delta")
+            gamma = greeks.get("gamma")
+            vega = greeks.get("vega")
+            theta = greeks.get("theta")
+
+            mid_price = None
+            bid_ask_spread = None
+            bid_ask_spread_pct = None
+            if bid is not None and ask is not None:
+                mid_price = (bid + ask) / 2.0
+                bid_ask_spread = ask - bid
+                if mid_price:
+                    bid_ask_spread_pct = bid_ask_spread / mid_price
+
+            dte = None
+            if expiration_raw:
+                try:
+                    exp_date = pd.to_datetime(expiration_raw).date()
+                    dte = (exp_date - today).days
+                    expiration_raw = exp_date
+                except Exception:
+                    pass
+
+            row = {
+                "symbol": symbol,
+                "option_symbol": option_symbol,
+                "expiration_date": expiration_raw,
+                "side": side,
+                "strike": strike,
+                "bid": bid,
+                "ask": ask,
+                "last": last,
+                "mid_price": mid_price,
+                "bid_ask_spread": bid_ask_spread,
+                "bid_ask_spread_pct": bid_ask_spread_pct,
+                "volume": volume,
+                "open_interest": open_interest,
+                "implied_volatility": iv,
+                "delta": delta,
+                "gamma": gamma,
+                "vega": vega,
+                "theta": theta,
+                "underlying_price": underlying_price,
+                "dte": dte,
+            }
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        return df[columns] if not df.empty else pd.DataFrame(columns=columns)
+
+    def get_chain(
+        self,
+        symbol: str,
+        contract_type: str | None = None,
+        expiration_date: str | None = None,
+        expiration_date_to: str | None = None,
+        strike_price_gte: float | None = None,
+        strike_price_lte: float | None = None,
+    ) -> Tuple[pd.DataFrame, dict]:
+        """
+        Convenience wrapper: fetch chain snapshot and return a normalized DataFrame + meta.
+        """
+        contracts, meta = self.fetch_chain_snapshot(
+            symbol=symbol,
+            contract_type=contract_type,
+            expiration_date=expiration_date,
+            expiration_date_to=expiration_date_to,
+            strike_price_gte=strike_price_gte,
+            strike_price_lte=strike_price_lte,
+        )
+        try:
+            df = self.to_dataframe(contracts)
+        except Exception:
+            df = pd.DataFrame()
+        return df, meta
 
     # ------------------------------------------------------------------ #
     # Public API
