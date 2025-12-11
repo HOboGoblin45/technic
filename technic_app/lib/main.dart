@@ -3039,6 +3039,61 @@ class UniverseStats {
   }
 }
 
+class OptionStrategy {
+  final String id;
+  final String label;
+  final String side;
+  final String type;
+  final bool definedRisk;
+  final String? description;
+  final String? expiry;
+  final double? maxProfit;
+  final double? maxLoss;
+  final double? probabilityITM;
+
+  const OptionStrategy({
+    required this.id,
+    required this.label,
+    required this.side,
+    required this.type,
+    required this.definedRisk,
+    this.description,
+    this.expiry,
+    this.maxProfit,
+    this.maxLoss,
+    this.probabilityITM,
+  });
+
+  factory OptionStrategy.fromJson(Map<String, dynamic> json) {
+    double? _dbl(dynamic v) => v == null ? null : (v as num?)?.toDouble();
+    return OptionStrategy(
+      id: (json['id'] ?? json['strategy_id'] ?? json['strategyId'] ?? '').toString(),
+      label: (json['label'] ?? json['name'] ?? 'Option strategy').toString(),
+      side: (json['side'] ?? 'long').toString(),
+      type: (json['type'] ?? json['strategy_type'] ?? 'custom').toString(),
+      definedRisk: json['defined_risk'] == true || json['definedRisk'] == true,
+      description: json['description']?.toString(),
+      expiry: json['expiry']?.toString() ?? json['expiration']?.toString(),
+      maxProfit: _dbl(json['max_profit']),
+      maxLoss: _dbl(json['max_loss']),
+      probabilityITM: _dbl(json['prob_itm'] ?? json['probability_itm']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'label': label,
+        'side': side,
+        'type': type,
+        'defined_risk': definedRisk,
+        'description': description,
+        'expiry': expiry,
+        'max_profit': maxProfit,
+        'max_loss': maxLoss,
+        'prob_itm': probabilityITM,
+      };
+}
+
 class ScanResult {
   final String ticker;
   final String signal;
@@ -3064,7 +3119,7 @@ class ScanResult {
   final String? eventSummary;
   final String? eventFlags;
   final String? fundamentalSnapshot;
-  final List<dynamic>? optionStrategies;
+  final List<OptionStrategy> optionStrategies;
   const ScanResult(
     this.ticker,
     this.signal,
@@ -3090,7 +3145,7 @@ class ScanResult {
     this.eventSummary,
     this.eventFlags,
     this.fundamentalSnapshot,
-    this.optionStrategies,
+    this.optionStrategies = const [],
   ]);
 
   factory ScanResult.fromJson(Map<String, dynamic> json) {
@@ -3131,7 +3186,16 @@ class ScanResult {
       json['EventSummary']?.toString(),
       json['EventFlags']?.toString(),
       json['FundamentalSnapshot']?.toString(),
-      json['OptionStrategies'] as List<dynamic>?,
+      () {
+        final raw = json['option_strategies'] ?? json['OptionStrategies'];
+        if (raw is List) {
+          return raw
+              .whereType<Map<String, dynamic>>()
+              .map(OptionStrategy.fromJson)
+              .toList();
+        }
+        return const <OptionStrategy>[];
+      }(),
     );
   }
 
@@ -3160,7 +3224,7 @@ class ScanResult {
         'EventSummary': eventSummary,
         'EventFlags': eventFlags,
         'FundamentalSnapshot': fundamentalSnapshot,
-        'OptionStrategies': optionStrategies,
+        'option_strategies': optionStrategies.map((e) => e.toJson()).toList(),
       };
 }
 
@@ -4282,7 +4346,7 @@ Widget _scanResultCard(BuildContext context, ScanResult r, VoidCallback onAnalyz
       ),
     );
   }
-  if (r.optionStrategies != null && r.optionStrategies!.isNotEmpty) {
+  if (r.optionStrategies.isNotEmpty) {
     eventChips.add(
       FilterChip(
         label: const Text('Options idea available'),
