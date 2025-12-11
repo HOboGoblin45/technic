@@ -1,0 +1,16 @@
+[2025-12-11T07:56:51.341154] Nightly maintenance started.
+[2025-12-11T07:56:51.953813] Data refresh failed: module 'technic_v4.data_layer.bulk_daily' has no attribute 'refresh_bulk_prices'
+[2025-12-11T08:06:27.051850] Nightly maintenance started.
+[2025-12-11T08:06:27.659602] Data refresh skipped: bulk_daily.refresh_bulk_prices not available.
+[2025-12-11T08:06:28.687925] Alpha training failed: No training data built; aborting.
+[2025-12-11T08:06:28.691922] TFT training failed: No module named 'pytorch_lightning'
+[2025-12-11T08:06:28.693923] ONNX export failed: lightgbm is required for LGBMAlphaModel
+[2025-12-11T08:06:28.724435] Scoreboard metrics: {'ic': nan, 'precision_at_n': 0.2, 'hit_rate': 0.24074074074074073, 'avg_R': -0.13811953529682272}
+[2025-12-11T08:06:28.725434] Nightly maintenance finished.
+[2025-12-11T08:08:44.431920] Nightly maintenance started.
+[2025-12-11T08:08:45.220322] Data refresh skipped: bulk_daily.refresh_bulk_prices not available.
+[2025-12-11T08:08:45.220322] Skipping alpha training (flag).
+[2025-12-11T08:08:45.221322] Skipping TFT training (flag).
+[2025-12-11T08:08:45.221322] Skipping ONNX export (flag).
+[2025-12-11T08:08:45.724136] Scoreboard metrics: {'ic': nan, 'precision_at_n': 0.2, 'hit_rate': 0.24074074074074073, 'avg_R': -0.13811953529682272}
+[2025-12-11T08:08:45.725137] Nightly maintenance finished.

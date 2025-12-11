@@ -13,6 +13,30 @@ print(df.head())
 ```
 CLI: `python -m technic_v4.scanner_core`
 
+## Nightly Pipeline
+
+Technic has a single orchestrator script that keeps data and models fresh:
+
+```bash
+python scripts/nightly_pipeline.py
+```
+
+This does the following, in order:
+
+- `scripts/build_events_calendar.py`  
+  Refreshes `data_cache/events_calendar.csv` using FMP (earnings dates, dividends, surprise flags).
+
+- `scripts/build_fundamentals_cache.py`  
+  Refreshes `data_cache/fundamentals/{symbol}.json` for the active universe with FMP fundamentals (quality, profitability, leverage, growth).
+
+- `scripts/nightly_maintenance.py`  
+  Runs alpha retraining, TFT / ONNX export (if enabled) and updates the scoreboard metrics based on recent scan history.
+
+- `python -m technic_v4.dev.backtest.run_alpha_score_suite`  
+  Evaluates TechRating, alpha_blend, ICS and related scores versus forward returns, writing results under `evaluation/`.
+
+Schedule `python scripts/nightly_pipeline.py` once per night (after the market close) using Task Scheduler, cron, or your hosting provider’s scheduler so Technic behaves like a continuously-learning quant engine.
+
 ## HTTP API usage
 Start the API server:
 ```bash
