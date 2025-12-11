@@ -69,6 +69,27 @@ def train_alpha() -> None:
         _log(f"Alpha training failed: {exc}")
 
 
+def train_meta_winprob() -> None:
+    """
+    Retrain the win_prob_10d meta model so nightly scans have fresh
+    probabilities. Uses the dev backtest training module.
+    """
+    try:
+        from technic_v4.dev.backtest import train_meta_model
+
+        result = train_meta_model.main()
+        if isinstance(result, dict):
+            _log(
+                "Meta win_prob_10d training complete. "
+                f"Rows={result.get('train_rows')} Features={result.get('features_used')} "
+                f"AUC={result.get('auc_test')}"
+            )
+        else:
+            _log("Meta win_prob_10d training complete.")
+    except BaseException as exc:
+        _log(f"Meta win_prob_10d training failed: {exc}")
+
+
 def train_tft(universe_limit: int | None = None) -> None:
     try:
         from technic_v4.engine.multihorizon import train_and_save_tft_model
@@ -132,6 +153,9 @@ def main(argv=None):
         train_alpha()
     else:
         _log("Skipping alpha training (flag).")
+
+    # Refresh the meta win_prob_10d model on the latest replay/training data.
+    train_meta_winprob()
 
     if not args.no_tft_train:
         train_tft(args.universe_limit)
