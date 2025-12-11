@@ -1,0 +1,40 @@
+            temperature=0.3,
+            max_tokens=650,
+        )
+
+        final_answer = resp.choices[0].message.content.strip()
+        return final_answer
+
+    except Exception as exc:  # noqa: BLE001 ƒ?" show a friendly fallback
+        return (
+            "Quant Copilot ran into an error while talking to the AI backend. "
+            "Please try again in a moment.\n\n"
+            f"(Details for developer: {type(exc).__name__}: {exc})"
+        )
+*** End Patch
+User question:
+{question}
+""".strip()
+
+    client = get_llm_client()
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.3,
+            max_tokens=650,
+        )
+
+        final_answer = resp.choices[0].message.content.strip()
+        return final_answer
+
+    except Exception as exc:  # noqa: BLE001 – show a friendly fallback
+        return (
+            "Quant Copilot ran into an error while talking to the AI backend. "
+            "Please try again in a moment.\n\n"
+            f"(Details for developer: {type(exc).__name__}: {exc})"
+        )
