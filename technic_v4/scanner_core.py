@@ -1743,18 +1743,21 @@ def _finalize_results(
         picks: list = []
         quality_scores = []
         iv_risk_flags = []
+        option_texts = []
         for idx, row in results_df.iterrows():
             sig = row.get("Signal")
             if sig not in {"Strong Long", "Long"}:
                 picks.append([])
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
+                option_texts.append("")
                 continue
             spot = row.get("Close") or row.get("Entry") or row.get("Last")
             if spot is None or pd.isna(spot):
                 picks.append([])
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
+                option_texts.append("")
                 continue
             # Skip if too close to earnings
             days_to_earn = row.get("days_to_next_earnings")
@@ -1762,23 +1765,61 @@ def _finalize_results(
                 picks.append([])
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
+                option_texts.append("")
                 continue
             suggested = suggest_option_trades(str(row.get("Symbol")), float(spot), bullish=True)
             picks.append(suggested or [])
             if suggested:
-                qs = suggested[0].get("option_quality_score") if isinstance(suggested, list) and suggested else None
-                quality_scores.append(qs)
-                iv_risk_flags.append(bool(suggested[0].get("iv_risk_flag")))
+                # aggregated quality if provided, else max sweetness
+                qs = None
+                if isinstance(suggested, list) and suggested:
+                    first = suggested[0]
+                    qs = first.get("option_quality_agg") or first.get("option_sweetness_score")
+                    if qs is None:
+                        sweetness_vals = [p.get("option_sweetness_score") for p in suggested if p.get("option_sweetness_score") is not None]
+                        if sweetness_vals:
+                            qs = max(sweetness_vals)
+                # risk penalties: high IV and earnings near
+                penalty = 1.0
+                hi_iv = any(bool(p.get("high_iv_flag")) for p in suggested)
+                iv_risk_flags.append(hi_iv or any(bool(p.get("iv_risk_flag")) for p in suggested))
+                if hi_iv:
+                    penalty *= 0.8
+                if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
+                    penalty *= 0.8
+                qs_adj = qs * penalty if qs is not None else np.nan
+                quality_scores.append(qs_adj)
+                # Build option text from first pick
+                try:
+                    strike = first.get("strike")
+                    expiry = first.get("expiry")
+                    delta = first.get("delta")
+                    spread_pct = first.get("spread_pct")
+                    iv_val = first.get("iv")
+                    dte = first.get("days_to_exp")
+                    strat = first.get("strategy_type", "option")
+                    risk_note = ""
+                    if hi_iv:
+                        risk_note = " IV elevated; consider smaller size or spreads."
+                    elif iv_risk_flags[-1]:
+                        risk_note = " IV modestly high; mind gap risk."
+                    text = f"{strat} {strike} exp {expiry}, delta {delta:.2f if delta is not None else 'N/A'}, spread {spread_pct:.2% if spread_pct is not None else 'N/A'}, IV {iv_val:.2f if iv_val is not None else 'N/A'}, ~{dte}d to exp.{risk_note}"
+                    option_texts.append(text)
+                except Exception:
+                    option_texts.append("")
             else:
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
+                option_texts.append("")
         results_df["OptionTrade"] = picks
         results_df["OptionQualityScore"] = quality_scores
         results_df["OptionIVRiskFlag"] = iv_risk_flags
+        results_df["OptionTradeText"] = option_texts
     except Exception:
         results_df["OptionTrade"] = [[] for _ in range(len(results_df))]
         results_df["OptionQualityScore"] = np.nan
         results_df["OptionIVRiskFlag"] = False
+        results_df["OptionTradeText"] = ""
 
     # Build short rationales per idea (best-effort)
     try:
@@ -2106,4 +2147,3 @@ if __name__ == "__main__":
     df, msg = run_scan()
     logger.info(msg)
     logger.info(df.head())
-
