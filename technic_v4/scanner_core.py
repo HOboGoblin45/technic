@@ -1129,7 +1129,12 @@ def _run_symbol_scans(
                 return ("error", symbol, None, urow)
             return ("ok", symbol, latest_local, urow)
 
-        max_workers = getattr(settings, "max_workers", None) or MAX_WORKERS
+        cfg_workers = getattr(settings, "max_workers", None)
+        try:
+            cfg_workers = int(cfg_workers) if cfg_workers is not None else None
+        except Exception:
+            cfg_workers = None
+        max_workers = max(MAX_WORKERS, cfg_workers) if cfg_workers else MAX_WORKERS
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             for status, symbol, latest, urow in ex.map(_worker, enumerate(universe, start=1)):
                 attempted += 1
