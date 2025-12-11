@@ -1744,6 +1744,31 @@ def _finalize_results(
         quality_scores = []
         iv_risk_flags = []
         option_texts = []
+        option_strings = []
+
+        # Ensure event flags for options context
+        if "has_upcoming_earnings" not in results_df.columns:
+            if "days_to_next_earnings" in results_df.columns:
+                dtn = pd.to_numeric(results_df["days_to_next_earnings"], errors="coerce")
+                results_df["has_upcoming_earnings"] = dtn.notna() & (dtn >= 0)
+                results_df["is_pre_earnings_window"] = dtn.between(0, 7, inclusive="both")
+            else:
+                results_df["has_upcoming_earnings"] = False
+                results_df["is_pre_earnings_window"] = False
+        if "is_post_earnings_window" not in results_df.columns:
+            if "days_since_last_earnings" in results_df.columns:
+                dse = pd.to_numeric(results_df["days_since_last_earnings"], errors="coerce")
+                results_df["is_post_earnings_window"] = dse.between(0, 3, inclusive="both")
+            else:
+                results_df["is_post_earnings_window"] = False
+        if "has_dividend_soon" not in results_df.columns:
+            has_div = False
+            if "dividend_ex_date_within_7d" in results_df.columns:
+                has_div = results_df["dividend_ex_date_within_7d"].fillna(False)
+            elif "days_to_next_ex_dividend" in results_df.columns:
+                dtd = pd.to_numeric(results_df["days_to_next_ex_dividend"], errors="coerce")
+                has_div = dtd.between(-7, 7, inclusive="both")
+            results_df["has_dividend_soon"] = has_div
         for idx, row in results_df.iterrows():
             sig = row.get("Signal")
             if sig not in {"Strong Long", "Long"}:
@@ -1751,6 +1776,7 @@ def _finalize_results(
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
                 option_texts.append("")
+                option_strings.append("")
                 continue
             spot = row.get("Close") or row.get("Entry") or row.get("Last")
             if spot is None or pd.isna(spot):
@@ -1758,6 +1784,7 @@ def _finalize_results(
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
                 option_texts.append("")
+                option_strings.append("")
                 continue
             # Skip if too close to earnings
             days_to_earn = row.get("days_to_next_earnings")
@@ -1766,6 +1793,7 @@ def _finalize_results(
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
                 option_texts.append("")
+                option_strings.append("")
                 continue
             suggested = suggest_option_trades(str(row.get("Symbol")), float(spot), bullish=True)
             picks.append(suggested or [])
@@ -1795,13 +1823,15 @@ def _finalize_results(
                     penalty *= 0.8
                 if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
                     penalty *= 0.8
+                if bool(row.get("is_pre_earnings_window")) and hi_iv:
+                    penalty *= 0.75  # additional gap risk penalty
                 qs_adj = qs * penalty if not pd.isna(qs) else np.nan
                 quality_scores.append(qs_adj)
                 # Risk comments to carry with picks
                 risk_msgs = []
                 if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
                     risk_msgs.append(f"Earnings in {int(days_to_earn)}d; gap risk higher than normal.")
-                if bool(row.get("dividend_ex_date_within_7d")):
+                if bool(row.get("dividend_ex_date_within_7d")) or bool(row.get("has_dividend_soon")):
                     risk_msgs.append("Ex-dividend within 7d; near-term pricing may be distorted.")
                 if hi_iv or iv_risk_flags[-1]:
                     risk_msgs.append("IV elevated; consider defined-risk or smaller size.")
@@ -1812,7 +1842,12 @@ def _finalize_results(
                             p["risk_comment"] = risk_comment
                 # Build option text from first pick
                 try:
-                    first = suggested[0]
+                    # Choose best by sweetness
+                    best = max(
+                        suggested,
+                        key=lambda p: p.get("option_sweetness_score") if p.get("option_sweetness_score") is not None else -1,
+                    )
+                    first = best
                     strike = first.get("strike")
                     expiry = first.get("expiry")
                     delta = first.get("delta")
@@ -1820,6 +1855,7 @@ def _finalize_results(
                     iv_val = first.get("iv")
                     dte = first.get("days_to_exp")
                     strat = first.get("strategy_type", "option")
+                    sweetness = first.get("option_sweetness_score")
                     risk_note = ""
                     if hi_iv:
                         risk_note = " IV elevated; consider smaller size or spreads."
@@ -1827,20 +1863,31 @@ def _finalize_results(
                         risk_note = " IV modestly high; mind gap risk."
                     if risk_comment:
                         risk_note = (risk_note + " " + risk_comment).strip()
-                    text = f"{strat} {strike} exp {expiry}, delta {delta:.2f if delta is not None else 'N/A'}, spread {spread_pct:.2% if spread_pct is not None else 'N/A'}, IV {iv_val:.2f if iv_val is not None else 'N/A'}, ~{dte}d to exp.{risk_note}"
+                    text = (
+                        f"{strat} {strike} @ {expiry} (~{dte} DTE, "
+                        f\"Δ={delta:.2f if delta is not None else 'N/A'}, "
+                        f\"spread {spread_pct:.2% if spread_pct is not None else 'N/A'}, "
+                        f\"sweetness {sweetness:.0f if sweetness is not None else 'N/A'}/100). "
+                        f\"{risk_note}\".strip()
+                    )
                     option_texts.append(text)
+                    option_strings.append(text)
                 except Exception:
                     option_texts.append("")
+                    option_strings.append("")
             else:
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
                 option_texts.append("")
+                option_strings.append("")
         results_df["OptionTrade"] = picks
         results_df["OptionQualityScore"] = quality_scores
         results_df["OptionIVRiskFlag"] = iv_risk_flags
         results_df["OptionTradeText"] = option_texts
+        # Human-readable string for CSV/UI
+        results_df["OptionTrade"] = option_strings
     except Exception:
-        results_df["OptionTrade"] = [[] for _ in range(len(results_df))]
+        results_df["OptionTrade"] = ""
         results_df["OptionQualityScore"] = np.nan
         results_df["OptionIVRiskFlag"] = False
         results_df["OptionTradeText"] = ""
