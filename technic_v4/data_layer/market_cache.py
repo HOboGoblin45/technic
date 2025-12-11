@@ -51,14 +51,22 @@ class MarketCache:
         end_date = datetime.utcnow().date()
         max_days = self.config.lookback_days + self.config.extra_buffer
 
+        silent_missing = 0
         for offset in range(0, max_days):
             d = end_date - timedelta(days=offset)
             try:
                 # This will use the cache if the file already exists
                 get_daily_snapshot(d)
             except Exception as exc:
+                msg = str(exc)
+                # Skip noisy logs for expected missing data (weekends/holidays)
+                if "No grouped daily data returned" in msg and d.weekday() >= 5:
+                    silent_missing += 1
+                    continue
                 # Non-fatal; log and continue
                 print(f"[MARKETCACHE WARN] Failed snapshot for {d}: {exc}")
+        if silent_missing:
+            print(f"[MARKETCACHE] Skipped {silent_missing} weekend/holiday snapshots with no data.")
 
     def _build_history(self) -> pd.DataFrame:
         """
