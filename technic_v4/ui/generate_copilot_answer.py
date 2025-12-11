@@ -82,6 +82,7 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
     fundamental_snapshot = getter("FundamentalSnapshot", None)
     profile_name = getter("Profile", None)
     profile_label = getter("ProfileLabel", None)
+    option_strategies = getter("OptionStrategies", None) or getter("option_strategies", None)
 
     # Optional trade-plan fields if present on the row
     entry = getter("EntryPrice", None)
@@ -145,7 +146,7 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         "- If a risk profile is provided, explain why the setup fits that profile and use tone appropriate "
         "  to the risk level (more cautious for conservative, more volatility-tolerant for aggressive).\n"
         "- If volatility context is provided (IV rank, regime), incorporate it into the rationale and risks.\n"
-        "- Start with a 1–2 sentence 'Headline' verdict that names the symbol, side (long/short/neutral), "
+        "- Start with a 1-2 sentence 'Headline' verdict that names the symbol, side (long/short/neutral), "
         "  ICS tier + score, approximate 10-day win probability, and whether it fits a conservative, balanced, "
         "  or aggressive profile.\n"
         "- Prefer a structured answer with short sections such as: Headline, Summary, Example trade plan, "
@@ -154,7 +155,12 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         "  'Events & timing' section and caution against taking large new positions right before earnings.\n"
         "- If a recent positive earnings surprise is flagged, you may mention it as a supportive tailwind but "
         "  avoid overconfidence.\n"
-        "- Keep the overall answer compact (typically 3–6 short paragraphs or bullet lists).\n"
+        "- If options strategies are provided, include a short 'Options idea' section that describes one or two "
+        "  example structures in plain language. Prefer defined-risk spreads or covered calls for novice or "
+        "  conservative profiles. Do not recommend naked options.\n"
+        "- Clearly separate the stock trade plan from the options plan and highlight that both carry risk and "
+        "  require proper position sizing.\n"
+        "- Keep the overall answer compact (typically 3-6 short paragraphs or bullet lists).\n"
         "- Every answer must clearly state that this is an educational example, not "
         '  personalized financial advice, and that the user is responsible for their own decisions.\n'
         "- Do NOT guarantee profits or certainty about future price moves.\n"
@@ -178,6 +184,29 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         context_bits.append(f"Event flags: {event_flags}")
     if fundamental_snapshot:
         context_bits.append(f"Fundamentals: {fundamental_snapshot}")
+    options_context = ""
+    if option_strategies:
+        try:
+            n = len(option_strategies)
+            defined_count = 0
+            names: list[str] = []
+            for s in option_strategies:
+                if hasattr(s, "get"):
+                    if (s.get("defined_risk") or s.get("definedRisk")) is True:
+                        defined_count += 1
+                    label = s.get("label") or s.get("name") or "Option strategy"
+                else:
+                    label = str(s)
+                if len(names) < 3:
+                    names.append(str(label))
+            options_context = (
+                f"Options: Technic has suggested {n} options ideas "
+                f"({defined_count} defined-risk). Examples: {', '.join(names)}."
+            )
+        except Exception:
+            options_context = "Options: Technic has one or more options ideas for this setup."
+    if options_context:
+        context_bits.append(options_context)
     context_block = ""
     if context_bits:
         context_block = "Context:\n" + "\n".join(f"- {line}" for line in context_bits) + "\n\n"

@@ -1169,8 +1169,9 @@ Future<void> _loadUniverseStats() async {
   }
 
   Future<void> _analyzeWithCopilot(ScanResult r) async {
-    final prompt =
-        'Analyze ${r.ticker}: ${r.signal}, entry ${r.entry}, stop ${r.stop}, target ${r.target}. Note: ${r.note}';
+    final prompt = r.optionStrategies.isNotEmpty
+        ? 'Explain the ${r.signal.toLowerCase()} setup in ${r.ticker} and compare the stock trade to the main options strategy, focusing on defined-risk structures for a ${r.profileLabel ?? "balanced"} profile.'
+        : 'Explain the ${r.signal.toLowerCase()} setup in ${r.ticker} and outline an example stock trade using today\'s Technic scan metrics.';
     try {
       final reply = await technicApi.sendCopilot(prompt);
       if (!mounted) return;
@@ -1576,12 +1577,13 @@ Future<void> _loadUniverseStats() async {
                 )
               else
                 ...scans.map(
-                  (r) => _scanResultCard(context, r, () {
-                        copilotContext.value = r;
-                        copilotPrefill.value =
-                            'Explain the ${r.signal.toLowerCase()} setup in ${r.ticker} and outline an example trade using today\'s Technic scan metrics.';
-                        _shellKey.currentState?.setTab(2);
-                      }),
+                    (r) => _scanResultCard(context, r, () {
+                      copilotContext.value = r;
+                      copilotPrefill.value = r.optionStrategies.isNotEmpty
+                          ? 'Explain the ${r.signal.toLowerCase()} setup in ${r.ticker} and compare the stock trade to the main options strategy, focusing on defined-risk structures for a ${r.profileLabel ?? "balanced"} profile.'
+                          : 'Explain the ${r.signal.toLowerCase()} setup in ${r.ticker} and outline an example trade using today\'s Technic scan metrics.';
+                      _shellKey.currentState?.setTab(2);
+                    }),
                 ),
               if (hasScans)
                 _infoCard(
@@ -2364,6 +2366,33 @@ class _CopilotPageState extends State<CopilotPage> with AutomaticKeepAliveClient
                       Text(
                         ctx.eventSummary ?? ctx.eventFlags ?? '',
                         style: TextStyle(fontSize: 11, color: tone(brandAccent, 0.9)),
+                      ),
+                    ],
+                    if (ctx.optionStrategies.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Icon(Icons.auto_graph, size: 14, color: tone(brandPrimary, 0.9)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _optionsHeadline(ctx),
+                              style: const TextStyle(fontSize: 11),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              _showOptionPlanBottomSheet(context, ctx);
+                            },
+                            child: const Text(
+                              'View option plan',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -4747,6 +4776,16 @@ Widget _optionTag(String text) {
       style: const TextStyle(fontSize: 11),
     ),
   );
+}
+
+String _optionsHeadline(ScanResult r) {
+  final n = r.optionStrategies.length;
+  if (n == 0) return 'No options plan defined.';
+  final definedCount = r.optionStrategies.where((s) => s.definedRisk).length;
+  if (definedCount > 0) {
+    return '$n options ideas available • $definedCount defined-risk';
+  }
+  return '$n options ideas available';
 }
 
 Widget _ideaCard(Idea idea, VoidCallback onCopilot) {
