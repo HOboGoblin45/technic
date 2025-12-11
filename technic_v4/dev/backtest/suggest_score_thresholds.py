@@ -29,9 +29,19 @@ def _load_data(path: Path, score_cols: List[str], label_cols: List[str]) -> pd.D
     """
     Load a minimal subset of columns for tuning thresholds.
     """
-    cols = ["Symbol"] + score_cols + label_cols
-    df = pd.read_parquet(path, columns=[c for c in cols if c is not None])
-    return df
+    preferred_symbol_cols = [["Symbol"], ["symbol"]]
+    for sym_cols in preferred_symbol_cols:
+        cols = sym_cols + score_cols + label_cols
+        try:
+            df = pd.read_parquet(path, columns=[c for c in cols if c is not None])
+            return df
+        except Exception:
+            continue
+    # If we cannot project columns due to name mismatches, load all and rename if possible.
+    df_full = pd.read_parquet(path)
+    if "symbol" in df_full.columns and "Symbol" not in df_full.columns:
+        df_full = df_full.rename(columns={"symbol": "Symbol"})
+    return df_full
 
 
 def _candidate_thresholds(
@@ -146,7 +156,7 @@ def _print_table(df: pd.DataFrame, score_col: str, label_col: str) -> None:
 
 def main() -> None:
     # Repo root: .../technic-clean/
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     data_path = _default_data_path(root)
 
     print(f"[THR] Using data: {data_path}")

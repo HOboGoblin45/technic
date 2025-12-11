@@ -47,8 +47,11 @@ def refresh_data(universe_limit: int | None = None) -> None:
 
         universe = load_universe()
         symbols = [u.symbol for u in universe][:universe_limit] if universe_limit else [u.symbol for u in universe]
-        bulk_daily.refresh_bulk_prices(symbols)
-        _log(f"Data refresh complete for {len(symbols)} symbols.")
+        if hasattr(bulk_daily, "refresh_bulk_prices"):
+            bulk_daily.refresh_bulk_prices(symbols)
+            _log(f"Data refresh complete for {len(symbols)} symbols.")
+        else:
+            _log("Data refresh skipped: bulk_daily.refresh_bulk_prices not available.")
     except Exception as exc:
         _log(f"Data refresh failed: {exc}")
 
@@ -62,7 +65,7 @@ def train_alpha() -> None:
             _log(f"Alpha training complete. Version={result.get('version')} Metrics={result.get('metrics')}")
         else:
             _log("Alpha training complete.")
-    except Exception as exc:
+    except BaseException as exc:
         _log(f"Alpha training failed: {exc}")
 
 
