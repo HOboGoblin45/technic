@@ -47,7 +47,7 @@ final technicApi = TechnicApi();
 final GlobalKey<_TechnicShellState> _shellKey = GlobalKey<_TechnicShellState>();
 final ValueNotifier<String?> copilotPrefill = ValueNotifier<String?>(null);
 final ValueNotifier<String?> copilotStatus = ValueNotifier<String?>(null);
-final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(true);
+final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(false);
 final ValueNotifier<String?> userId = ValueNotifier<String?>(null);
 
 Future<void> main() async {
@@ -462,8 +462,10 @@ class _ScannerPageState extends State<ScannerPage> with AutomaticKeepAliveClient
   bool _allowShorts = true;
   bool _onlyTradeable = false;
   String _tradeStyle = 'Short-term swing';
+  String _riskProfile = 'Balanced';
+  String _timeHorizon = 'Swing';
   List<SavedScreen> _savedScreens = List.of(savedScreens);
-  bool _advancedMode = true;
+  bool _advancedMode = false;
   bool _showOnboarding = true;
   String? _progressText;
   final List<String> _sectors = [
@@ -507,6 +509,52 @@ class _ScannerPageState extends State<ScannerPage> with AutomaticKeepAliveClient
   List<String> _searchHints = List.of(defaultTickers);
   bool _randomizeSingleSector = false;
   final FocusNode _searchFocus = FocusNode();
+
+  void _applyBasicProfile() {
+    // Map risk profile + time horizon to underlying scan parameters.
+    // Risk profile: conservative = tighter filters, aggressive = wider net.
+    setState(() {
+      switch (_riskProfile) {
+        case 'Conservative':
+          _maxSymbols = 40;
+          _minTechRating = 25;
+          _allowShorts = false;
+          _onlyTradeable = true;
+          break;
+        case 'Aggressive':
+          _maxSymbols = 100;
+          _minTechRating = 15;
+          _allowShorts = true;
+          _onlyTradeable = false;
+          break;
+        case 'Balanced':
+        default:
+          _maxSymbols = 60;
+          _minTechRating = 20;
+          _allowShorts = false;
+          _onlyTradeable = true;
+      }
+
+      switch (_timeHorizon) {
+        case 'Short-term':
+          _lookbackDays = 45;
+          _tradeStyle = 'Short-term swing';
+          break;
+        case 'Position':
+          _lookbackDays = 180;
+          _tradeStyle = 'Multi-day';
+          break;
+        case 'Swing':
+        default:
+          _lookbackDays = 90;
+          _tradeStyle = 'Short-term swing';
+      }
+
+      // Respect current sector caps.
+      final cap = _capForSelection();
+      if (_maxSymbols > cap) _maxSymbols = cap;
+    });
+  }
 
   @override
   bool get wantKeepAlive => true;
@@ -864,7 +912,75 @@ Future<void> _loadUniverseStats() async {
             ],
           ),
           const SizedBox(height: 6),
-          if (_advancedMode)
+          if (!_advancedMode) ...[
+            const Text(
+              'Step 1 – Pick your risk profile',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: ['Conservative', 'Balanced', 'Aggressive']
+                  .map(
+                    (p) => ChoiceChip(
+                      label: Text(p),
+                      selected: _riskProfile == p,
+                      onSelected: (_) {
+                        setState(() => _riskProfile = p);
+                        _applyBasicProfile();
+                      },
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Step 2 – Pick your time horizon',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: ['Short-term', 'Swing', 'Position']
+                  .map(
+                    (h) => ChoiceChip(
+                      label: Text(h),
+                      selected: _timeHorizon == h,
+                      onSelected: (_) {
+                        setState(() => _timeHorizon = h);
+                        _applyBasicProfile();
+                      },
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () {
+                    _applyBasicProfile();
+                    _refresh();
+                  },
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Run scan'),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Technic will pull a fresh scan with these defaults. Switch to Advanced for full control.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.grey[600]),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
@@ -873,106 +989,108 @@ Future<void> _loadUniverseStats() async {
               value: _randomizeSingleSector,
               onChanged: (v) => setState(() => _randomizeSingleSector = v),
             ),
-          if (_advancedMode) const SizedBox(height: 6),
-          _sliderRow(
-            label: 'Lookback (days)',
-            value: _lookbackDays,
-            min: 30,
-            max: 365,
-            divisions: 335,
-            formatter: (v) => v.round().toString(),
-            onChanged: (v) => setState(() => _lookbackDays = v),
-          ),
-          _sliderRow(
-            label: 'Min TechRating',
-            value: _minTechRating,
-            min: 0,
-            max: 100,
-            divisions: 20,
-            formatter: (v) => v.round().toString(),
-            onChanged: (v) => setState(() => _minTechRating = v),
-          ),
-          _sliderRow(
-            label: 'Max symbols',
-            value: _maxSymbols.toDouble(),
-            min: 10,
-            max: _capForSelection().toDouble().clamp(10.0, 6000.0),
-            divisions: 119,
-            formatter: (v) => v.round().toString(),
-            onChanged: (v) => setState(() => _maxSymbols = v.round()),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 8),
-            child: Text(
-              'Selection size: ${_capForSelection()} symbols based on chosen sectors/subindustries',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            const SizedBox(height: 6),
+            _sliderRow(
+              label: 'Lookback (days)',
+              value: _lookbackDays,
+              min: 30,
+              max: 365,
+              divisions: 335,
+              formatter: (v) => v.round().toString(),
+              onChanged: (v) => setState(() => _lookbackDays = v),
             ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Industry contains',
-              hintText: 'e.g., Semiconductors, Banks, Software',
+            _sliderRow(
+              label: 'Min TechRating',
+              value: _minTechRating,
+              min: 0,
+              max: 100,
+              divisions: 20,
+              formatter: (v) => v.round().toString(),
+              onChanged: (v) => setState(() => _minTechRating = v),
             ),
-            onChanged: (v) => setState(() => _industryFilter = v),
-          ),
-          const SizedBox(height: 10),
-          if (_subindustryCounts.isNotEmpty)
-            SizedBox(
-              height: 140,
-              child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: _subindustryCounts.entries
-                      .map(
-                        (e) => FilterChip(
-                          label: Text('${e.key} (${e.value})'),
-                          selected: _selectedSubindustries.contains(e.key),
-                          onSelected: (v) => setState(() {
-                            if (v) {
-                              _selectedSubindustries.add(e.key);
-                            } else {
-                              _selectedSubindustries.remove(e.key);
-                            }
-                            final cap = _capForSelection();
-                            if (_maxSymbols > cap) _maxSymbols = cap;
-                          }),
-                        ),
-                      )
-                      .toList(),
+            _sliderRow(
+              label: 'Max symbols',
+              value: _maxSymbols.toDouble(),
+              min: 10,
+              max: _capForSelection().toDouble().clamp(10.0, 6000.0),
+              divisions: 119,
+              formatter: (v) => v.round().toString(),
+              onChanged: (v) => setState(() => _maxSymbols = v.round()),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Text(
+                'Selection size: ${_capForSelection()} symbols based on chosen sectors/subindustries',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey[600]),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'Industry contains',
+                hintText: 'e.g., Semiconductors, Banks, Software',
+              ),
+              onChanged: (v) => setState(() => _industryFilter = v),
+            ),
+            const SizedBox(height: 10),
+            if (_subindustryCounts.isNotEmpty)
+              SizedBox(
+                height: 140,
+                child: SingleChildScrollView(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: _subindustryCounts.entries
+                        .map(
+                          (e) => FilterChip(
+                            label: Text('${e.key} (${e.value})'),
+                            selected: _selectedSubindustries.contains(e.key),
+                            onSelected: (v) => setState(() {
+                              if (v) {
+                                _selectedSubindustries.add(e.key);
+                              } else {
+                                _selectedSubindustries.remove(e.key);
+                              }
+                              final cap = _capForSelection();
+                              if (_maxSymbols > cap) _maxSymbols = cap;
+                            }),
+                          ),
+                        )
+                        .toList(),
+                  ),
                 ),
               ),
-            ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            children: [
-              FilterChip(
-                label: const Text('Allow shorts'),
-                selected: _allowShorts,
-                onSelected: (v) => setState(() => _allowShorts = v),
-              ),
-              FilterChip(
-                label: const Text('Only tradeable'),
-                selected: _onlyTradeable,
-                onSelected: (v) => setState(() => _onlyTradeable = v),
-              ),
-              DropdownButton<String>(
-                value: _tradeStyle,
-                dropdownColor: tone(brandDeep, 0.95),
-                items: const [
-                  'Short-term swing',
-                  'Weekly',
-                  'Multi-day',
-                  'Momentum',
-                ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                onChanged: (v) {
-                  if (v != null) setState(() => _tradeStyle = v);
-                },
-              ),
-              if (_advancedMode)
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  label: const Text('Allow shorts'),
+                  selected: _allowShorts,
+                  onSelected: (v) => setState(() => _allowShorts = v),
+                ),
+                FilterChip(
+                  label: const Text('Only tradeable'),
+                  selected: _onlyTradeable,
+                  onSelected: (v) => setState(() => _onlyTradeable = v),
+                ),
+                DropdownButton<String>(
+                  value: _tradeStyle,
+                  dropdownColor: tone(brandDeep, 0.95),
+                  items: const [
+                    'Short-term swing',
+                    'Weekly',
+                    'Multi-day',
+                    'Momentum',
+                  ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _tradeStyle = v);
+                  },
+                ),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
@@ -994,23 +1112,24 @@ Future<void> _loadUniverseStats() async {
                       )
                       .toList(),
                 ),
-              Tooltip(
-                message: 'Current filter summary',
-                child: Chip(
-                  label: Text(
-                    '${_filtersMap()['lookback_days']}d ? min TR ${_filtersMap()['min_tech_rating']} ? max ${_filtersMap()['max_symbols']}',
-                    style: TextStyle(color: tone(Colors.white, 0.8)),
+                Tooltip(
+                  message: 'Current filter summary',
+                  child: Chip(
+                    label: Text(
+                      '${_filtersMap()['lookback_days']}d • min TR ${_filtersMap()['min_tech_rating']} • max ${_filtersMap()['max_symbols']}',
+                      style: TextStyle(color: tone(Colors.white, 0.8)),
+                    ),
+                    backgroundColor: tone(Colors.white, 0.05),
                   ),
-                  backgroundColor: tone(Colors.white, 0.05),
                 ),
-              ),
-              ElevatedButton.icon(
-                onPressed: _refresh,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Apply & run'),
-              ),
-            ],
-          ),
+                ElevatedButton.icon(
+                  onPressed: _refresh,
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Apply & run'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -4688,4 +4807,3 @@ class LocalStore {
     );
   }
 }
-
