@@ -26,6 +26,20 @@ def append_daily_signals(df_signals: pd.DataFrame, date_str: str | None = None) 
     """
     if df_signals is None or df_signals.empty:
         return
+    # Deduplicate columns to avoid ambiguous keys in JSON consumers
+    if df_signals.columns.duplicated().any():
+        dedup_cols = []
+        counts = {}
+        for col in df_signals.columns:
+            if col not in counts:
+                counts[col] = 0
+                dedup_cols.append(col)
+            else:
+                counts[col] += 1
+                dedup_cols.append(f"{col}_{counts[col]}")
+        df_signals = df_signals.copy()
+        df_signals.columns = dedup_cols
+
     SCOREBOARD_DIR.mkdir(parents=True, exist_ok=True)
     if date_str is None:
         date_str = pd.Timestamp.utcnow().strftime("%Y-%m-%d")

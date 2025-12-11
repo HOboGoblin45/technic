@@ -1903,7 +1903,9 @@ def _finalize_results(
         # Inform if symbols had no option ideas
         if no_picks_syms:
             unique_syms = list(dict.fromkeys(no_picks_syms))  # preserve order, drop duplicates
-            syms_str = ", ".join(unique_syms[:10]) + ("..." if len(unique_syms) > 10 else "")
+            # Clean symbol strings
+            clean_syms = [str(s).split()[-1] if " " in str(s) else str(s) for s in unique_syms]
+            syms_str = ", ".join(clean_syms[:10]) + ("..." if len(clean_syms) > 10 else "")
             logger.info("[options] no option candidates for symbols: %s", syms_str)
     except Exception:
         results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
