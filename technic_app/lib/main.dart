@@ -4436,6 +4436,56 @@ Widget _scanResultCard(BuildContext context, ScanResult r, VoidCallback onAnalyz
               children: eventChips,
             ),
           ],
+          if (r.optionStrategies.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'Options',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withOpacity(isDark ? 0.9 : 0.7),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final s in r.optionStrategies.take(3))
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              label: Text(
+                                _shortOptionLabel(s),
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              selected: false,
+                              onSelected: (_) {
+                                _showOptionPlanBottomSheet(context, r, initialStrategy: s);
+                              },
+                            ),
+                          ),
+                        if (r.optionStrategies.length > 3)
+                          ChoiceChip(
+                            label: Text(
+                              '+${r.optionStrategies.length - 3} more',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            selected: false,
+                            onSelected: (_) {
+                              _showOptionPlanBottomSheet(context, r);
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -4518,6 +4568,184 @@ Widget _miniStat(String label, double? value, {String suffix = '', String? label
     ),
     visualDensity: VisualDensity.compact,
     backgroundColor: tone(Colors.white, 0.06),
+  );
+}
+
+String _shortOptionLabel(OptionStrategy s) {
+  final base = s.label.isNotEmpty ? s.label : 'Option';
+  if (s.definedRisk) return '$base (defined risk)';
+  return base;
+}
+
+void _showOptionPlanBottomSheet(
+  BuildContext context,
+  ScanResult result, {
+  OptionStrategy? initialStrategy,
+}) {
+  final strategies = result.optionStrategies;
+  if (strategies.isEmpty) return;
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) {
+      return DraggableScrollableSheet(
+        maxChildSize: 0.85,
+        initialChildSize: 0.6,
+        builder: (ctx, scrollController) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).cardColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${result.ticker} – Options plan',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            result.signal,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white70.withOpacity(0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: strategies.length,
+                    itemBuilder: (ctx, index) {
+                      final s = strategies[index];
+                      final isInitial =
+                          initialStrategy != null && s.id == initialStrategy.id;
+                      return _buildOptionStrategyTile(ctx, result, s,
+                          isHighlighted: isInitial);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+Widget _buildOptionStrategyTile(
+  BuildContext context,
+  ScanResult result,
+  OptionStrategy s, {
+  bool isHighlighted = false,
+}) {
+  final accent = isHighlighted ? brandPrimary : Colors.white24;
+  return Container(
+    margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: accent.withOpacity(0.4)),
+      color: Theme.of(context).cardColor.withOpacity(0.95),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                s.label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            if (s.definedRisk)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: accent.withOpacity(0.18),
+                ),
+                child: const Text(
+                  'Defined risk',
+                  style: TextStyle(fontSize: 11),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        if (s.description != null && s.description!.isNotEmpty)
+          Text(
+            s.description!,
+            style: const TextStyle(fontSize: 12),
+          ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 10,
+          runSpacing: 4,
+          children: [
+            if (s.side.isNotEmpty) _optionTag('Side: ${s.side}'),
+            if (s.type.isNotEmpty) _optionTag('Type: ${s.type}'),
+            if (s.expiry != null) _optionTag('Expiry: ${s.expiry}'),
+            if (s.maxLoss != null)
+              _optionTag('Max loss: ${s.maxLoss!.toStringAsFixed(2)}'),
+            if (s.maxProfit != null)
+              _optionTag('Max profit: ${s.maxProfit!.toStringAsFixed(2)}'),
+            if (s.probabilityITM != null)
+              _optionTag('Pr. ITM: ${(s.probabilityITM! * 100).toStringAsFixed(0)}%'),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Note: This is an example options structure. Position sizing and suitability depend on your risk tolerance and account rules.',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.white70.withOpacity(0.8),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _optionTag(String text) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: tone(brandPrimary, 0.15),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      text,
+      style: const TextStyle(fontSize: 11),
+    ),
   );
 }
 
