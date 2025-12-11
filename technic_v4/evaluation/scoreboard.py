@@ -40,6 +40,17 @@ def append_daily_signals(df_signals: pd.DataFrame, date_str: str | None = None) 
         df_signals = df_signals.copy()
         df_signals.columns = dedup_cols
 
+    # Trim very wide option-related fields to keep the scoreboard payload lean
+    drop_cols = [
+        "OptionPicks",
+        "OptionTrade",
+        "OptionTradeText",
+        "OptionQualityScore",
+        "OptionIVRiskFlag",
+        "OptionTradeText",
+    ]
+    df_signals = df_signals.drop(columns=[c for c in drop_cols if c in df_signals.columns], errors="ignore")
+
     SCOREBOARD_DIR.mkdir(parents=True, exist_ok=True)
     if date_str is None:
         date_str = pd.Timestamp.utcnow().strftime("%Y-%m-%d")
