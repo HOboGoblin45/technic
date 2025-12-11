@@ -1887,7 +1887,13 @@ def _finalize_results(
                     option_texts.append("")
                     option_strings.append("")
             else:
-                no_picks_syms.append(str(row.get("Symbol")))
+                sym_val = row.get("Symbol")
+                if hasattr(sym_val, "iloc"):
+                    try:
+                        sym_val = sym_val.iloc[0]
+                    except Exception:
+                        sym_val = str(sym_val)
+                no_picks_syms.append(str(sym_val))
                 quality_scores.append(np.nan)
                 iv_risk_flags.append(False)
                 option_texts.append("No option idea (filters failed or earnings too close).")
@@ -1903,8 +1909,7 @@ def _finalize_results(
         # Inform if symbols had no option ideas
         if no_picks_syms:
             unique_syms = list(dict.fromkeys(no_picks_syms))  # preserve order, drop duplicates
-            # Clean symbol strings
-            clean_syms = [str(s).split()[-1] if " " in str(s) else str(s) for s in unique_syms]
+            clean_syms = [s.strip() for s in unique_syms if s and s.strip().lower() != "nan"]
             syms_str = ", ".join(clean_syms[:10]) + ("..." if len(clean_syms) > 10 else "")
             logger.info("[options] no option candidates for symbols: %s", syms_str)
     except Exception:
@@ -2052,6 +2057,7 @@ def _validate_results(df: pd.DataFrame) -> pd.DataFrame:
         "RegimeVol": "",
         "MarketRegime": "",
         "OptionTrade": "",
+        "OptionPicks": [],
         "Rationale": "",
         "Explanation": "",
     }
