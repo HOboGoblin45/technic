@@ -1770,15 +1770,23 @@ def _finalize_results(
             suggested = suggest_option_trades(str(row.get("Symbol")), float(spot), bullish=True)
             picks.append(suggested or [])
             if suggested:
-                # aggregated quality if provided, else max sweetness
-                qs = None
+                # aggregated quality using top3 sweetness (0.6*max + 0.4*avg_top3)
+                qs = np.nan
                 if isinstance(suggested, list) and suggested:
-                    first = suggested[0]
-                    qs = first.get("option_quality_agg") or first.get("option_sweetness_score")
-                    if qs is None:
-                        sweetness_vals = [p.get("option_sweetness_score") for p in suggested if p.get("option_sweetness_score") is not None]
-                        if sweetness_vals:
-                            qs = max(sweetness_vals)
+                    sweetness_vals = []
+                    for p in suggested:
+                        val = p.get("option_sweetness_score")
+                        if val is not None and not pd.isna(val):
+                            try:
+                                sweetness_vals.append(float(val))
+                            except Exception:
+                                pass
+                    if sweetness_vals:
+                        sweetness_vals = sorted(sweetness_vals, reverse=True)
+                        top3 = sweetness_vals[:3]
+                        max_sw = top3[0]
+                        avg_top3 = sum(top3) / len(top3)
+                        qs = 0.6 * max_sw + 0.4 * avg_top3
                 # risk penalties: high IV and earnings near
                 penalty = 1.0
                 hi_iv = any(bool(p.get("high_iv_flag")) for p in suggested)
@@ -1787,10 +1795,24 @@ def _finalize_results(
                     penalty *= 0.8
                 if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
                     penalty *= 0.8
-                qs_adj = qs * penalty if qs is not None else np.nan
+                qs_adj = qs * penalty if not pd.isna(qs) else np.nan
                 quality_scores.append(qs_adj)
+                # Risk comments to carry with picks
+                risk_msgs = []
+                if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
+                    risk_msgs.append(f"Earnings in {int(days_to_earn)}d; gap risk higher than normal.")
+                if bool(row.get("dividend_ex_date_within_7d")):
+                    risk_msgs.append("Ex-dividend within 7d; near-term pricing may be distorted.")
+                if hi_iv or iv_risk_flags[-1]:
+                    risk_msgs.append("IV elevated; consider defined-risk or smaller size.")
+                risk_comment = "; ".join(risk_msgs)
+                if risk_comment:
+                    for p in suggested:
+                        if isinstance(p, dict):
+                            p["risk_comment"] = risk_comment
                 # Build option text from first pick
                 try:
+                    first = suggested[0]
                     strike = first.get("strike")
                     expiry = first.get("expiry")
                     delta = first.get("delta")
@@ -1803,6 +1825,8 @@ def _finalize_results(
                         risk_note = " IV elevated; consider smaller size or spreads."
                     elif iv_risk_flags[-1]:
                         risk_note = " IV modestly high; mind gap risk."
+                    if risk_comment:
+                        risk_note = (risk_note + " " + risk_comment).strip()
                     text = f"{strat} {strike} exp {expiry}, delta {delta:.2f if delta is not None else 'N/A'}, spread {spread_pct:.2% if spread_pct is not None else 'N/A'}, IV {iv_val:.2f if iv_val is not None else 'N/A'}, ~{dte}d to exp.{risk_note}"
                     option_texts.append(text)
                 except Exception:
