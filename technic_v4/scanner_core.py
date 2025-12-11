@@ -1863,13 +1863,15 @@ def _finalize_results(
                         risk_note = " IV modestly high; mind gap risk."
                     if risk_comment:
                         risk_note = (risk_note + " " + risk_comment).strip()
-                    text = (
-                        f"{strat} {strike} @ {expiry} (~{dte} DTE, "
-                        f\"Δ={delta:.2f if delta is not None else 'N/A'}, "
-                        f\"spread {spread_pct:.2% if spread_pct is not None else 'N/A'}, "
-                        f\"sweetness {sweetness:.0f if sweetness is not None else 'N/A'}/100). "
-                        f\"{risk_note}\".strip()
-                    )
+                    text = " ".join(
+                        [
+                            f"{strat} {strike} @ {expiry} (~{dte} DTE, "
+                            f"Delta={delta:.2f if delta is not None else 'N/A'}, "
+                            f"spread {spread_pct:.2% if spread_pct is not None else 'N/A'}, "
+                            f"sweetness {sweetness:.0f if sweetness is not None else 'N/A'}/100).",
+                            risk_note.strip(),
+                        ]
+                    ).strip()
                     option_texts.append(text)
                     option_strings.append(text)
                 except Exception:
