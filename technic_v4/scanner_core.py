@@ -1741,20 +1741,44 @@ def _finalize_results(
     # Optional: suggest simple option trades for strongest longs
     try:
         picks: list = []
+        quality_scores = []
+        iv_risk_flags = []
         for idx, row in results_df.iterrows():
             sig = row.get("Signal")
             if sig not in {"Strong Long", "Long"}:
                 picks.append([])
+                quality_scores.append(np.nan)
+                iv_risk_flags.append(False)
                 continue
             spot = row.get("Close") or row.get("Entry") or row.get("Last")
             if spot is None or pd.isna(spot):
                 picks.append([])
+                quality_scores.append(np.nan)
+                iv_risk_flags.append(False)
+                continue
+            # Skip if too close to earnings
+            days_to_earn = row.get("days_to_next_earnings")
+            if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 3:
+                picks.append([])
+                quality_scores.append(np.nan)
+                iv_risk_flags.append(False)
                 continue
             suggested = suggest_option_trades(str(row.get("Symbol")), float(spot), bullish=True)
             picks.append(suggested or [])
+            if suggested:
+                qs = suggested[0].get("option_quality_score") if isinstance(suggested, list) and suggested else None
+                quality_scores.append(qs)
+                iv_risk_flags.append(bool(suggested[0].get("iv_risk_flag")))
+            else:
+                quality_scores.append(np.nan)
+                iv_risk_flags.append(False)
         results_df["OptionTrade"] = picks
+        results_df["OptionQualityScore"] = quality_scores
+        results_df["OptionIVRiskFlag"] = iv_risk_flags
     except Exception:
         results_df["OptionTrade"] = [[] for _ in range(len(results_df))]
+        results_df["OptionQualityScore"] = np.nan
+        results_df["OptionIVRiskFlag"] = False
 
     # Build short rationales per idea (best-effort)
     try:
@@ -2082,5 +2106,4 @@ if __name__ == "__main__":
     df, msg = run_scan()
     logger.info(msg)
     logger.info(df.head())
-
 
