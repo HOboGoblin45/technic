@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Literal
 
 import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -48,6 +48,7 @@ class ScanRequest(BaseModel):
 class CopilotRequest(BaseModel):
     question: str
     symbol: Optional[str] = None
+    options_mode: Optional[Literal["stock_only", "stock_plus_options"]] = None
 
 
 class ScanResultRow(BaseModel):
@@ -217,11 +218,16 @@ async def copilot(request: CopilotRequest, api_key: str = Depends(get_api_key)):
         raise HTTPException(status_code=400, detail="Question is required")
 
     row = None
+    options_mode = request.options_mode or "stock_plus_options"
     if request.symbol:
         row = _load_latest_scan_row(request.symbol)
 
     try:
-        answer = generate_copilot_answer(question=request.question, row=row)
+        answer = generate_copilot_answer(
+            question=request.question,
+            row=row,
+            options_mode=options_mode,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Copilot error: {exc}") from exc
 

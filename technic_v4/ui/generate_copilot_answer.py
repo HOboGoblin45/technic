@@ -36,7 +36,11 @@ def get_llm_client() -> OpenAI:
 # --- Main Copilot function ----------------------------------------------------
 
 
-def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None) -> str:
+def generate_copilot_answer(
+    question: str,
+    row: "pd.Series | dict | None" = None,
+    options_mode: str = "stock_plus_options",
+) -> str:
     """
     Turn the current symbol's metrics + the user's question into a detailed,
     plain-English answer using the OpenAI API.
@@ -83,6 +87,7 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
     profile_name = getter("Profile", None)
     profile_label = getter("ProfileLabel", None)
     option_strategies = getter("OptionStrategies", None) or getter("option_strategies", None)
+    wants_options = options_mode == "stock_plus_options"
 
     # Optional trade-plan fields if present on the row
     entry = getter("EntryPrice", None)
@@ -168,6 +173,17 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
         "  you only see the metrics listed.\n"
     )
 
+    if wants_options:
+        system_msg += (
+            "- The user has opted into options ideas. If options strategies are provided, include a concise "
+            "'Options idea' section using one or two defined-risk structures in plain language.\n"
+        )
+    else:
+        system_msg += (
+            "- The user selected 'stocks only'. If options strategies exist, you may briefly mention they are "
+            "available, but keep the explanation focused on the stock trade plan and do not go deep into options details.\n"
+        )
+
     # Model drivers (from SHAP or similar) and context
     driver_text = explanation if explanation else "Not available."
     vol_context = []
@@ -199,12 +215,22 @@ def generate_copilot_answer(question: str, row: "pd.Series | dict | None" = None
                     label = str(s)
                 if len(names) < 3:
                     names.append(str(label))
-            options_context = (
-                f"Options: Technic has suggested {n} options ideas "
-                f"({defined_count} defined-risk). Examples: {', '.join(names)}."
-            )
+            if wants_options:
+                options_context = (
+                    f"Options: Technic has suggested {n} options ideas "
+                    f"({defined_count} defined-risk). Examples: {', '.join(names)}."
+                )
+            else:
+                options_context = (
+                    f"Options available (user prefers stocks-only): {n} idea(s); "
+                    f"{defined_count} defined-risk. Keeping focus on the stock plan."
+                )
         except Exception:
-            options_context = "Options: Technic has one or more options ideas for this setup."
+            options_context = (
+                "Options: Technic has one or more options ideas for this setup."
+                if wants_options
+                else "Options ideas exist; user selected stocks-only focus."
+            )
     if options_context:
         context_bits.append(options_context)
     context_block = ""

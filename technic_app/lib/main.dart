@@ -1215,7 +1215,7 @@ Future<void> _loadUniverseStats() async {
     try {
       final reply = await technicApi.sendCopilot(
         prompt,
-        symbol: idea.ticker,
+        symbol: r.ticker,
       );
       if (!mounted) return;
       await showModalBottomSheet(
