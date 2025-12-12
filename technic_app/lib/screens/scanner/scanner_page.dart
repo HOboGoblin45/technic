@@ -170,7 +170,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
       }
     });
     _saveState();
-    _refresh();
+    // Removed auto-scan - user must click Run Scan button
   }
 
   void _randomize() {
@@ -187,7 +187,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
       };
     });
     _saveState();
-    _refresh();
+    // Removed auto-scan - user must click Run Scan button
   }
 
   void _showFilterPanel() {
@@ -204,11 +204,8 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
           _saveState();
         },
       ),
-    ).then((result) {
-      if (result != null) {
-        _refresh();
-      }
-    });
+    );
+    // Removed auto-scan after filter changes
   }
 
   void _showPresetManager() {
@@ -223,7 +220,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
             _filters = preset.params ?? {};
           });
           _saveState();
-          _refresh();
+          // Removed auto-scan - user must click Run Scan button
         },
         onDelete: (name) {
           setState(() {

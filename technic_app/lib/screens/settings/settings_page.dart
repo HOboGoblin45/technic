@@ -86,7 +86,7 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final userId = ref.watch(userIdProvider);
     final copilotStatus = ref.watch(copilotStatusProvider);
-    final isDarkMode = ref.watch(themeModeProvider);
+    // Note: isDarkMode variable removed - app is dark mode only now
 
     return ListView(
       children: [
@@ -280,68 +280,7 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
 
-        // Appearance Section
-        const SectionHeader(
-          'Appearance',
-          caption: 'Dark mode with Technic accent',
-        ),
-        InfoCard(
-          title: 'Theme',
-          subtitle: 'Institutional minimal with optional high contrast',
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: AppColors.primaryBlue,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Technic Dark',
-                style: TextStyle(color: Colors.white),
-              ),
-              const Spacer(),
-              Row(
-                children: [
-                  const Text(
-                    'Dark mode',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                  const SizedBox(width: 6),
-                  Switch(
-                    value: isDarkMode,
-                    onChanged: (v) {
-                      ref.read(themeModeProvider.notifier).setDarkMode(v);
-                    },
-                    thumbColor: const WidgetStatePropertyAll(AppColors.primaryBlue),
-                    trackColor: WidgetStatePropertyAll(
-                      tone(AppColors.primaryBlue, 0.3),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: tone(Colors.white, 0.06),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'Sync across devices',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ),
-            ],
-          ),
-        ),
-
+        // Appearance Section - Theme toggle removed (dark mode only)
         const SizedBox(height: 8),
 
         
