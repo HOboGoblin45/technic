@@ -258,6 +258,7 @@ class _TechnicShellState extends State<TechnicShell> {
     const ScannerPage(),
     const IdeasPage(),
     const CopilotPage(),
+    const MyIdeasPage(),
     const SettingsPage(),
   ];
 
@@ -448,6 +449,11 @@ class _TechnicShellState extends State<TechnicShell> {
               icon: Icon(Icons.chat_bubble_outline),
               selectedIcon: Icon(Icons.chat_bubble),
               label: 'Copilot',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.star_border),
+              selectedIcon: Icon(Icons.star),
+              label: 'My Ideas',
             ),
             NavigationDestination(
               icon: Icon(Icons.settings_outlined),
@@ -4550,6 +4556,20 @@ Widget _scanResultCard(BuildContext context, ScanResult r, VoidCallback onAnalyz
                   ],
                 ),
               ),
+              ValueListenableBuilder<List<WatchlistItem>>(
+                valueListenable: watchlistStore.items,
+                builder: (context, items, _) {
+                  final starred = watchlistStore.contains(r.ticker);
+                  return IconButton(
+                    icon: Icon(
+                      starred ? Icons.star : Icons.star_border,
+                      color: starred ? Colors.amber : Colors.grey,
+                    ),
+                    tooltip: starred ? 'Remove from My Ideas' : 'Save to My Ideas',
+                    onPressed: () => watchlistStore.toggle(r.ticker),
+                  );
+                },
+              ),
               if (tierLabel.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -5607,6 +5627,55 @@ class LocalStore {
     await p.setString(
       'last_movers',
       jsonEncode(bundle.movers.map((e) => e.toJson()).toList()),
+    );
+  }
+}
+class MyIdeasPage extends StatelessWidget {
+  const MyIdeasPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<List<WatchlistItem>>(
+      valueListenable: watchlistStore.items,
+      builder: (context, items, _) {
+        if (items.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'No saved ideas yet.\nStar symbols in the scanner to add them here.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+
+        final sorted = List<WatchlistItem>.from(items)
+          ..sort((a, b) => b.addedAt.compareTo(a.addedAt));
+
+        return ListView.builder(
+          itemCount: sorted.length,
+          itemBuilder: (context, index) {
+            final w = sorted[index];
+            return ListTile(
+              title: Text(
+                w.symbol,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                'Added ${w.addedAt.toLocal().toIso8601String().substring(0, 10)}',
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.star, color: Colors.amber),
+                onPressed: () => watchlistStore.toggle(w.symbol),
+              ),
+              onTap: () {
+                // Optional: hook into scanner or Copilot with this symbol.
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
