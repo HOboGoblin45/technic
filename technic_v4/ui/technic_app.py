@@ -4998,9 +4998,9 @@ if results_df is not None and not results_df.empty:
                     with c1:
                         st.metric("Trades", bt["trades"])
                     with c2:
-                        st.metric("Win rate", f"{bt["win_rate"]:.1f}%")
+                        st.metric("Win rate", f'{bt['win_rate']:.1f}%")
                     with c3:
-                        st.metric("Avg R", f"{bt["avg_r"]:.2f}")
+                        st.metric("Avg R", f'{bt['avg_r']:.2f}")
                     if risk_dollars is not None and "pnl_sum" in bt:
                         st.caption(f"Total PnL:  | Avg/trade: ")
                     if HAVE_ALTAIR and "equity" in bt and len(bt["equity"]) > 1:

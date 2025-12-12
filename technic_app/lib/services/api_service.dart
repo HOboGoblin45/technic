@@ -41,7 +41,7 @@ class ApiConfig {
   factory ApiConfig.fromEnv() {
     final rawBase = const String.fromEnvironment(
       'TECHNIC_API_BASE',
-      defaultValue: 'http://localhost:8502',
+      defaultValue: 'http://localhost:8501',
     );
     final normalizedBase = _normalizeBaseForPlatform(rawBase);
     

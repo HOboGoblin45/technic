@@ -24,16 +24,40 @@ class FilterPanel extends ConsumerStatefulWidget {
 
 class _FilterPanelState extends ConsumerState<FilterPanel> {
   late Map<String, String> _filters;
+  late Set<String> _selectedSectors;
   
   @override
   void initState() {
     super.initState();
     _filters = Map.from(widget.filters);
+    // Parse selected sectors from comma-separated string
+    final sectorStr = _filters['sector'] ?? '';
+    _selectedSectors = sectorStr.isEmpty ? {} : sectorStr.split(',').toSet();
   }
   
   void _updateFilter(String key, String value) {
     setState(() {
       _filters[key] = value;
+    });
+    widget.onFiltersChanged?.call(_filters);
+  }
+  
+  void _toggleSector(String sector) {
+    setState(() {
+      if (sector.isEmpty) {
+        // "All" selected - clear all sectors
+        _selectedSectors.clear();
+        _filters['sector'] = '';
+      } else {
+        // Toggle individual sector
+        if (_selectedSectors.contains(sector)) {
+          _selectedSectors.remove(sector);
+        } else {
+          _selectedSectors.add(sector);
+        }
+        // Update filter with comma-separated list
+        _filters['sector'] = _selectedSectors.join(',');
+      }
     });
     widget.onFiltersChanged?.call(_filters);
   }
@@ -222,6 +246,28 @@ class _FilterPanelState extends ConsumerState<FilterPanel> {
   }
   
   Widget _filterChip(String label, String filterKey, String value) {
+    // Special handling for sector chips (multi-select)
+    if (filterKey == 'sector') {
+      final isSelected = value.isEmpty 
+          ? _selectedSectors.isEmpty 
+          : _selectedSectors.contains(value);
+      
+      return FilterChip(
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (selected) {
+          _toggleSector(value);
+        },
+        selectedColor: tone(AppColors.primaryBlue, 0.3),
+        checkmarkColor: Colors.white,
+        labelStyle: TextStyle(
+          color: isSelected ? Colors.white : Colors.white70,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+        ),
+      );
+    }
+    
+    // Standard single-select for other filters
     final isSelected = _filters[filterKey] == value;
     
     return FilterChip(
