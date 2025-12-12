@@ -34,7 +34,6 @@ class _TechnicShellState extends State<TechnicShell> {
     SettingsPage(),
   ];
 
-
   @override
   void initState() {
     super.initState();
@@ -60,11 +59,6 @@ class _TechnicShellState extends State<TechnicShell> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    
-    
-    
-    
     final navBackground = const Color(0xFF0F1C31);  // Dark blue for both modes
 
     return Scaffold(

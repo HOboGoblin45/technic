@@ -463,6 +463,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
 
                       // Quick Actions
                       QuickActions(
+                        onRunScan: _refresh,
                         onConservative: () => _applyProfile('conservative'),
                         onModerate: () => _applyProfile('moderate'),
                         onAggressive: () => _applyProfile('aggressive'),
