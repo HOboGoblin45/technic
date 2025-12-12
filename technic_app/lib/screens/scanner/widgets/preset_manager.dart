@@ -28,7 +28,7 @@ class PresetManager extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: tone(AppColors.darkDeep, 0.98),
+        color: tone(AppColors.darkBackground, 0.98),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
@@ -67,7 +67,7 @@ class PresetManager extends ConsumerWidget {
                 label: const Text('Save Current as Preset'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: BorderSide(color: AppColors.skyBlue),
+                  side: BorderSide(color: AppColors.primaryBlue),
                 ),
               ),
             ),
@@ -134,13 +134,13 @@ class PresetManager extends ConsumerWidget {
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: tone(AppColors.skyBlue, 0.2),
+            color: tone(AppColors.primaryBlue, 0.2),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
             Icons.bookmark,
             size: 20,
-            color: AppColors.skyBlue,
+            color: AppColors.primaryBlue,
           ),
         ),
         title: Text(

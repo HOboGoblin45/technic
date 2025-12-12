@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/copilot_message.dart';
 import '../../providers/app_providers.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_colors.dart'; // Using tone from helpers.dart
 import '../../utils/helpers.dart';
 import '../../utils/mock_data.dart';
 import '../../widgets/info_card.dart';
@@ -40,11 +40,14 @@ class _CopilotPageState extends ConsumerState<CopilotPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final prefill = ref.read(copilotPrefillProvider);
-    if (prefill != null && _controller.text.isEmpty) {
-      _controller.text = prefill;
-      ref.read(copilotPrefillProvider.notifier).state = null;
-    }
+    // Delay provider modification to avoid build-time state changes
+    Future.microtask(() {
+      final prefill = ref.read(copilotPrefillProvider);
+      if (prefill != null && _controller.text.isEmpty) {
+        _controller.text = prefill;
+        ref.read(copilotPrefillProvider.notifier).state = null;
+      }
+    });
   }
 
   Future<void> _sendPrompt([String? prompt]) async {
@@ -110,20 +113,13 @@ class _CopilotPageState extends ConsumerState<CopilotPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            tone(AppColors.skyBlue, 0.12),
-            tone(AppColors.darkDeep, 0.9),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: tone(AppColors.darkCard, 0.5),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: tone(Colors.white, 0.08)),
         boxShadow: [
           BoxShadow(
-            color: tone(Colors.black, 0.35),
-            blurRadius: 18,
+            color: tone(Colors.black, 0.15),
+            blurRadius: 6,
             offset: const Offset(0, 12),
           ),
         ],
@@ -287,7 +283,7 @@ class _CopilotPageState extends ConsumerState<CopilotPage>
                               '${copilotContext.icsTier != null ? " (${copilotContext.icsTier})" : ""}',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: tone(AppColors.skyBlue, 0.9),
+                                color: tone(AppColors.primaryBlue, 0.9),
                               ),
                             ),
                         ],

@@ -62,7 +62,7 @@ class IdeaCard extends StatelessWidget {
                     child: Sparkline(
                       data: idea.sparkline,
                       positive: idea.sparkline.last > idea.sparkline.first,
-                      color: AppColors.skyBlue,
+                      color: AppColors.primaryBlue,
                     ),
                   ),
               ],
@@ -98,7 +98,7 @@ class IdeaCard extends StatelessWidget {
                       Icon(
                         Icons.auto_graph,
                         size: 14,
-                        color: tone(AppColors.skyBlue, 0.9),
+                        color: tone(AppColors.primaryBlue, 0.9),
                       ),
                       const SizedBox(width: 6),
                       const Text(

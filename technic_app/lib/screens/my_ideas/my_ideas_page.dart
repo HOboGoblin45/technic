@@ -5,7 +5,9 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../providers/app_providers.dart';
+import '../symbol_detail/symbol_detail_page.dart';
 
 class MyIdeasPage extends ConsumerWidget {
   const MyIdeasPage({super.key});
@@ -56,11 +58,12 @@ class MyIdeasPage extends ConsumerWidget {
               tooltip: 'Remove from My Ideas',
             ),
             onTap: () {
-              // TODO: Navigate to symbol detail page when implemented
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Symbol detail for ${item.ticker} coming soon'),
-                  duration: const Duration(seconds: 1),
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SymbolDetailPage(
+                    ticker: item.ticker,
+                  ),
                 ),
               );
             },

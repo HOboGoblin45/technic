@@ -99,7 +99,7 @@ class ScanResultCard extends ConsumerWidget {
                       child: Sparkline(
                         data: result.sparkline,
                         positive: isPositive,
-                        color: AppColors.skyBlue,
+                        color: AppColors.primaryBlue,
                       ),
                     ),
                 ],
@@ -200,14 +200,14 @@ class ScanResultCard extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: tone(AppColors.skyBlue, 0.15),
+        color: tone(AppColors.primaryBlue, 0.15),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tone(AppColors.skyBlue, 0.3)),
+        border: Border.all(color: tone(AppColors.primaryBlue, 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: AppColors.skyBlue),
+          Icon(icon, size: 14, color: AppColors.primaryBlue),
           const SizedBox(width: 4),
           Text(
             '$label: ',

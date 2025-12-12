@@ -68,23 +68,11 @@ class _TechnicShellState extends State<TechnicShell> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
-    final headerGradient = isDark
-        ? const [
-            Color(0xFF0F1C31),
-            Color(0xFF0B1324),
-            Color(0xFF081910),
-          ]
-        : const [
-            Color(0xFFF5F7FB),
-            Color(0xFFE8EDF7),
-            Color(0xFFDDE6F5),
-          ];
     
-    final bodyGradient = isDark
-        ? [AppColors.pineGrove, tone(AppColors.darkDeep, 0.85)]
-        : [Colors.white, tone(AppColors.skyBlue, 0.07)];
     
-    final navBackground = isDark ? tone(AppColors.darkDeep, 0.9) : Colors.white;
+    
+    
+    final navBackground = isDark ? tone(AppColors.darkBackground, 0.9) : Colors.white;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -93,11 +81,8 @@ class _TechnicShellState extends State<TechnicShell> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: headerGradient,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            color: isDark ? AppColors.darkCard : Colors.white,
+            border: Border(bottom: BorderSide(color: isDark ? AppColors.darkBorder : const Color(0xFFE5E7EB))),
           ),
           child: SafeArea(
             child: Row(
@@ -154,32 +139,6 @@ class _TechnicShellState extends State<TechnicShell> {
                   ],
                 ),
                 const Spacer(),
-                
-                // Live indicator
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: tone(Colors.white, 0.08),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: tone(Colors.white, 0.08)),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.circle, size: 10, color: Color(0xFFB6FF3B)),
-                      SizedBox(width: 6),
-                      Text(
-                        'Live',
-                        style: TextStyle(
-                          color: Color(0xFFB6FF3B),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
@@ -188,13 +147,7 @@ class _TechnicShellState extends State<TechnicShell> {
       
       // Body with gradient background
       body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: bodyGradient,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+        color: isDark ? AppColors.darkBackground : const Color(0xFFF9FAFB),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -222,7 +175,7 @@ class _TechnicShellState extends State<TechnicShell> {
         child: NavigationBar(
           selectedIndex: _index,
           backgroundColor: Colors.transparent,
-          indicatorColor: tone(AppColors.skyBlue, 0.18),
+          indicatorColor: tone(AppColors.primaryBlue, 0.18),
           height: 70,
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           onDestinationSelected: (value) {

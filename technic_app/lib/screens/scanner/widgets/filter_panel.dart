@@ -43,7 +43,7 @@ class _FilterPanelState extends ConsumerState<FilterPanel> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: tone(AppColors.darkDeep, 0.98),
+        color: tone(AppColors.darkBackground, 0.98),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
@@ -114,7 +114,7 @@ class _FilterPanelState extends ConsumerState<FilterPanel> {
                   max: 365,
                   divisions: 11,
                   label: '${_filters['lookback_days'] ?? '90'} days',
-                  activeColor: AppColors.skyBlue,
+                  activeColor: AppColors.primaryBlue,
                   onChanged: (value) {
                     _updateFilter('lookback_days', value.round().toString());
                   },
@@ -145,7 +145,7 @@ class _FilterPanelState extends ConsumerState<FilterPanel> {
                   max: 10,
                   divisions: 20,
                   label: _filters['min_tech_rating'] ?? '0',
-                  activeColor: AppColors.skyBlue,
+                  activeColor: AppColors.primaryBlue,
                   onChanged: (value) {
                     _updateFilter('min_tech_rating', value.toStringAsFixed(1));
                   },
@@ -183,7 +183,7 @@ class _FilterPanelState extends ConsumerState<FilterPanel> {
             child: ElevatedButton(
               onPressed: () => Navigator.pop(context, _filters),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.skyBlue,
+                backgroundColor: AppColors.primaryBlue,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -226,7 +226,7 @@ class _FilterPanelState extends ConsumerState<FilterPanel> {
           _updateFilter(filterKey, value);
         }
       },
-      selectedColor: tone(AppColors.skyBlue, 0.3),
+      selectedColor: tone(AppColors.primaryBlue, 0.3),
       checkmarkColor: Colors.white,
       labelStyle: TextStyle(
         color: isSelected ? Colors.white : Colors.white70,

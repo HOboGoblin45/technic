@@ -102,7 +102,7 @@ class QuickActions extends StatelessWidget {
                     Switch(
                       value: advancedMode,
                       onChanged: onAdvancedModeChanged,
-                      activeTrackColor: AppColors.skyBlue,
+                      activeTrackColor: AppColors.primaryBlue,
                     ),
                   ],
                 ),

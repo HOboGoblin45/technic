@@ -1,182 +1,128 @@
-/// technic Brand Colors
+/// Technic App Colors - Institutional Design System
 /// 
-/// Updated color palette emphasizing white-dominant, Apple-inspired sterile cleanliness
-/// with strategic use of sky-blue, imperial blue, and pine grove accents.
+/// Based on best-in-class finance apps (Robinhood, Webull, etc.)
+/// Ultra-minimal, professional, trustworthy color palette.
 library;
 
 import 'package:flutter/material.dart';
 
+/// Technic Color System v2.0
+/// Institutional-grade palette for professional finance app
 class AppColors {
   AppColors._(); // Private constructor to prevent instantiation
 
   // ============================================================================
-  // PRIMARY COLORS (White-Dominant)
+  // DARK THEME (Primary)
   // ============================================================================
   
-  /// Pure white - Main background in light mode
-  static const white = Color(0xFFFFFFFF);
+  /// Background Hierarchy
+  static const Color darkBackground = Color(0xFF0A0E27);      // Deep navy, almost black
+  static const Color darkCard = Color(0xFF141B2D);            // Slate-900 equivalent
+  static const Color darkCardElevated = Color(0xFF1A2332);    // Subtle lift
+  static const Color darkBorder = Color(0xFF2D3748);          // Slate-700, very subtle
   
-  /// Off-white - Cards and elevated surfaces in light mode
-  static const offWhite = Color(0xFFFAFAFA);
-  
-  /// Light gray - Secondary elevated surfaces
-  static const lightGray = Color(0xFFF5F5F5);
-  
-  // ============================================================================
-  // BRAND COLORS (Updated)
-  // ============================================================================
-  
-  /// Soft Pastel Sky-Blue - Primary brand color
-  /// HEX: #B0CAFF
-  /// Usage: Primary actions, highlights, logo, interactive elements
-  static const skyBlue = Color(0xFFB0CAFF);
-  
-  /// Sky-Blue variants
-  static const skyBlueLight = Color(0xFFD4E3FF);  // Hover states, backgrounds
-  static const skyBlueDark = Color(0xFF8BA8E6);   // Pressed states
-  
-  /// Pantone Imperial Blue - Accent/Depth
-  /// HEX: #001D51
-  /// Usage: Text, borders, shadows, depth elements
-  static const imperialBlue = Color(0xFF001D51);
-  
-  /// Imperial Blue variants
-  static const imperialBlueLight = Color(0xFF1A3A6B);  // Secondary text
-  
-  /// Pantone Pine Grove - Accent/Organic
-  /// HEX: #213631
-  /// Usage: Success states, positive indicators, organic elements
-  static const pineGrove = Color(0xFF213631);
-  
-  /// Pine Grove variants
-  static const pineGroveLight = Color(0xFF3A5A4F);  // Hover states
-  static const pineGroveDark = Color(0xFF1A2A26);   // Darker variant
+  /// Text Colors (Dark Theme)
+  static const Color darkTextPrimary = Color(0xFFF7FAFC);     // Slate-50, high contrast
+  static const Color darkTextSecondary = Color(0xFFA0AEC0);   // Slate-400, readable
+  static const Color darkTextTertiary = Color(0xFF718096);    // Slate-500, de-emphasized
   
   // ============================================================================
-  // DARK MODE BACKGROUNDS
+  // LIGHT THEME (Secondary)
   // ============================================================================
   
-  /// Near black - Base background in dark mode
-  static const darkBg = Color(0xFF0A0A0A);
+  /// Background Hierarchy
+  static const Color lightBackground = Color(0xFFF8FAFC);     // Slate-50
+  static const Color lightCard = Color(0xFFFFFFFF);           // Pure white
+  static const Color lightCardElevated = Color(0xFFF1F5F9);   // Slate-100
+  static const Color lightBorder = Color(0xFFE2E8F0);         // Slate-200
   
-  /// Dark gray - Cards in dark mode
-  static const darkCard = Color(0xFF1A1A1A);
-  
-  /// Medium gray - Elevated surfaces in dark mode
-  static const darkElevated = Color(0xFF2A2A2A);
-  
-  /// Deep dark - Legacy support (can be phased out)
-  static const darkDeep = Color(0xFF0A1214);
-  
-  // ============================================================================
-  // SEMANTIC COLORS
-  // ============================================================================
-  
-  /// Success/Positive - Uses Pine Grove
-  static const success = pineGrove;
-  static const successLight = pineGroveLight;
-  
-  /// Warning/Caution - Amber
-  static const warning = Color(0xFFFFB84D);
-  static const warningLight = Color(0xFFFFD699);
-  
-  /// Error/Negative - Coral Red
-  static const error = Color(0xFFFF6B6B);
-  static const errorLight = Color(0xFFFF9999);
-  
-  /// Info/Neutral - Sky Blue
-  static const info = skyBlue;
-  static const infoLight = skyBlueLight;
+  /// Text Colors (Light Theme)
+  static const Color lightTextPrimary = Color(0xFF1E293B);    // Slate-800
+  static const Color lightTextSecondary = Color(0xFF475569);  // Slate-600
+  static const Color lightTextTertiary = Color(0xFF94A3B8);   // Slate-400
   
   // ============================================================================
-  // TEXT COLORS
+  // ACCENT COLORS (Same for both themes)
   // ============================================================================
   
-  /// Light mode text
-  static const textPrimary = imperialBlue;
-  static const textSecondary = imperialBlueLight;
-  static const textTertiary = Color(0xFF6B7280);
-  static const textDisabled = Color(0xFF9CA3AF);
+  /// Primary Actions & Links
+  static const Color primaryBlue = Color(0xFF3B82F6);         // Blue-500, trust/action
   
-  /// Dark mode text
-  static const textPrimaryDark = white;
-  static const textSecondaryDark = skyBlue;
-  static const textTertiaryDark = Color(0xFF9CA3AF);
-  static const textDisabledDark = Color(0xFF6B7280);
+  /// Success & Gains
+  static const Color successGreen = Color(0xFF10B981);        // Emerald-500, NOT neon
   
-  // ============================================================================
-  // UI ELEMENTS
-  // ============================================================================
+  /// Danger & Losses
+  static const Color dangerRed = Color(0xFFEF4444);           // Red-500, losses/stops
   
-  /// Dividers
-  static const dividerLight = Color(0xFFE5E7EB);
-  static const dividerDark = Color(0xFF2A2A2A);
+  /// Warning & Caution
+  static const Color warningAmber = Color(0xFFF59E0B);        // Amber-500, caution
   
-  /// Borders
-  static const borderLight = Color(0xFFD1D5DB);
-  static const borderDark = Color(0xFF3A3A3A);
-  
-  /// Shadows (use with opacity)
-  static const shadowLight = imperialBlue;  // Use with 8-24% opacity
-  static const shadowDark = Color(0xFF000000);  // Use with 30-60% opacity
+  /// Info & Neutral
+  static const Color infoTeal = Color(0xFF14B8A6);            // Teal-500, neutral info
   
   // ============================================================================
-  // TIER BADGE COLORS
+  // CHART COLORS
   // ============================================================================
   
-  /// CORE tier - Gradient start
-  static const tierCoreStart = pineGrove;
-  /// CORE tier - Gradient end
-  static const tierCoreEnd = pineGroveLight;
+  /// Bullish Candle
+  static const Color chartBullish = Color(0xFF10B981);        // Muted green
   
-  /// SATELLITE tier - Gradient start
-  static const tierSatelliteStart = skyBlue;
-  /// SATELLITE tier - Gradient end
-  static const tierSatelliteEnd = skyBlueDark;
+  /// Bearish Candle
+  static const Color chartBearish = Color(0xFFEF4444);        // Muted red
   
-  /// REJECT tier
-  static const tierReject = Color(0xFFF3F4F6);
-  static const tierRejectText = Color(0xFF6B7280);
+  /// Line Chart
+  static const Color chartLine = Color(0xFF3B82F6);           // Primary blue
+  
+  /// Volume Bars
+  static const Color chartVolume = Color(0xFF4B5563);         // Gray-600, subtle
   
   // ============================================================================
-  // LEGACY COLORS (For Migration - Will be removed)
+  // LEGACY COMPATIBILITY (Deprecated - will be removed)
   // ============================================================================
   
-  /// Old brand primary - DEPRECATED, use skyBlue instead
-  @Deprecated('Use skyBlue instead')
-  static const brandPrimaryOld = Color(0xFF99BFFF);
+  @Deprecated('Use primaryBlue instead')
+  static const Color skyBlue = primaryBlue;
   
-  /// Old brand accent - Keep as imperialBlue
-  static const brandAccent = imperialBlue;
+  @Deprecated('Use darkBackground instead')
+  static const Color darkDeep = darkBackground;
   
-  /// Old brand bg - Keep as pineGrove
-  static const brandBg = pineGrove;
+  @Deprecated('Use darkCard instead')
+  static const Color darkBg = darkCard;
   
-  /// Old brand deep - Use darkDeep instead
-  static const brandDeep = darkDeep;
+  @Deprecated('Use darkBorder instead')
+  static const Color darkAccent = darkBorder;
   
   // ============================================================================
   // HELPER METHODS
   // ============================================================================
   
-  /// Create a color with specified opacity
+  /// Apply opacity to a color
   static Color withOpacity(Color color, double opacity) {
-    return color.withAlpha((opacity * 255).clamp(0, 255).round());
+    return color.withOpacity(opacity.clamp(0.0, 1.0));
   }
   
-  /// Get appropriate text color for background
-  static Color textOnBackground(Color background) {
-    final luminance = background.computeLuminance();
-    return luminance > 0.5 ? textPrimary : textPrimaryDark;
+  /// Get appropriate text color based on background
+  static Color getTextColor(Color background, {bool isDark = true}) {
+    if (isDark) {
+      return darkTextPrimary;
+    } else {
+      return lightTextPrimary;
+    }
   }
   
-  /// Get appropriate border color for theme
-  static Color borderColor(bool isDark) {
-    return isDark ? borderDark : borderLight;
+  /// Get appropriate card color based on theme
+  static Color getCardColor({required bool isDark, bool elevated = false}) {
+    if (isDark) {
+      return elevated ? darkCardElevated : darkCard;
+    } else {
+      return elevated ? lightCardElevated : lightCard;
+    }
   }
   
-  /// Get appropriate divider color for theme
-  static Color dividerColor(bool isDark) {
-    return isDark ? dividerDark : dividerLight;
+  /// Get appropriate border color based on theme
+  static Color getBorderColor({required bool isDark}) {
+    return isDark ? darkBorder : lightBorder;
   }
 }
+
+

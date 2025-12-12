@@ -21,16 +21,9 @@ class OnboardingCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            tone(AppColors.skyBlue, 0.15),
-            tone(AppColors.darkDeep, 0.9),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: tone(AppColors.darkCard, 0.5),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: tone(AppColors.skyBlue, 0.3)),
+        border: Border.all(color: tone(AppColors.primaryBlue, 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -39,7 +32,7 @@ class OnboardingCard extends StatelessWidget {
             children: [
               Icon(
                 Icons.waving_hand,
-                color: AppColors.skyBlue,
+                color: AppColors.primaryBlue,
                 size: 24,
               ),
               const SizedBox(width: 12),
@@ -91,7 +84,7 @@ class OnboardingCard extends StatelessWidget {
                 Icon(
                   Icons.lightbulb_outline,
                   size: 16,
-                  color: AppColors.skyBlue,
+                  color: AppColors.primaryBlue,
                 ),
                 const SizedBox(width: 8),
                 const Expanded(
@@ -118,10 +111,10 @@ class OnboardingCard extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: tone(AppColors.skyBlue, 0.2),
+            color: tone(AppColors.primaryBlue, 0.2),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, size: 16, color: AppColors.skyBlue),
+          child: Icon(icon, size: 16, color: AppColors.primaryBlue),
         ),
         const SizedBox(width: 12),
         Expanded(
