@@ -50,6 +50,10 @@ final ValueNotifier<String?> copilotStatus = ValueNotifier<String?>(null);
 final ValueNotifier<ScanResult?> copilotContext = ValueNotifier<ScanResult?>(null);
 final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(false);
 final ValueNotifier<String?> userId = ValueNotifier<String?>(null);
+/// User preference for options:
+/// - "stock_only"
+/// - "stock_plus_options"
+final ValueNotifier<String> optionsMode = ValueNotifier<String>('stock_plus_options');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -557,6 +561,34 @@ class _ScannerPageState extends State<ScannerPage> with AutomaticKeepAliveClient
     });
   }
 
+  Widget _optionsPreferenceRow() {
+    return ValueListenableBuilder<String>(
+      valueListenable: optionsMode,
+      builder: (context, mode, _) {
+        return Row(
+          children: [
+            const Text(
+              'Options',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(width: 12),
+            ChoiceChip(
+              label: const Text('Stocks only'),
+              selected: mode == 'stock_only',
+              onSelected: (_) => optionsMode.value = 'stock_only',
+            ),
+            const SizedBox(width: 8),
+            ChoiceChip(
+              label: const Text('Stocks + options'),
+              selected: mode == 'stock_plus_options',
+              onSelected: (_) => optionsMode.value = 'stock_plus_options',
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -679,6 +711,7 @@ class _ScannerPageState extends State<ScannerPage> with AutomaticKeepAliveClient
       'allow_shorts': _allowShorts.toString(),
       'only_tradeable': _onlyTradeable.toString(),
       'trade_style': _tradeStyle,
+      'options_mode': optionsMode.value,
       if (_selectedSectors.isNotEmpty) 'sectors': _selectedSectors.join(','),
       if (_selectedSubindustries.isNotEmpty) 'subindustries': _selectedSubindustries.join(','),
       if (_industryFilter.trim().isNotEmpty) 'industry': _industryFilter.trim(),
@@ -957,6 +990,13 @@ Future<void> _loadUniverseStats() async {
                   )
                   .toList(),
             ),
+            const SizedBox(height: 12),
+            const Text(
+              'Step 3 – Choose options preference',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            _optionsPreferenceRow(),
             const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -4465,56 +4505,65 @@ Widget _scanResultCard(BuildContext context, ScanResult r, VoidCallback onAnalyz
               children: eventChips,
             ),
           ],
-          if (r.optionStrategies.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  'Options',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white.withValues(alpha: isDark ? 0.9 : 0.7),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (final s in r.optionStrategies.take(3))
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: ChoiceChip(
-                              label: Text(
-                                _shortOptionLabel(s),
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                              selected: false,
-                              onSelected: (_) {
-                                _showOptionPlanBottomSheet(context, r, initialStrategy: s);
-                              },
-                            ),
+          ValueListenableBuilder<String>(
+            valueListenable: optionsMode,
+            builder: (context, mode, _) {
+              if (mode != 'stock_plus_options') return const SizedBox.shrink();
+              if (r.optionStrategies.isEmpty) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(
+                        'Options',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white.withValues(alpha: isDark ? 0.9 : 0.7),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (final s in r.optionStrategies.take(3))
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: ChoiceChip(
+                                    label: Text(
+                                      _shortOptionLabel(s),
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    selected: false,
+                                    onSelected: (_) {
+                                      _showOptionPlanBottomSheet(context, r, initialStrategy: s);
+                                    },
+                                  ),
+                                ),
+                              if (r.optionStrategies.length > 3)
+                                ChoiceChip(
+                                  label: Text(
+                                    '+${r.optionStrategies.length - 3} more',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  selected: false,
+                                  onSelected: (_) {
+                                    _showOptionPlanBottomSheet(context, r);
+                                  },
+                                ),
+                            ],
                           ),
-                        if (r.optionStrategies.length > 3)
-                          ChoiceChip(
-                            label: Text(
-                              '+${r.optionStrategies.length - 3} more',
-                              style: const TextStyle(fontSize: 11),
-                            ),
-                            selected: false,
-                            onSelected: (_) {
-                              _showOptionPlanBottomSheet(context, r);
-                            },
-                          ),
-                      ],
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 10),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -5470,7 +5519,3 @@ class LocalStore {
     );
   }
 }
-
-
-
-

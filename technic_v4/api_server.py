@@ -183,10 +183,12 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
     """
     Run a scan and return a stable, versioned schema.
     """
+    options_mode = req.options_mode or "stock_plus_options"
     cfg = ScanConfig(
         max_symbols=req.max_symbols,
         trade_style=req.trade_style,
         min_tech_rating=req.min_tech_rating,
+        options_mode=options_mode,
     )
     df, status_text = run_scan(cfg)
 

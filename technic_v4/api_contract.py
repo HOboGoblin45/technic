@@ -7,7 +7,7 @@ scoreboard metrics, and regime tags. Responses are versioned and error responses
 from __future__ import annotations
 
 import os
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 
 import pandas as pd
 from pydantic import BaseModel, Field, ConfigDict
@@ -144,6 +144,15 @@ class ScanRequest(BaseModel):
     use_portfolio_optimizer: Optional[bool] = None
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
+    options_mode: Optional[Literal["stock_only", "stock_plus_options"]] = Field(
+        default=None,
+        description=(
+            "User preference for options suggestions. "
+            "'stock_only' suppresses options ideas in the response; "
+            "'stock_plus_options' returns both stock and options plans. "
+            "If omitted, defaults to 'stock_plus_options'."
+        ),
+    )
 
 
 class HealthResponse(BaseModel):
