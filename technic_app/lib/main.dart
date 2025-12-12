@@ -229,10 +229,10 @@ class TechnicApp extends StatelessWidget {
             useMaterial3: true,
           ),
           home: OnboardingFlow(
-            child: TechnicShell(key: _shellKey),
             store: userProfileStore,
             themeNotifier: themeIsDark,
             optionsNotifier: optionsMode,
+            child: TechnicShell(key: _shellKey),
           ),
           debugShowCheckedModeBanner: false,
         );
