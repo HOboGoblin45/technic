@@ -1,6 +1,7 @@
 /// Idea Model
 /// 
 /// Represents a trade idea with rationale, plan, and optional options strategy.
+library;
 
 class Idea {
   final String title;

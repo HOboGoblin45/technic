@@ -2,6 +2,7 @@
 /// 
 /// Represents a market mover (stock with significant price movement)
 /// with delta, note, and sparkline data.
+library;
 
 class MarketMover {
   final String ticker;

@@ -2,6 +2,7 @@
 /// 
 /// Represents a single stock scan result with all associated metrics,
 /// scores, and trade planning information.
+library;
 
 class ScanResult {
   final String ticker;

@@ -2,6 +2,7 @@
 /// 
 /// Handles all HTTP communication with the Technic backend API.
 /// Provides methods for scanning, fetching ideas, copilot interactions, etc.
+library;
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';

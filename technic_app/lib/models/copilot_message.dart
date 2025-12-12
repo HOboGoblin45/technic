@@ -1,6 +1,7 @@
 /// CopilotMessage Model
 /// 
 /// Represents a message in the Copilot chat interface.
+library;
 
 class CopilotMessage {
   final String role;

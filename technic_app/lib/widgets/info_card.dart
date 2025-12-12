@@ -2,6 +2,7 @@
 /// 
 /// A reusable card widget for displaying information sections throughout the app.
 /// Provides consistent styling with title, subtitle, and child content.
+library;
 
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';

@@ -2,6 +2,7 @@
 /// 
 /// Updated color palette emphasizing white-dominant, Apple-inspired sterile cleanliness
 /// with strategic use of sky-blue, imperial blue, and pine grove accents.
+library;
 
 import 'package:flutter/material.dart';
 

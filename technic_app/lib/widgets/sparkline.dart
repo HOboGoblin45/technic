@@ -2,6 +2,7 @@
 /// 
 /// A simple line chart widget for displaying price trends.
 /// Used throughout the app for visualizing stock price movements.
+library;
 
 import 'dart:math' as math;
 import 'package:flutter/material.dart';

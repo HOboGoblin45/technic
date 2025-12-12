@@ -2,6 +2,7 @@
 /// 
 /// A consistent header widget used throughout the app to separate sections.
 /// Includes title, optional caption, and optional trailing widget.
+library;
 
 import 'package:flutter/material.dart';
 

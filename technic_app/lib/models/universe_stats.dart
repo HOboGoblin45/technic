@@ -1,6 +1,7 @@
 /// UniverseStats Model
 /// 
 /// Statistics about the trading universe (sectors, subindustries, total symbols).
+library;
 
 class UniverseStats {
   final int total;

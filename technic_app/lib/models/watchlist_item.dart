@@ -1,6 +1,7 @@
 /// WatchlistItem Model
 /// 
 /// Represents a saved symbol in the user's watchlist.
+library;
 
 class WatchlistItem {
   final String ticker;

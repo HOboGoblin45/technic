@@ -2,6 +2,7 @@
 /// 
 /// An animated badge widget for displaying market movers and status indicators.
 /// Shows a pulsing animation to draw attention to important information.
+library;
 
 import 'package:flutter/material.dart';
 
