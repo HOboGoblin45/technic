@@ -72,7 +72,7 @@ class _TechnicShellState extends State<TechnicShell> {
     
     
     
-    final navBackground = isDark ? tone(AppColors.darkBackground, 0.9) : Colors.white;
+    final navBackground = const Color(0xFF0F1C31);  // Dark blue for both modes
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -81,25 +81,26 @@ class _TechnicShellState extends State<TechnicShell> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: isDark ? AppColors.darkCard : Colors.white,
+            color: const Color(0xFF0F1C31),  // Dark blue for both modes
             border: Border(bottom: BorderSide(color: isDark ? AppColors.darkBorder : const Color(0xFFE5E7EB))),
           ),
           child: SafeArea(
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Logo
                 Container(
                   width: 34,
                   height: 34,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F1B33),
+                    color: AppColors.primaryBlue,  // Light blue background
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF1E3258)),
+                    border: Border.all(color: AppColors.primaryBlue),
                     boxShadow: [
                       BoxShadow(
-                        color: tone(Colors.black, 0.35),
-                        blurRadius: 18,
-                        offset: const Offset(0, 10),
+                        color: tone(Colors.black, 0.15),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
@@ -109,36 +110,22 @@ class _TechnicShellState extends State<TechnicShell> {
                     width: 20,
                     height: 20,
                     colorFilter: const ColorFilter.mode(
-                      Colors.white,
+                      AppColors.darkBackground,  // Dark blue lettering
                       BlendMode.srcIn,
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 
-                // Title and subtitle
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'technic',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    Text(
-                      _titles[_index],
-                      style: TextStyle(
-                        color: tone(Colors.white, 0.7),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                // Title
+                const Text(
+                  'technic',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
                 ),
-                const Spacer(),
               ],
             ),
           ),
