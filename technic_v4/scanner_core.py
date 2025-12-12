@@ -582,6 +582,7 @@ class ScanConfig:
     target_rr: float = 2.0
     trade_style: str = "Short-term swing"
     strategy_profile_name: Optional[str] = None
+    options_mode: str = "stock_plus_options"  # stock_only | stock_plus_options
 
     # Advanced
     allow_shorts: bool = False
@@ -1831,183 +1832,191 @@ def _finalize_results(
 
     # Option picks placeholder (populated below when chains are available)
     results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
-    # Optional: suggest simple option trades for strongest longs
-    try:
-        # Only compute options for the top N names by TechRating to save time
-        opt_max = getattr(settings, "options_max_symbols", 200)
-        opt_max = int(opt_max) if opt_max else 200
-        opt_indices = (
-            results_df.sort_values("TechRating", ascending=False).head(opt_max).index
-            if "TechRating" in results_df.columns
-            else results_df.index
-        )
+    options_mode = getattr(config, "options_mode", "stock_plus_options")
+    if options_mode != "stock_plus_options":
+        logger.info("[options] options_mode=%s -> skipping options strategy computation", options_mode)
+        results_df["OptionTrade"] = ""
+        results_df["OptionTradeText"] = ""
+        results_df["OptionQualityScore"] = np.nan
+        results_df["OptionIVRiskFlag"] = False
+    else:
+        # Optional: suggest simple option trades for strongest longs
+        try:
+            # Only compute options for the top N names by TechRating to save time
+            opt_max = getattr(settings, "options_max_symbols", 200)
+            opt_max = int(opt_max) if opt_max else 200
+            opt_indices = (
+                results_df.sort_values("TechRating", ascending=False).head(opt_max).index
+                if "TechRating" in results_df.columns
+                else results_df.index
+            )
 
-        # Defaults for all rows
-        picks: list = [[] for _ in range(len(results_df))]
-        quality_scores = [np.nan for _ in range(len(results_df))]
-        iv_risk_flags = [False for _ in range(len(results_df))]
-        option_strings = ["No option idea (not evaluated)." for _ in range(len(results_df))]
-        no_picks_syms = []
+            # Defaults for all rows
+            picks: list = [[] for _ in range(len(results_df))]
+            quality_scores = [np.nan for _ in range(len(results_df))]
+            iv_risk_flags = [False for _ in range(len(results_df))]
+            option_strings = ["No option idea (not evaluated)." for _ in range(len(results_df))]
+            no_picks_syms = []
 
-        # Ensure event flags for options context
-        if "has_upcoming_earnings" not in results_df.columns:
-            if "days_to_next_earnings" in results_df.columns:
-                dtn = pd.to_numeric(results_df["days_to_next_earnings"], errors="coerce")
-                results_df["has_upcoming_earnings"] = dtn.notna() & (dtn >= 0)
-                results_df["is_pre_earnings_window"] = dtn.between(0, 7, inclusive="both")
-            else:
-                results_df["has_upcoming_earnings"] = False
-                results_df["is_pre_earnings_window"] = False
-        if "is_post_earnings_window" not in results_df.columns:
-            if "days_since_last_earnings" in results_df.columns:
-                dse = pd.to_numeric(results_df["days_since_last_earnings"], errors="coerce")
-                results_df["is_post_earnings_window"] = dse.between(0, 3, inclusive="both")
-            else:
-                results_df["is_post_earnings_window"] = False
-        if "has_dividend_soon" not in results_df.columns:
-            has_div = False
-            if "dividend_ex_date_within_7d" in results_df.columns:
-                ser = results_df["dividend_ex_date_within_7d"]
-                has_div = ser.astype("boolean").fillna(False)
-            elif "days_to_next_ex_dividend" in results_df.columns:
-                dtd = pd.to_numeric(results_df["days_to_next_ex_dividend"], errors="coerce")
-                has_div = dtd.between(-7, 7, inclusive="both")
-            results_df["has_dividend_soon"] = has_div
-        for idx, row in results_df.loc[opt_indices].iterrows():
-            sig = row.get("Signal")
-            if sig not in {"Strong Long", "Long"}:
-                picks[idx] = []
-                quality_scores[idx] = np.nan
-                iv_risk_flags[idx] = False
-                option_strings[idx] = "No option idea (signal not long)."
-                continue
-            spot = row.get("Close") or row.get("Entry") or row.get("Last")
-            if spot is None or pd.isna(spot):
-                picks[idx] = []
-                quality_scores[idx] = np.nan
-                iv_risk_flags[idx] = False
-                option_strings[idx] = "No option idea (no price)."
-                continue
-            # Skip if too close to earnings
-            days_to_earn = row.get("days_to_next_earnings")
-            if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 3:
-                picks[idx] = []
-                quality_scores[idx] = np.nan
-                iv_risk_flags[idx] = False
-                option_strings[idx] = "No option idea (earnings too close)."
-                continue
-            suggested = suggest_option_trades(str(row.get("Symbol")), float(spot), bullish=True)
-            picks[idx] = suggested or []
-            if suggested:
-                # aggregated quality using top3 sweetness (0.6*max + 0.4*avg_top3)
-                qs = np.nan
-                if isinstance(suggested, list) and suggested:
-                    sweetness_vals = []
-                    for p in suggested:
-                        val = p.get("option_sweetness_score")
-                        if val is not None and not pd.isna(val):
-                            try:
-                                sweetness_vals.append(float(val))
-                            except Exception:
-                                pass
-                    if sweetness_vals:
-                        sweetness_vals = sorted(sweetness_vals, reverse=True)
-                        top3 = sweetness_vals[:3]
-                        max_sw = top3[0]
-                        avg_top3 = sum(top3) / len(top3)
-                        qs = 0.6 * max_sw + 0.4 * avg_top3
-                # risk penalties: high IV and earnings near
-                penalty = 1.0
-                hi_iv = any(bool(p.get("high_iv_flag")) for p in suggested)
-                iv_risk_flags.append(hi_iv or any(bool(p.get("iv_risk_flag")) for p in suggested))
-                if hi_iv:
-                    penalty *= 0.8
-                if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
-                    penalty *= 0.8
-                if bool(row.get("is_pre_earnings_window")) and hi_iv:
-                    penalty *= 0.75  # additional gap risk penalty
-                    # prefer defined-risk spreads only when gap + high IV
-                    filtered = [p for p in suggested if isinstance(p, dict) and "spread" in str(p.get("strategy_type", "")).lower()]
-                    if filtered:
-                        suggested = filtered
-                    else:
-                        suggested = []
-                        picks[-1] = []
-                qs_adj = qs * penalty if not pd.isna(qs) else np.nan
-                quality_scores[idx] = qs_adj
-                # Risk comments to carry with picks
-                risk_msgs = []
-                if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
-                    risk_msgs.append(f"Earnings in {int(days_to_earn)}d; gap risk higher than normal.")
-                if bool(row.get("dividend_ex_date_within_7d")) or bool(row.get("has_dividend_soon")):
-                    risk_msgs.append("Ex-dividend within 7d; near-term pricing may be distorted.")
-                if hi_iv or iv_risk_flags[-1]:
-                    risk_msgs.append("IV elevated; consider defined-risk or smaller size.")
-                risk_comment = "; ".join(risk_msgs)
-                if risk_comment:
-                    for p in suggested:
-                        if isinstance(p, dict):
-                            p["risk_comment"] = risk_comment
-                # Build option text from first pick
-                try:
-                    # Choose best by sweetness
-                    best = max(
-                        suggested,
-                        key=lambda p: p.get("option_sweetness_score") if p.get("option_sweetness_score") is not None else -1,
-                    )
-                    first = best
-                    strike = first.get("strike")
-                    expiry = first.get("expiry")
-                    delta = first.get("delta")
-                    spread_pct = first.get("spread_pct")
-                    iv_val = first.get("iv")
-                    dte = first.get("days_to_exp")
-                    strat = first.get("strategy_type", "option")
-                    sweetness = first.get("option_sweetness_score")
-                    risk_note = ""
+            # Ensure event flags for options context
+            if "has_upcoming_earnings" not in results_df.columns:
+                if "days_to_next_earnings" in results_df.columns:
+                    dtn = pd.to_numeric(results_df["days_to_next_earnings"], errors="coerce")
+                    results_df["has_upcoming_earnings"] = dtn.notna() & (dtn >= 0)
+                    results_df["is_pre_earnings_window"] = dtn.between(0, 7, inclusive="both")
+                else:
+                    results_df["has_upcoming_earnings"] = False
+                    results_df["is_pre_earnings_window"] = False
+            if "is_post_earnings_window" not in results_df.columns:
+                if "days_since_last_earnings" in results_df.columns:
+                    dse = pd.to_numeric(results_df["days_since_last_earnings"], errors="coerce")
+                    results_df["is_post_earnings_window"] = dse.between(0, 3, inclusive="both")
+                else:
+                    results_df["is_post_earnings_window"] = False
+            if "has_dividend_soon" not in results_df.columns:
+                has_div = False
+                if "dividend_ex_date_within_7d" in results_df.columns:
+                    ser = results_df["dividend_ex_date_within_7d"]
+                    has_div = ser.astype("boolean").fillna(False)
+                elif "days_to_next_ex_dividend" in results_df.columns:
+                    dtd = pd.to_numeric(results_df["days_to_next_ex_dividend"], errors="coerce")
+                    has_div = dtd.between(-7, 7, inclusive="both")
+                results_df["has_dividend_soon"] = has_div
+            for idx, row in results_df.loc[opt_indices].iterrows():
+                sig = row.get("Signal")
+                if sig not in {"Strong Long", "Long"}:
+                    picks[idx] = []
+                    quality_scores[idx] = np.nan
+                    iv_risk_flags[idx] = False
+                    option_strings[idx] = "No option idea (signal not long)."
+                    continue
+                spot = row.get("Close") or row.get("Entry") or row.get("Last")
+                if spot is None or pd.isna(spot):
+                    picks[idx] = []
+                    quality_scores[idx] = np.nan
+                    iv_risk_flags[idx] = False
+                    option_strings[idx] = "No option idea (no price)."
+                    continue
+                # Skip if too close to earnings
+                days_to_earn = row.get("days_to_next_earnings")
+                if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 3:
+                    picks[idx] = []
+                    quality_scores[idx] = np.nan
+                    iv_risk_flags[idx] = False
+                    option_strings[idx] = "No option idea (earnings too close)."
+                    continue
+                suggested = suggest_option_trades(str(row.get("Symbol")), float(spot), bullish=True)
+                picks[idx] = suggested or []
+                if suggested:
+                    # aggregated quality using top3 sweetness (0.6*max + 0.4*avg_top3)
+                    qs = np.nan
+                    if isinstance(suggested, list) and suggested:
+                        sweetness_vals = []
+                        for p in suggested:
+                            val = p.get("option_sweetness_score")
+                            if val is not None and not pd.isna(val):
+                                try:
+                                    sweetness_vals.append(float(val))
+                                except Exception:
+                                    pass
+                        if sweetness_vals:
+                            sweetness_vals = sorted(sweetness_vals, reverse=True)
+                            top3 = sweetness_vals[:3]
+                            max_sw = top3[0]
+                            avg_top3 = sum(top3) / len(top3)
+                            qs = 0.6 * max_sw + 0.4 * avg_top3
+                    # risk penalties: high IV and earnings near
+                    penalty = 1.0
+                    hi_iv = any(bool(p.get("high_iv_flag")) for p in suggested)
+                    iv_risk_flags.append(hi_iv or any(bool(p.get("iv_risk_flag")) for p in suggested))
                     if hi_iv:
-                        risk_note = " IV elevated; consider smaller size or spreads."
-                    elif iv_risk_flags[-1]:
-                        risk_note = " IV modestly high; mind gap risk."
+                        penalty *= 0.8
+                    if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
+                        penalty *= 0.8
+                    if bool(row.get("is_pre_earnings_window")) and hi_iv:
+                        penalty *= 0.75  # additional gap risk penalty
+                        # prefer defined-risk spreads only when gap + high IV
+                        filtered = [p for p in suggested if isinstance(p, dict) and "spread" in str(p.get("strategy_type", "")).lower()]
+                        if filtered:
+                            suggested = filtered
+                        else:
+                            suggested = []
+                            picks[-1] = []
+                    qs_adj = qs * penalty if not pd.isna(qs) else np.nan
+                    quality_scores[idx] = qs_adj
+                    # Risk comments to carry with picks
+                    risk_msgs = []
+                    if days_to_earn is not None and not pd.isna(days_to_earn) and days_to_earn <= 7:
+                        risk_msgs.append(f"Earnings in {int(days_to_earn)}d; gap risk higher than normal.")
+                    if bool(row.get("dividend_ex_date_within_7d")) or bool(row.get("has_dividend_soon")):
+                        risk_msgs.append("Ex-dividend within 7d; near-term pricing may be distorted.")
+                    if hi_iv or iv_risk_flags[-1]:
+                        risk_msgs.append("IV elevated; consider defined-risk or smaller size.")
+                    risk_comment = "; ".join(risk_msgs)
                     if risk_comment:
-                        risk_note = (risk_note + " " + risk_comment).strip()
-                    text = " ".join(
-                        [
-                            f"{strat} {strike} @ {expiry} (~{dte} DTE, "
-                            f"Delta={delta:.2f if delta is not None else 'N/A'}, "
-                            f"spread {spread_pct:.2% if spread_pct is not None else 'N/A'}, "
-                            f"sweetness {sweetness:.0f if sweetness is not None else 'N/A'}/100).",
-                            risk_note.strip(),
-                        ]
-                    ).strip()
-                    option_strings[idx] = text
-                except Exception:
-                    option_strings[idx] = ""
-            else:
-                sym_val = row.get("Symbol")
-                if hasattr(sym_val, "iloc"):
+                        for p in suggested:
+                            if isinstance(p, dict):
+                                p["risk_comment"] = risk_comment
+                    # Build option text from first pick
                     try:
-                        sym_val = sym_val.iloc[0]
+                        # Choose best by sweetness
+                        best = max(
+                            suggested,
+                            key=lambda p: p.get("option_sweetness_score") if p.get("option_sweetness_score") is not None else -1,
+                        )
+                        first = best
+                        strike = first.get("strike")
+                        expiry = first.get("expiry")
+                        delta = first.get("delta")
+                        spread_pct = first.get("spread_pct")
+                        iv_val = first.get("iv")
+                        dte = first.get("days_to_exp")
+                        strat = first.get("strategy_type", "option")
+                        sweetness = first.get("option_sweetness_score")
+                        risk_note = ""
+                        if hi_iv:
+                            risk_note = " IV elevated; consider smaller size or spreads."
+                        elif iv_risk_flags[-1]:
+                            risk_note = " IV modestly high; mind gap risk."
+                        if risk_comment:
+                            risk_note = (risk_note + " " + risk_comment).strip()
+                        text = " ".join(
+                            [
+                                f"{strat} {strike} @ {expiry} (~{dte} DTE, "
+                                f"Delta={delta:.2f if delta is not None else 'N/A'}, "
+                                f"spread {spread_pct:.2% if spread_pct is not None else 'N/A'}, "
+                                f"sweetness {sweetness:.0f if sweetness is not None else 'N/A'}/100).",
+                                risk_note.strip(),
+                            ]
+                        ).strip()
+                        option_strings[idx] = text
                     except Exception:
-                        sym_val = str(sym_val)
-                no_picks_syms.append(str(sym_val))
-                quality_scores[idx] = np.nan
-                iv_risk_flags[idx] = False
-                option_strings[idx] = "No option idea (filters failed or earnings too close)."
-        # Structured picks (for UI/API)
-        results_df["OptionPicks"] = picks
-        # Quality / risk flags
-        results_df["OptionQualityScore"] = quality_scores
-        results_df["OptionIVRiskFlag"] = iv_risk_flags
-        # Human-readable string for CSV/UI
-        results_df["OptionTrade"] = option_strings
-        results_df["OptionTradeText"] = option_strings
-        # Inform if symbols had no option ideas
-        if no_picks_syms:
-            unique_syms = list(dict.fromkeys(no_picks_syms))  # preserve order, drop duplicates
-            clean_syms = [s.strip() for s in unique_syms if s and s.strip().lower() != "nan"]
-            syms_str = ", ".join(clean_syms[:10]) + ("..." if len(clean_syms) > 10 else "")
-            logger.info("[options] no option candidates for symbols: %s", syms_str)
+                        option_strings[idx] = ""
+                else:
+                    sym_val = row.get("Symbol")
+                    if hasattr(sym_val, "iloc"):
+                        try:
+                            sym_val = sym_val.iloc[0]
+                        except Exception:
+                            sym_val = str(sym_val)
+                    no_picks_syms.append(str(sym_val))
+                    quality_scores[idx] = np.nan
+                    iv_risk_flags[idx] = False
+                    option_strings[idx] = "No option idea (filters failed or earnings too close)."
+                # Structured picks (for UI/API)
+            results_df["OptionPicks"] = picks
+            # Quality / risk flags
+            results_df["OptionQualityScore"] = quality_scores
+            results_df["OptionIVRiskFlag"] = iv_risk_flags
+            # Human-readable string for CSV/UI
+            results_df["OptionTrade"] = option_strings
+            results_df["OptionTradeText"] = option_strings
+            # Inform if symbols had no option ideas
+            if no_picks_syms:
+                unique_syms = list(dict.fromkeys(no_picks_syms))  # preserve order, drop duplicates
+                clean_syms = [s.strip() for s in unique_syms if s and s.strip().lower() != "nan"]
+                syms_str = ", ".join(clean_syms[:10]) + ("..." if len(clean_syms) > 10 else "")
+                logger.info("[options] no option candidates for symbols: %s", syms_str)
     except Exception:
         results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
         results_df["OptionTrade"] = ""
