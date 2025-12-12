@@ -2,6 +2,7 @@
 /// 
 /// Handles local data persistence using SharedPreferences.
 /// Provides clean interface for saving/loading app state.
+library;
 
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scan_result.dart';
 import '../models/market_mover.dart';
 import '../models/scanner_bundle.dart';
+import '../models/watchlist_item.dart';
 
 /// Saved screen preset
 class SavedScreen {
@@ -268,6 +270,36 @@ class StorageService {
   Future<void> saveOptionsMode(String mode) async {
     final p = await _prefsInstance;
     await p.setString('options_mode', mode);
+  }
+
+  // ============================================================================
+  // WATCHLIST
+  // ============================================================================
+
+  /// Load watchlist items
+  Future<List<WatchlistItem>> loadWatchlist() async {
+    final p = await _prefsInstance;
+    final watchlistJson = p.getString('watchlist');
+    
+    if (watchlistJson == null) return [];
+    
+    try {
+      final list = jsonDecode(watchlistJson) as List;
+      return list
+          .map((e) => WatchlistItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Save watchlist items
+  Future<void> saveWatchlist(List<WatchlistItem> items) async {
+    final p = await _prefsInstance;
+    await p.setString(
+      'watchlist',
+      jsonEncode(items.map((e) => e.toJson()).toList()),
+    );
   }
 
   // ============================================================================

@@ -2,6 +2,7 @@
 /// 
 /// Complete theme configuration for light and dark modes
 /// Following Apple HIG and Material Design 3 principles
+library;
 
 import 'package:flutter/material.dart';
 import 'app_colors.dart';

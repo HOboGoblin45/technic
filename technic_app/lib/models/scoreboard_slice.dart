@@ -1,6 +1,7 @@
 /// ScoreboardSlice Model
 /// 
 /// Represents a performance metric slice for a trading strategy category.
+library;
 
 import 'package:flutter/material.dart';
 
@@ -30,13 +31,27 @@ class ScoreboardSlice {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'label': label,
-        'pnl': pnl,
-        'winRate': winRate,
-        'horizon': horizon,
-        'accent': '#${accent.value.toRadixString(16).padLeft(8, '0').substring(2)}',
-      };
+  Map<String, dynamic> toJson() {
+    // Convert Color to hex string (ARGB format)
+    // Using the recommended approach for Flutter 3.10+
+    final alpha = (accent.a * 255.0).round().clamp(0, 255);
+    final red = (accent.r * 255.0).round().clamp(0, 255);
+    final green = (accent.g * 255.0).round().clamp(0, 255);
+    final blue = (accent.b * 255.0).round().clamp(0, 255);
+    
+    final argb = '${alpha.toRadixString(16).padLeft(2, '0')}'
+        '${red.toRadixString(16).padLeft(2, '0')}'
+        '${green.toRadixString(16).padLeft(2, '0')}'
+        '${blue.toRadixString(16).padLeft(2, '0')}';
+    
+    return {
+      'label': label,
+      'pnl': pnl,
+      'winRate': winRate,
+      'horizon': horizon,
+      'accent': '#${argb.substring(2)}', // Remove alpha for hex color
+    };
+  }
   
   /// Check if PnL is positive
   bool get isPositive => !pnl.startsWith('-');

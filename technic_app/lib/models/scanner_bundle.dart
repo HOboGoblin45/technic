@@ -5,6 +5,7 @@
 /// - Scan results
 /// - Scoreboard slices
 /// - Progress information
+library;
 
 import 'market_mover.dart';
 import 'scan_result.dart';

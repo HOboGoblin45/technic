@@ -2,6 +2,7 @@
 /// 
 /// Central location for all Riverpod providers used throughout the app.
 /// Provides global state management for theme, API, storage, and app state.
+library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -174,9 +175,9 @@ class WatchlistNotifier extends StateNotifier<List<WatchlistItem>> {
   final StorageService _storage;
 
   Future<void> _loadWatchlist() async {
-    // TODO: Implement watchlist loading from storage
-    // For now, start with empty list
-    state = [];
+    // Load watchlist from storage
+    final items = await _storage.loadWatchlist();
+    state = items;
   }
 
   Future<void> add(String ticker, {String? signal, String? note}) async {
@@ -208,7 +209,8 @@ class WatchlistNotifier extends StateNotifier<List<WatchlistItem>> {
   }
 
   Future<void> _saveWatchlist() async {
-    // TODO: Implement watchlist saving to storage
+    // Save watchlist to storage
+    await _storage.saveWatchlist(state);
   }
 }
 

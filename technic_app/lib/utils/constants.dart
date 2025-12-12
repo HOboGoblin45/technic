@@ -1,6 +1,7 @@
 /// App Constants
 /// 
 /// Centralized constants used throughout the application.
+library;
 
 import 'package:flutter/material.dart';
 

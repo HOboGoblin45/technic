@@ -1,6 +1,7 @@
 /// Formatters and Utility Functions
 /// 
 /// Common formatting functions used throughout the app.
+library;
 
 /// Format a field value, returning '?' for null/empty/NaN
 String formatField(String? value) {
