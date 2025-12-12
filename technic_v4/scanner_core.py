@@ -2022,12 +2022,12 @@ def _finalize_results(
                 clean_syms = [s.strip() for s in unique_syms if s and s.strip().lower() != "nan"]
                 syms_str = ", ".join(clean_syms[:10]) + ("..." if len(clean_syms) > 10 else "")
                 logger.info("[options] no option candidates for symbols: %s", syms_str)
-    except Exception:
-        results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
-        results_df["OptionTrade"] = ""
-        results_df["OptionQualityScore"] = np.nan
-        results_df["OptionIVRiskFlag"] = False
-        results_df["OptionTradeText"] = ""
+        except Exception:
+            results_df["OptionPicks"] = [[] for _ in range(len(results_df))]
+            results_df["OptionTrade"] = ""
+            results_df["OptionQualityScore"] = np.nan
+            results_df["OptionIVRiskFlag"] = False
+            results_df["OptionTradeText"] = ""
 
     # Build short rationales per idea (best-effort)
     try:
