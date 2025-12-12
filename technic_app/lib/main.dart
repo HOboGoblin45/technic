@@ -7,6 +7,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'user_profile.dart';
+
 // Brand palette (refined)
 const brandPrimary = Color(0xFF99BFFF);
 const brandAccent = Color(0xFF001D51);
@@ -48,6 +50,7 @@ final GlobalKey<_TechnicShellState> _shellKey = GlobalKey<_TechnicShellState>();
 final ValueNotifier<String?> copilotPrefill = ValueNotifier<String?>(null);
 final ValueNotifier<String?> copilotStatus = ValueNotifier<String?>(null);
 final ValueNotifier<ScanResult?> copilotContext = ValueNotifier<ScanResult?>(null);
+final UserProfileStore userProfileStore = UserProfileStore();
 final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(false);
 final ValueNotifier<String?> userId = ValueNotifier<String?>(null);
 /// User preference for options:
@@ -57,6 +60,10 @@ final ValueNotifier<String> optionsMode = ValueNotifier<String>('stock_plus_opti
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await userProfileStore.load();
+  final profile = userProfileStore.current.value;
+  themeIsDark.value = profile.themeMode == 'dark';
+  optionsMode.value = profile.optionsMode;
   userId.value = await LocalStore.loadUser();
   runApp(const TechnicApp());
 }
@@ -515,6 +522,41 @@ class _ScannerPageState extends State<ScannerPage> with AutomaticKeepAliveClient
   bool _randomizeSingleSector = false;
   final FocusNode _searchFocus = FocusNode();
 
+  String _uiRiskFromProfile(String value) {
+    switch (value.toLowerCase()) {
+      case 'conservative':
+        return 'Conservative';
+      case 'aggressive':
+        return 'Aggressive';
+      default:
+        return 'Balanced';
+    }
+  }
+
+  String _riskProfileKey() => _riskProfile.toLowerCase();
+
+  String _uiHorizonFromProfile(String value) {
+    switch (value.toLowerCase()) {
+      case 'short_term':
+        return 'Short-term';
+      case 'position':
+        return 'Position';
+      default:
+        return 'Swing';
+    }
+  }
+
+  String _horizonProfileKey() {
+    switch (_timeHorizon) {
+      case 'Short-term':
+        return 'short_term';
+      case 'Position':
+        return 'position';
+      default:
+        return 'swing';
+    }
+  }
+
   void _applyBasicProfile() {
     // Map risk profile + time horizon to underlying scan parameters.
     // Risk profile: conservative = tighter filters, aggressive = wider net.
@@ -559,6 +601,14 @@ class _ScannerPageState extends State<ScannerPage> with AutomaticKeepAliveClient
       final cap = _capForSelection();
       if (_maxSymbols > cap) _maxSymbols = cap;
     });
+    // Persist the user's choices.
+    final profile = userProfileStore.current.value;
+    userProfileStore.save(
+      profile.copyWith(
+        riskProfile: _riskProfileKey(),
+        timeHorizon: _horizonProfileKey(),
+      ),
+    );
   }
 
   Widget _optionsPreferenceRow() {
@@ -567,26 +617,38 @@ class _ScannerPageState extends State<ScannerPage> with AutomaticKeepAliveClient
       builder: (context, mode, _) {
         return Row(
           children: [
-            const Text(
-              'Options',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(width: 12),
-            ChoiceChip(
-              label: const Text('Stocks only'),
-              selected: mode == 'stock_only',
-              onSelected: (_) => optionsMode.value = 'stock_only',
-            ),
-            const SizedBox(width: 8),
-            ChoiceChip(
-              label: const Text('Stocks + options'),
-              selected: mode == 'stock_plus_options',
-              onSelected: (_) => optionsMode.value = 'stock_plus_options',
-            ),
-          ],
-        );
-      },
-    );
+          const Text(
+            'Options',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 12),
+          ChoiceChip(
+            label: const Text('Stocks only'),
+            selected: mode == 'stock_only',
+            onSelected: (_) {
+              optionsMode.value = 'stock_only';
+              final profile = userProfileStore.current.value;
+              userProfileStore.save(
+                profile.copyWith(optionsMode: 'stock_only'),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+          ChoiceChip(
+            label: const Text('Stocks + options'),
+            selected: mode == 'stock_plus_options',
+            onSelected: (_) {
+              optionsMode.value = 'stock_plus_options';
+              final profile = userProfileStore.current.value;
+              userProfileStore.save(
+                profile.copyWith(optionsMode: 'stock_plus_options'),
+              );
+            },
+          ),
+        ],
+      );
+    },
+  );
   }
 
   @override
@@ -595,6 +657,9 @@ class _ScannerPageState extends State<ScannerPage> with AutomaticKeepAliveClient
   @override
   void initState() {
     super.initState();
+    final profile = userProfileStore.current.value;
+    _riskProfile = _uiRiskFromProfile(profile.riskProfile);
+    _timeHorizon = _uiHorizonFromProfile(profile.timeHorizon);
     // Start with cached/notifier data; only run when user taps Run
     _bundleFuture = Future.value(
       ScannerBundle(
@@ -2791,6 +2856,10 @@ class SettingsPage extends StatelessWidget {
                     value: themeIsDark.value,
                     onChanged: (v) {
                       themeIsDark.value = v;
+                      final profile = userProfileStore.current.value;
+                      userProfileStore.save(
+                        profile.copyWith(themeMode: v ? 'dark' : 'light'),
+                      );
                     },
                     thumbColor: WidgetStatePropertyAll(brandPrimary),
                     trackColor: WidgetStatePropertyAll(tone(brandPrimary, 0.3)),
