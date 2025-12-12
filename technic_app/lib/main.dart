@@ -3094,7 +3094,7 @@ class OptionStrategy {
   });
 
   factory OptionStrategy.fromJson(Map<String, dynamic> json) {
-    double? _dbl(dynamic v) => v == null ? null : (v as num?)?.toDouble();
+    double? toDbl(dynamic v) => v == null ? null : (v as num?)?.toDouble();
     return OptionStrategy(
       id: (json['id'] ?? json['strategy_id'] ?? json['strategyId'] ?? '').toString(),
       label: (json['label'] ?? json['name'] ?? 'Option strategy').toString(),
@@ -3103,9 +3103,9 @@ class OptionStrategy {
       definedRisk: json['defined_risk'] == true || json['definedRisk'] == true,
       description: json['description']?.toString(),
       expiry: json['expiry']?.toString() ?? json['expiration']?.toString(),
-      maxProfit: _dbl(json['max_profit']),
-      maxLoss: _dbl(json['max_loss']),
-      probabilityITM: _dbl(json['prob_itm'] ?? json['probability_itm']),
+      maxProfit: toDbl(json['max_profit']),
+      maxLoss: toDbl(json['max_loss']),
+      probabilityITM: toDbl(json['prob_itm'] ?? json['probability_itm']),
     );
   }
 
@@ -4427,7 +4427,7 @@ Widget _scanResultCard(BuildContext context, ScanResult r, VoidCallback onAnalyz
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${tierLabel}${ics != null ? ' • ${ics.toStringAsFixed(0)}/100' : ''}',
+                    '$tierLabel${ics != null ? ' · ${ics.toStringAsFixed(0)}/100' : ''}',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       color: isDark ? Colors.white : Colors.black87,
@@ -4474,7 +4474,7 @@ Widget _scanResultCard(BuildContext context, ScanResult r, VoidCallback onAnalyz
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white.withOpacity(isDark ? 0.9 : 0.7),
+                    color: Colors.white.withValues(alpha: isDark ? 0.9 : 0.7),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -4650,7 +4650,7 @@ void _showOptionPlanBottomSheet(
                             result.signal,
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.white70.withOpacity(0.8),
+                              color: Colors.white70.withValues(alpha: 0.8),
                             ),
                           ),
                         ],
@@ -4697,8 +4697,8 @@ Widget _buildOptionStrategyTile(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: accent.withOpacity(0.4)),
-      color: Theme.of(context).cardColor.withOpacity(0.95),
+      border: Border.all(color: accent.withValues(alpha: 0.4)),
+      color: Theme.of(context).cardColor.withValues(alpha: 0.95),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4720,7 +4720,7 @@ Widget _buildOptionStrategyTile(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
-                  color: accent.withOpacity(0.18),
+                  color: accent.withValues(alpha: 0.18),
                 ),
                 child: const Text(
                   'Defined risk',
@@ -4756,7 +4756,7 @@ Widget _buildOptionStrategyTile(
           'Note: This is an example options structure. Position sizing and suitability depend on your risk tolerance and account rules.',
           style: TextStyle(
             fontSize: 11,
-            color: Colors.white70.withOpacity(0.8),
+            color: Colors.white70.withValues(alpha: 0.8),
           ),
         ),
       ],
@@ -5470,3 +5470,7 @@ class LocalStore {
     );
   }
 }
+
+
+
+
