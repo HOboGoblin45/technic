@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'onboarding.dart';
 import 'user_profile.dart';
+import 'watchlist_store.dart';
 
 // Brand palette (refined)
 const brandPrimary = Color(0xFF99BFFF);
@@ -52,6 +53,7 @@ final ValueNotifier<String?> copilotPrefill = ValueNotifier<String?>(null);
 final ValueNotifier<String?> copilotStatus = ValueNotifier<String?>(null);
 final ValueNotifier<ScanResult?> copilotContext = ValueNotifier<ScanResult?>(null);
 final UserProfileStore userProfileStore = UserProfileStore();
+final WatchlistStore watchlistStore = WatchlistStore();
 final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(false);
 final ValueNotifier<String?> userId = ValueNotifier<String?>(null);
 /// User preference for options:
@@ -62,6 +64,7 @@ final ValueNotifier<String> optionsMode = ValueNotifier<String>('stock_plus_opti
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await userProfileStore.load();
+  await watchlistStore.load();
   final profile = userProfileStore.current.value;
   themeIsDark.value = profile.themeMode == 'dark';
   optionsMode.value = profile.optionsMode;
