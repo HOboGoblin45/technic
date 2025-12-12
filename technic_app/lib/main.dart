@@ -1213,7 +1213,10 @@ Future<void> _loadUniverseStats() async {
         ? 'Explain the ${r.signal.toLowerCase()} setup in ${r.ticker} and compare the stock trade to the main options strategy, focusing on defined-risk structures for a ${r.profileLabel ?? "balanced"} profile.'
         : 'Explain the ${r.signal.toLowerCase()} setup in ${r.ticker} and outline an example stock trade using today\'s Technic scan metrics.';
     try {
-      final reply = await technicApi.sendCopilot(prompt);
+      final reply = await technicApi.sendCopilot(
+        prompt,
+        symbol: idea.ticker,
+      );
       if (!mounted) return;
       await showModalBottomSheet(
         context: context,
@@ -2187,7 +2190,10 @@ class _IdeasPageState extends State<IdeasPage> with AutomaticKeepAliveClientMixi
           "Option idea: ${idea.option?["contract_type"]} ${idea.option?["strike"]} exp ${idea.option?["expiration"]}, delta ${idea.option?["delta"]}.");
     }
     try {
-      final reply = await technicApi.sendCopilot(prompt.toString());
+      final reply = await technicApi.sendCopilot(
+        prompt.toString(),
+        symbol: idea.ticker,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(reply.body, maxLines: 4, overflow: TextOverflow.ellipsis)),
@@ -2244,7 +2250,10 @@ class _CopilotPageState extends State<CopilotPage> with AutomaticKeepAliveClient
     });
 
     try {
-      final reply = await technicApi.sendCopilot(text);
+      final reply = await technicApi.sendCopilot(
+        text,
+        symbol: copilotContext.value?.ticker,
+      );
       if (!mounted) return;
       setState(() {
         _messages.add(reply);
@@ -3656,11 +3665,15 @@ class TechnicApi {
     );
   }
 
-  Future<CopilotMessage> sendCopilot(String prompt) async {
+  Future<CopilotMessage> sendCopilot(String prompt, {String? symbol}) async {
     final res = await _client.post(
       _config.copilotUri(),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'prompt': prompt}),
+      body: jsonEncode({
+        'question': prompt,
+        'symbol': symbol,
+        'options_mode': optionsMode.value,
+      }),
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final decoded = _decode(res.body);
