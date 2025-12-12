@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/scan_result.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_colors.dart'; // Using tone from helpers.dart
 import '../../utils/helpers.dart';
 import '../../widgets/sparkline.dart';
 import '../../widgets/section_header.dart';
@@ -100,14 +100,14 @@ class SymbolDetailPage extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: tone(AppColors.skyBlue, 0.2),
+                  color: tone(AppColors.primaryBlue, 0.2),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   result.signal,
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: AppColors.skyBlue,
+                    color: AppColors.primaryBlue,
                   ),
                 ),
               ),
@@ -254,7 +254,7 @@ class SymbolDetailPage extends ConsumerWidget {
           label: const Text('Ask Copilot'),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            backgroundColor: AppColors.skyBlue,
+            backgroundColor: AppColors.primaryBlue,
           ),
         ),
         const SizedBox(height: 12),

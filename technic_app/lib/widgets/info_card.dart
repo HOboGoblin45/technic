@@ -34,7 +34,7 @@ class InfoCard extends StatelessWidget {
 
     final effectiveBackgroundColor = backgroundColor ??
         (isDark
-            ? AppColors.darkDeep.withValues(alpha: 0.82)
+            ? AppColors.darkBackground.withValues(alpha: 0.82)
             : Colors.white);
 
     final effectiveBorderColor = borderColor ??

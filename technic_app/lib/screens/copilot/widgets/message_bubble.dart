@@ -32,7 +32,7 @@ class MessageBubble extends StatelessWidget {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: tone(AppColors.skyBlue, 0.15),
+                color: tone(AppColors.primaryBlue, 0.15),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(
@@ -48,12 +48,12 @@ class MessageBubble extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: isUser
-                    ? tone(AppColors.skyBlue, 0.15)
+                    ? tone(AppColors.primaryBlue, 0.15)
                     : tone(Colors.white, 0.04),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isUser
-                      ? tone(AppColors.skyBlue, 0.3)
+                      ? tone(AppColors.primaryBlue, 0.3)
                       : tone(Colors.white, 0.08),
                 ),
               ),

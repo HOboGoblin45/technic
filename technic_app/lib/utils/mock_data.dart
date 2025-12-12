@@ -9,6 +9,7 @@ import '../models/scan_result.dart';
 import '../models/idea.dart';
 import '../models/scoreboard_slice.dart';
 import '../models/copilot_message.dart';
+import '../theme/app_colors.dart';
 /// Default tickers for search hints and quick access
 const defaultTickers = <String>[
   'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN',
@@ -115,7 +116,7 @@ const scoreboardSlices = <ScoreboardSlice>[
     '+8.5% MTD',
     '58% win',
     'Avg hold 3d',
-    Color(0xFFB6FF3B),
+    AppColors.successGreen,
   ),
   ScoreboardSlice(
     'Long-term',

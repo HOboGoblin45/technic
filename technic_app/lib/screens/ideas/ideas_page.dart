@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/idea.dart';
 import '../../models/scan_result.dart';
 import '../../providers/app_providers.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_colors.dart'; // Using tone from helpers.dart
 import '../../utils/helpers.dart';
 import '../../utils/mock_data.dart';
 import '../../widgets/info_card.dart';
@@ -75,20 +75,13 @@ class _IdeasPageState extends ConsumerState<IdeasPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            tone(AppColors.skyBlue, 0.12),
-            tone(AppColors.darkDeep, 0.9),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: tone(AppColors.darkCard, 0.5),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: tone(Colors.white, 0.08)),
         boxShadow: [
           BoxShadow(
-            color: tone(Colors.black, 0.35),
-            blurRadius: 18,
+            color: tone(Colors.black, 0.15),
+            blurRadius: 6,
             offset: const Offset(0, 12),
           ),
         ],
@@ -165,17 +158,17 @@ class _IdeasPageState extends ConsumerState<IdeasPage>
                   children: [
                     PulseBadge(
                       text: 'Copilot ready',
-                      color: Color(0xFFB6FF3B),
+                      color: AppColors.successGreen,
                     ),
                     SizedBox(width: 8),
                     PulseBadge(
                       text: 'Time horizons mixed',
-                      color: Color(0xFFB6FF3B),
+                      color: AppColors.successGreen,
                     ),
                     SizedBox(width: 8),
                     PulseBadge(
                       text: 'Risk tuned to 1%',
-                      color: Color(0xFFB6FF3B),
+                      color: AppColors.successGreen,
                     ),
                   ],
                 ),

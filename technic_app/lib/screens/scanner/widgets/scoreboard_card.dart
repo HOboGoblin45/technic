@@ -26,14 +26,7 @@ class ScoreboardCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            tone(AppColors.skyBlue, 0.08),
-            tone(AppColors.darkDeep, 0.95),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: tone(AppColors.darkCard, 0.5),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: tone(Colors.white, 0.08)),
       ),
@@ -45,7 +38,7 @@ class ScoreboardCard extends StatelessWidget {
               Icon(
                 Icons.leaderboard,
                 size: 20,
-                color: AppColors.skyBlue,
+                color: AppColors.primaryBlue,
               ),
               const SizedBox(width: 8),
               const Text(

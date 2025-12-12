@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/app_providers.dart';
 import '../../services/local_store.dart';
-import '../../services/storage_service.dart' show SavedScreen;
 import '../../theme/app_colors.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/section_header.dart';
@@ -31,20 +30,13 @@ class SettingsPage extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            tone(AppColors.skyBlue, 0.12),
-            tone(AppColors.darkDeep, 0.9),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: tone(AppColors.darkCard, 0.5),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: tone(Colors.white, 0.08)),
         boxShadow: [
           BoxShadow(
-            color: tone(Colors.black, 0.35),
-            blurRadius: 18,
+            color: tone(Colors.black, 0.15),
+            blurRadius: 6,
             offset: const Offset(0, 12),
           ),
         ],
@@ -181,7 +173,11 @@ class SettingsPage extends ConsumerWidget {
           badge: 'Synced',
           trailing: TextButton.icon(
             onPressed: () {
-              // TODO: Navigate to profile edit page
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Profile editing coming soon'),
+                ),
+              );
             },
             icon: const Icon(Icons.edit_outlined),
             label: const Text('Edit profile'),
@@ -190,17 +186,17 @@ class SettingsPage extends ConsumerWidget {
             children: const [
               PulseBadge(
                 text: 'Advanced view on',
-                color: Color(0xFFB6FF3B),
+                color: AppColors.successGreen,
               ),
               SizedBox(width: 8),
               PulseBadge(
                 text: 'Alerts enabled',
-                color: Color(0xFFB6FF3B),
+                color: AppColors.successGreen,
               ),
               SizedBox(width: 8),
               PulseBadge(
                 text: 'Sessions persist',
-                color: Color(0xFFB6FF3B),
+                color: AppColors.successGreen,
               ),
             ],
           ),
@@ -222,7 +218,7 @@ class SettingsPage extends ConsumerWidget {
                     width: 42,
                     height: 42,
                     decoration: BoxDecoration(
-                      color: tone(AppColors.skyBlue, 0.12),
+                      color: tone(AppColors.primaryBlue, 0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -258,15 +254,15 @@ class SettingsPage extends ConsumerWidget {
                 children: const [
                   PulseBadge(
                     text: 'Dark mode',
-                    color: Color(0xFFB6FF3B),
+                    color: AppColors.successGreen,
                   ),
                   PulseBadge(
                     text: 'Advanced view',
-                    color: Color(0xFFB6FF3B),
+                    color: AppColors.successGreen,
                   ),
                   PulseBadge(
                     text: 'Session memory',
-                    color: Color(0xFFB6FF3B),
+                    color: AppColors.successGreen,
                   ),
                 ],
               ),
@@ -299,11 +295,7 @@ class SettingsPage extends ConsumerWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFB6FF3B), Color(0xFF5EEAD4)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: AppColors.primaryBlue,
                 ),
               ),
               const SizedBox(width: 12),
@@ -324,9 +316,9 @@ class SettingsPage extends ConsumerWidget {
                     onChanged: (v) {
                       ref.read(themeModeProvider.notifier).setDarkMode(v);
                     },
-                    thumbColor: const WidgetStatePropertyAll(AppColors.skyBlue),
+                    thumbColor: const WidgetStatePropertyAll(AppColors.primaryBlue),
                     trackColor: WidgetStatePropertyAll(
-                      tone(AppColors.skyBlue, 0.3),
+                      tone(AppColors.primaryBlue, 0.3),
                     ),
                   ),
                 ],
@@ -377,7 +369,7 @@ class SettingsPage extends ConsumerWidget {
                   color: Colors.white70,
                 ),
                 backgroundColor: tone(
-                  AppColors.skyBlue,
+                  AppColors.primaryBlue,
                   Theme.of(context).brightness == Brightness.dark ? 0.05 : 0.12,
                 ),
               ),
@@ -413,14 +405,32 @@ class SettingsPage extends ConsumerWidget {
                   ActionChip(
                     label: const Text('Mute alerts'),
                     onPressed: () {
-                      // TODO: Implement mute alerts
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Mute alerts feature coming soon'),
+                        ),
+                      );
                     },
                     backgroundColor: tone(Colors.white, 0.05),
                   ),
                   ActionChip(
                     label: const Text('Set refresh to 30s'),
                     onPressed: () {
-                      // TODO: Implement refresh rate change
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Refresh Rate'),
+                          content: const Text(
+                            'Choose refresh rate:\n\n• 30 seconds\n• 1 minute\n• 5 minutes',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Close'),
+                            ),
+                          ],
+                        ),
+                      );
                     },
                     backgroundColor: tone(Colors.white, 0.05),
                   ),
@@ -466,7 +476,7 @@ class SettingsPage extends ConsumerWidget {
             final scanCount = data['scanCount'] as int? ?? 0;
             final streak = data['streakDays'] as int? ?? 0;
             final savedPresets =
-                (data['saved_screens'] as List<SavedScreen>?)?.length ?? 0;
+                (data['saved_screens'] as List?)?.length ?? 0;
             final filters = Map<String, String>.from(data['filters'] as Map);
             final sectors = (filters['sectors'] ?? '')
                 .split(',')
@@ -491,7 +501,7 @@ class SettingsPage extends ConsumerWidget {
                       const SizedBox(width: 8),
                       Chip(
                         label: Text('Streak: $streak d'),
-                        backgroundColor: tone(AppColors.skyBlue, 0.15),
+                        backgroundColor: tone(AppColors.primaryBlue, 0.15),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -537,7 +547,7 @@ class SettingsPage extends ConsumerWidget {
                               : 'Next: 5 scans',
                         ),
                         backgroundColor: scanCount >= 5
-                            ? tone(AppColors.skyBlue, 0.2)
+                            ? tone(AppColors.primaryBlue, 0.2)
                             : tone(Colors.white, 0.05),
                       ),
                       Chip(
@@ -547,7 +557,7 @@ class SettingsPage extends ConsumerWidget {
                               : 'Next: 10 scans',
                         ),
                         backgroundColor: scanCount >= 10
-                            ? tone(AppColors.skyBlue, 0.2)
+                            ? tone(AppColors.primaryBlue, 0.2)
                             : tone(Colors.white, 0.05),
                       ),
                       Chip(
@@ -557,7 +567,7 @@ class SettingsPage extends ConsumerWidget {
                               : 'Keep a 3-day streak',
                         ),
                         backgroundColor: streak >= 3
-                            ? tone(AppColors.skyBlue, 0.2)
+                            ? tone(AppColors.primaryBlue, 0.2)
                             : tone(Colors.white, 0.05),
                       ),
                       Chip(
@@ -567,7 +577,7 @@ class SettingsPage extends ConsumerWidget {
                               : 'Keep a 7-day streak',
                         ),
                         backgroundColor: streak >= 7
-                            ? tone(AppColors.skyBlue, 0.2)
+                            ? tone(AppColors.primaryBlue, 0.2)
                             : tone(Colors.white, 0.05),
                       ),
                       Chip(
@@ -577,7 +587,7 @@ class SettingsPage extends ConsumerWidget {
                               : 'Next: save 3 presets',
                         ),
                         backgroundColor: savedPresets >= 3
-                            ? tone(AppColors.skyBlue, 0.2)
+                            ? tone(AppColors.primaryBlue, 0.2)
                             : tone(Colors.white, 0.05),
                       ),
                     ],

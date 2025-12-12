@@ -12,10 +12,11 @@ import '../../models/market_mover.dart';
 import '../../models/saved_screen.dart';
 import '../../providers/app_providers.dart';
 import '../../services/local_store.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_colors.dart'; // Using tone from helpers.dart
 import '../../utils/helpers.dart';
 import '../../widgets/section_header.dart';
 import 'widgets/widgets.dart';
+import '../symbol_detail/symbol_detail_page.dart';
 
 class ScannerPage extends ConsumerStatefulWidget {
   const ScannerPage({super.key});
@@ -312,7 +313,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: tone(AppColors.skyBlue, 0.2),
+                        color: tone(AppColors.primaryBlue, 0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -389,7 +390,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             CircularProgressIndicator(
-                              color: AppColors.skyBlue,
+                              color: AppColors.primaryBlue,
                             ),
                             const SizedBox(height: 16),
                             const Text(

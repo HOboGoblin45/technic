@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app_shell.dart';
+import 'providers/app_providers.dart';
 import 'services/storage_service.dart';
 import 'theme/app_theme.dart';
 
@@ -66,16 +67,17 @@ class TechnicApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: themeIsDark,
-      builder: (context, isDark, _) {
+    return Consumer(
+      builder: (context, ref, _) {
+        final isDark = ref.watch(themeModeProvider);
+        
         return MaterialApp(
           title: 'Technic',
           debugShowCheckedModeBanner: false,
           
           // Theme configuration
-          theme: AppTheme.lightTheme(),
-          darkTheme: AppTheme.darkTheme(),
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
           themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
           
           // Home
