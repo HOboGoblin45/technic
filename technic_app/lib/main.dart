@@ -227,7 +227,12 @@ class TechnicApp extends StatelessWidget {
             ),
             useMaterial3: true,
           ),
-          home: TechnicShell(key: _shellKey),
+          home: OnboardingFlow(
+            child: TechnicShell(key: _shellKey),
+            store: userProfileStore,
+            themeNotifier: themeIsDark,
+            optionsNotifier: optionsMode,
+          ),
           debugShowCheckedModeBanner: false,
         );
       },
