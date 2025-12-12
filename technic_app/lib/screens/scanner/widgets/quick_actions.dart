@@ -8,6 +8,7 @@ import '../../../theme/app_colors.dart';
 import '../../../utils/helpers.dart';
 
 class QuickActions extends StatelessWidget {
+  final VoidCallback onRunScan;
   final VoidCallback? onConservative;
   final VoidCallback? onModerate;
   final VoidCallback? onAggressive;
@@ -16,6 +17,7 @@ class QuickActions extends StatelessWidget {
   final ValueChanged<bool>? onAdvancedModeChanged;
   
   const QuickActions({
+    required this.onRunScan,
     super.key,
     this.onConservative,
     this.onModerate,
@@ -108,6 +110,30 @@ class QuickActions extends StatelessWidget {
                 ),
             ],
           ),
+          const SizedBox(height: 12),
+          // Run Scan Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onRunScan,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryBlue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.play_arrow, size: 24),
+              label: const Text(
+                'Run Scan',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -119,26 +145,39 @@ class QuickActions extends StatelessWidget {
     Color color,
     VoidCallback? onPressed,
   ) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        side: BorderSide(color: tone(color, 0.5)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: color,
+    // Tooltip messages for each profile
+    String tooltip = '';
+    if (label == 'Conservative') {
+      tooltip = 'Position trading: 7.0+ rating, 180 days lookback';
+    } else if (label == 'Moderate') {
+      tooltip = 'Swing trading: 5.0+ rating, 90 days lookback';
+    } else if (label == 'Aggressive') {
+      tooltip = 'Day trading: 3.0+ rating, 30 days lookback';
+    }
+    
+    return Tooltip(
+      message: tooltip,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          side: BorderSide(color: tone(color, 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

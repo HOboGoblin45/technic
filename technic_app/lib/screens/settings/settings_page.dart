@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/app_providers.dart';
-import '../../services/local_store.dart';
+// import '../../services/local_store.dart'; // Unused
 import '../../theme/app_colors.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/section_header.dart';
@@ -344,291 +344,75 @@ class SettingsPage extends ConsumerWidget {
 
         const SizedBox(height: 8),
 
-        // Display Options
-        InfoCard(
-          title: 'Display options',
-          subtitle: 'Toggle modes and accessibility presets',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              Chip(
-                label: const Text('Dark mode'),
-                avatar: const Icon(
-                  Icons.dark_mode,
-                  size: 16,
-                  color: Colors.white70,
-                ),
-                backgroundColor: tone(Colors.white, 0.05),
-              ),
-              Chip(
-                label: const Text('Light mode'),
-                avatar: const Icon(
-                  Icons.light_mode_outlined,
-                  size: 16,
-                  color: Colors.white70,
-                ),
-                backgroundColor: tone(
-                  AppColors.primaryBlue,
-                  Theme.of(context).brightness == Brightness.dark ? 0.05 : 0.12,
-                ),
-              ),
-              Chip(
-                label: const Text('High contrast'),
-                avatar: const Icon(
-                  Icons.contrast,
-                  size: 16,
-                  color: Colors.white70,
-                ),
-                backgroundColor: tone(Colors.white, 0.05),
-              ),
-            ],
-          ),
-        ),
+        
 
-        // Data & Alerts Section
-        const SectionHeader('Data & alerts', caption: 'Control intensity'),
-        InfoCard(
-          title: 'Notifications',
-          subtitle: 'Goal progress, alerts, and data refresh cadence',
+        // Legal Disclaimer Card
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: tone(AppColors.darkCard, 0.5),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.warningOrange.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const ProfileRow(label: 'Goal tracking', value: 'On'),
-              const ProfileRow(label: 'Scanner refresh', value: 'Every 60s'),
-              const ProfileRow(label: 'Haptics', value: 'Subtle'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
+              Row(
                 children: [
-                  ActionChip(
-                    label: const Text('Mute alerts'),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Mute alerts feature coming soon'),
-                        ),
-                      );
-                    },
-                    backgroundColor: tone(Colors.white, 0.05),
+                  Icon(
+                    Icons.info_outline,
+                    color: AppColors.warningOrange,
+                    size: 24,
                   ),
-                  ActionChip(
-                    label: const Text('Set refresh to 30s'),
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Refresh Rate'),
-                          content: const Text(
-                            'Choose refresh rate:\n\n• 30 seconds\n• 1 minute\n• 5 minutes',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    backgroundColor: tone(Colors.white, 0.05),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Important Disclaimer',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        // Data & Trust Section
-        const InfoCard(
-          title: 'Data & trust',
-          subtitle: 'How scores and keys are handled',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+              const SizedBox(height: 16),
               Text(
-                'Scores: trend, momentum, volatility, and risk signals combined.',
+                'Technic provides educational analysis and quantitative insights for informational purposes only. This app does not provide financial, investment, or trading advice.',
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: tone(Colors.white, 0.8),
+                ),
               ),
-              SizedBox(height: 4),
-              Text('Data sources: Polygon/rest API; Copilot: OpenAI.'),
-              SizedBox(height: 4),
-              Text('Your API keys are stored locally (not uploaded).'),
+              const SizedBox(height: 12),
+              Text(
+                'Past performance does not guarantee future results. Trading and investing involve substantial risk of loss. Always consult with a licensed financial advisor before making investment decisions.',
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: tone(Colors.white, 0.8),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'By using this app, you acknowledge that you understand these risks and agree to use the information provided at your own discretion.',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: tone(Colors.white, 0.7),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
             ],
           ),
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 32),
 
-        // Activity Stats Section
-        FutureBuilder<Map<String, dynamic>?>(
-          future: LocalStore.loadScannerState(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const LinearProgressIndicator(minHeight: 2);
-            }
-
-            final data = snapshot.data;
-            if (data == null) return const SizedBox.shrink();
-
-            final scanCount = data['scanCount'] as int? ?? 0;
-            final streak = data['streakDays'] as int? ?? 0;
-            final savedPresets =
-                (data['saved_screens'] as List?)?.length ?? 0;
-            final filters = Map<String, String>.from(data['filters'] as Map);
-            final sectors = (filters['sectors'] ?? '')
-                .split(',')
-                .where((e) => e.trim().isNotEmpty)
-                .toList();
-            final lastScanStr = data['lastScan'] as String?;
-            final lastScan =
-                lastScanStr != null ? DateTime.tryParse(lastScanStr) : null;
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                InfoCard(
-                  title: 'Your month in technic',
-                  subtitle: 'Activity recap',
-                  child: Row(
-                    children: [
-                      Chip(
-                        label: Text('Scans: $scanCount'),
-                        backgroundColor: tone(Colors.white, 0.05),
-                      ),
-                      const SizedBox(width: 8),
-                      Chip(
-                        label: Text('Streak: $streak d'),
-                        backgroundColor: tone(AppColors.primaryBlue, 0.15),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          sectors.isEmpty
-                              ? 'Top sector: All'
-                              : 'Top sectors: ${sectors.join(', ')}',
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Chip(
-                        label: Text('Presets: $savedPresets'),
-                        backgroundColor: tone(Colors.white, 0.05),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (lastScan != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      'Last scan: ${lastScan.toLocal().toString().split('.').first} • ${DateTime.now().difference(lastScan).inDays}d ago',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                if (lastScan != null) const SizedBox(height: 8),
-                InfoCard(
-                  title: 'Achievements',
-                  subtitle: 'Celebrate streaks and progress',
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      Chip(
-                        label: Text(
-                          scanCount >= 5
-                              ? 'Starter: 5 scans'
-                              : 'Next: 5 scans',
-                        ),
-                        backgroundColor: scanCount >= 5
-                            ? tone(AppColors.primaryBlue, 0.2)
-                            : tone(Colors.white, 0.05),
-                      ),
-                      Chip(
-                        label: Text(
-                          scanCount >= 10
-                              ? 'Builder: 10 scans'
-                              : 'Next: 10 scans',
-                        ),
-                        backgroundColor: scanCount >= 10
-                            ? tone(AppColors.primaryBlue, 0.2)
-                            : tone(Colors.white, 0.05),
-                      ),
-                      Chip(
-                        label: Text(
-                          streak >= 3
-                              ? 'Streak 3 days'
-                              : 'Keep a 3-day streak',
-                        ),
-                        backgroundColor: streak >= 3
-                            ? tone(AppColors.primaryBlue, 0.2)
-                            : tone(Colors.white, 0.05),
-                      ),
-                      Chip(
-                        label: Text(
-                          streak >= 7
-                              ? 'Streak 7 days'
-                              : 'Keep a 7-day streak',
-                        ),
-                        backgroundColor: streak >= 7
-                            ? tone(AppColors.primaryBlue, 0.2)
-                            : tone(Colors.white, 0.05),
-                      ),
-                      Chip(
-                        label: Text(
-                          savedPresets >= 3
-                              ? 'Preset pro: 3 saved'
-                              : 'Next: save 3 presets',
-                        ),
-                        backgroundColor: savedPresets >= 3
-                            ? tone(AppColors.primaryBlue, 0.2)
-                            : tone(Colors.white, 0.05),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-
-        const SizedBox(height: 12),
-
-        // Copilot Status Card
-        InfoCard(
-          title: 'Copilot status',
-          subtitle: copilotStatus == null
-              ? 'Online. Answers will return live.'
-              : 'Offline. Showing cached guidance until service recovers.',
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                child: Text(
-                  copilotStatus ?? 'All systems go.',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: () {
-                  ref.read(copilotPrefillProvider.notifier).state =
-                      'Check Copilot status';
-                  ref.read(currentTabProvider.notifier).setTab(2);
-                },
-                icon: const Icon(Icons.chat_bubble_outline),
-                label: const Text('Open Copilot'),
-              ),
-            ],
-          ),
-        ),
       ],
-    );
+
+      );
   }
 }

@@ -136,7 +136,7 @@ class AppTheme {
       // Chip
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.lightCardElevated,
-        selectedColor: AppColors.primaryBlue.withOpacity(0.1),
+        selectedColor: AppColors.primaryBlue.withValues(alpha: 0.1),
         disabledColor: AppColors.lightBorder,
         labelStyle: const TextStyle(
           color: AppColors.lightTextPrimary,
@@ -369,7 +369,7 @@ class AppTheme {
       // Chip
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.darkCardElevated,
-        selectedColor: AppColors.primaryBlue.withOpacity(0.2),
+        selectedColor: AppColors.primaryBlue.withValues(alpha: 0.2),
         disabledColor: AppColors.darkBorder,
         labelStyle: const TextStyle(
           color: AppColors.darkTextPrimary,
