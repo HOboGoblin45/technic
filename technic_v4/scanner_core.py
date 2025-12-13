@@ -50,6 +50,8 @@ logger = get_logger()
 ProgressCallback = Callable[[str, int, int], None]
 
 # Legacy compatibility for tests/monkeypatch
+# PERFORMANCE: Pro Plus optimization - aggressive caching enabled
+# With 8 GB RAM, we can cache more price data in memory
 def get_stock_history_df(symbol: str, days: int, use_intraday: bool = True, end_date=None):
     return data_engine.get_price_history(symbol, days, freq="intraday" if use_intraday else "daily")
 
@@ -609,7 +611,7 @@ class ScanConfig:
 
 # Loosened to keep scans populated even for thinner names / shorter lookbacks.
 MIN_BARS = 20
-MAX_WORKERS = 10  # limited IO concurrency; can be overridden via settings.max_workers
+MAX_WORKERS = 20  # Optimized for Pro Plus (4 CPU cores)  # limited IO concurrency; can be overridden via settings.max_workers
 MIN_PRICE = 1.0
 MIN_DOLLAR_VOL = 0.0
 

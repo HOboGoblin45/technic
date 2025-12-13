@@ -14,6 +14,10 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 @dataclass
 class Settings:
+    # Pro Plus Performance Optimization
+    PRO_PLUS_OPTIMIZED: bool = True
+    max_workers: int = 20  # 4 CPU cores can handle 20 I/O workers
+    
     # ML / model flags
     # Default ON for ML alpha so the engine behaves like a real quant by default.
     use_ml_alpha: bool = field(default=True)
