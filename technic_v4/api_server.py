@@ -44,6 +44,8 @@ class ScanRequest(BaseModel):
     trade_style: str = "Short-term swing"
     min_tech_rating: float = 0.0
     options_mode: Optional[str] = "stock_plus_options"
+    sectors: Optional[List[str]] = None
+    lookback_days: Optional[int] = None
 
 
 class CopilotRequest(BaseModel):
@@ -191,6 +193,8 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
         trade_style=req.trade_style,
         min_tech_rating=req.min_tech_rating,
         options_mode=options_mode,
+        sectors=req.sectors,
+        lookback_days=req.lookback_days,
     )
     df, status_text = run_scan(cfg)
 
