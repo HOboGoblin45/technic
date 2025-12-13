@@ -6,6 +6,7 @@ library;
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/scan_result.dart';
@@ -49,31 +50,31 @@ class ApiConfig {
       baseUrl: normalizedBase,
       moversPath: const String.fromEnvironment(
         'TECHNIC_API_MOVERS',
-        defaultValue: '/scan',
+        defaultValue: '/v1/scan',
       ),
       scanPath: const String.fromEnvironment(
         'TECHNIC_API_SCANNER',
-        defaultValue: '/scan',
+        defaultValue: '/v1/scan',
       ),
       ideasPath: const String.fromEnvironment(
         'TECHNIC_API_IDEAS',
-        defaultValue: '/scan',
+        defaultValue: '/v1/scan',
       ),
       scoreboardPath: const String.fromEnvironment(
         'TECHNIC_API_SCOREBOARD',
-        defaultValue: '/scan',
+        defaultValue: '/v1/scan',
       ),
       copilotPath: const String.fromEnvironment(
         'TECHNIC_API_COPILOT',
-        defaultValue: '/copilot',
+        defaultValue: '/v1/copilot',
       ),
       universeStatsPath: const String.fromEnvironment(
         'TECHNIC_API_UNIVERSE',
-        defaultValue: '/universe_stats',
+        defaultValue: '/v1/universe_stats',
       ),
       symbolPath: const String.fromEnvironment(
         'TECHNIC_API_SYMBOL',
-        defaultValue: '/symbol',
+        defaultValue: '/v1/symbol',
       ),
     );
   }
@@ -129,21 +130,25 @@ class ApiService {
 
   /// Fetch complete scanner bundle (movers + results + scoreboard)
   /// 
-  /// The FastAPI /scan endpoint returns all three in one response
+  /// The FastAPI /v1/scan endpoint expects POST with JSON body
   Future<ScannerBundle> fetchScannerBundle({
     Map<String, String>? params,
   }) async {
-    final targetUri = params == null
-        ? _config.scanUri()
-        : _config.scanUri().replace(queryParameters: {
-            ..._config.scanUri().queryParameters,
-            ...params,
-          });
-    
     try {
-      final res = await _client.get(
-        targetUri,
-        headers: {'Accept': 'application/json'},
+      // Build request body from params
+      final body = {
+        'max_symbols': int.tryParse(params?['max_symbols'] ?? '25') ?? 25,
+        'trade_style': params?['trade_style'] ?? 'Short-term swing',
+        'min_tech_rating': double.tryParse(params?['min_tech_rating'] ?? '0.0') ?? 0.0,
+      };
+      
+      final res = await _client.post(
+        _config.scanUri(),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
       );
       
       if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -171,7 +176,7 @@ class ApiService {
               idea['meta'] ?? '',
               '',
               idea['plan'] ?? '',
-              const Color(0xFF99BFFF),
+              Color(0xFF99BFFF),
             );
           }).toList();
           
