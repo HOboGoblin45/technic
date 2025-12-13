@@ -573,11 +573,10 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                             result: result,
                             onTap: () {
                               Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => SymbolDetailPage(
-                                    ticker: result.ticker,
-                                    scanResult: result,
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => SymbolDetailPage(
+                                  ticker: result.ticker,
                                   ),
                                 ),
                               );
