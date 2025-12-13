@@ -144,7 +144,11 @@ class ApiService {
       
       // Add sector filter if provided (comma-separated list)
       if (params?['sector'] != null && params!['sector']!.isNotEmpty) {
-        body['sectors'] = params['sector']!.split(',').map((s) => s.trim()).toList();
+        final sectorList = params['sector']!.split(',').map((s) => s.trim()).toList();
+        body['sectors'] = sectorList;
+        debugPrint('[API] Sending sectors: $sectorList');
+      } else {
+        debugPrint('[API] No sectors in params. params: $params');
       }
       
       // Add lookback_days if provided
@@ -156,6 +160,8 @@ class ApiService {
       if (params?['options_mode'] != null) {
         body['options_mode'] = params!['options_mode'];
       }
+      
+      debugPrint('[API] Final request body: $body');
       
       final res = await _client.post(
         _config.scanUri(),
