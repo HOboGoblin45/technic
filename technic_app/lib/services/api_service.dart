@@ -136,11 +136,26 @@ class ApiService {
   }) async {
     try {
       // Build request body from params
-      final body = {
+      final body = <String, dynamic>{
         'max_symbols': int.tryParse(params?['max_symbols'] ?? '6000') ?? 6000,
         'trade_style': params?['trade_style'] ?? 'Short-term swing',
         'min_tech_rating': double.tryParse(params?['min_tech_rating'] ?? '0.0') ?? 0.0,
       };
+      
+      // Add sector filter if provided (comma-separated list)
+      if (params?['sector'] != null && params!['sector']!.isNotEmpty) {
+        body['sectors'] = params['sector']!.split(',').map((s) => s.trim()).toList();
+      }
+      
+      // Add lookback_days if provided
+      if (params?['lookback_days'] != null) {
+        body['lookback_days'] = int.tryParse(params!['lookback_days']!) ?? 90;
+      }
+      
+      // Add options_mode if provided
+      if (params?['options_mode'] != null) {
+        body['options_mode'] = params!['options_mode'];
+      }
       
       final res = await _client.post(
         _config.scanUri(),
