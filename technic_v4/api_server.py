@@ -43,6 +43,7 @@ class ScanRequest(BaseModel):
     max_symbols: int = 25
     trade_style: str = "Short-term swing"
     min_tech_rating: float = 0.0
+    options_mode: Optional[str] = "stock_plus_options"
 
 
 class CopilotRequest(BaseModel):
