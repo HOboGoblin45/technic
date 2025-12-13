@@ -582,6 +582,7 @@ class ScanConfig:
     target_rr: float = 2.0
     trade_style: str = "Short-term swing"
     strategy_profile_name: Optional[str] = None
+    profile: Optional[str] = None  # Risk profile name (conservative/moderate/aggressive)
     options_mode: str = "stock_plus_options"  # stock_only | stock_plus_options
 
     # Advanced
