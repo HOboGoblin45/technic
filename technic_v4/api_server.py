@@ -64,6 +64,10 @@ class ScanResultRow(BaseModel):
     target: Optional[float] = None
     rationale: Optional[str] = None
     optionTrade: Optional[dict] = None
+    merit_score: Optional[float] = None
+    merit_band: Optional[str] = None
+    merit_flags: Optional[str] = None
+    merit_summary: Optional[str] = None
 
 
 class ScanResponse(BaseModel):
@@ -155,6 +159,10 @@ def _format_scan_results(df: pd.DataFrame) -> List[ScanResultRow]:
                 target=_float_or_none(r.get("Target")),
                 rationale=str(r.get("Rationale") or r.get("Explanation") or ""),
                 optionTrade=_maybe_option(r),
+                merit_score=_float_or_none(r.get("MeritScore")),
+                merit_band=str(r.get("MeritBand") or ""),
+                merit_flags=str(r.get("MeritFlags") or ""),
+                merit_summary=str(r.get("MeritSummary") or ""),
             )
         )
     return rows

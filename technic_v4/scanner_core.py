@@ -19,6 +19,7 @@ from technic_v4.engine.regime_engine import classify_regime
 from technic_v4.engine.trade_planner import RiskSettings, plan_trades
 from technic_v4.engine.portfolio_engine import risk_adjusted_rank, diversify_by_sector
 from technic_v4.engine.options_engine import score_options
+from technic_v4.engine.merit_engine import compute_merit
 from technic_v4.engine import ranking_engine
 from technic_v4.engine.options_suggest import suggest_option_trades
 from technic_v4.engine import explainability_engine
@@ -1586,10 +1587,12 @@ def _finalize_results(
         results_df = results_df[results_df["ATR14_pct"] <= 0.50]  # max 50% ATR% (was 20%)
 
     # ---------------------------------------------
-    # Sort strictly by TechRating before diversification
+    # Sort by MERIT Score (primary) then TechRating (secondary)
     # Ensures top-quality setups dominate the top ranks
     # ---------------------------------------------
-    if "TechRating" in results_df.columns:
+    if "MeritScore" in results_df.columns:
+        results_df = results_df.sort_values(["MeritScore", "TechRating"], ascending=False).copy()
+    elif "TechRating" in results_df.columns:
         results_df = results_df.sort_values("TechRating", ascending=False).copy()
     if regime_tags:
         results_df["RegimeTrend"] = regime_tags.get("trend")
@@ -1703,6 +1706,14 @@ def _finalize_results(
             results_df["InstitutionalCoreScore"] = build_institutional_core_score(results_df)
         except Exception:
             logger.warning("[ICS] Failed to compute InstitutionalCoreScore", exc_info=True)
+    
+    # Compute MERIT Score (after ICS/Quality are available)
+    if not results_df.empty:
+        try:
+            results_df = compute_merit(results_df, regime=regime_tags)
+            logger.info("[MERIT] Computed MERIT Score for %d results", len(results_df))
+        except Exception as e:
+            logger.warning("[MERIT] Failed to compute MERIT Score: %s", e, exc_info=True)
 
     # Mark ultra-high-risk names for a separate "Runners" list
     risk_col = "risk_score" if "risk_score" in results_df.columns else None
@@ -1804,7 +1815,14 @@ def _finalize_results(
             return_col="MuTotal",
             vol_col=vol_col or "TechRating",
         )
-        sort_col = "risk_score" if "risk_score" in main_df.columns else "TechRating"
+        # Use MeritScore for diversification if available, otherwise fall back
+        if "MeritScore" in main_df.columns:
+            sort_col = "MeritScore"
+        elif "risk_score" in main_df.columns:
+            sort_col = "risk_score"
+        else:
+            sort_col = "TechRating"
+        
         main_df = main_df.sort_values(sort_col, ascending=False)
         try:
             main_df = diversify_by_sector(
@@ -2152,6 +2170,24 @@ def _finalize_results(
         logger.info("[OUTPUT] Wrote scan results to: %s", output_path)
     except Exception:
         logger.warning("[OUTPUT ERROR] Failed to write scan results CSV", exc_info=True)
+    
+    # Log top 10 by MERIT Score
+    if "MeritScore" in results_df.columns and len(results_df) > 0:
+        top_10 = results_df.head(10)
+        logger.info("[MERIT] Top 10 by MERIT Score:")
+        for idx, row in top_10.iterrows():
+            logger.info(
+                "  %s: MERIT=%.1f (%s), Tech=%.1f, Alpha=%.2f, WinProb=%.0f%%, Quality=%.0f, ICS=%.0f, Flags=%s",
+                row.get("Symbol", "?"),
+                row.get("MeritScore", 0),
+                row.get("MeritBand", "?"),
+                row.get("TechRating", 0),
+                row.get("AlphaScore", 0),
+                row.get("win_prob_10d", 0) * 100,
+                row.get("QualityScore", 0),
+                row.get("InstitutionalCoreScore", 0),
+                row.get("MeritFlags", "")
+            )
 
     return core_df, status_text
 
