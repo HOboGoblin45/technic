@@ -147,6 +147,7 @@ class ApiService {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
+          'X-API-Key': 'my-dev-technic-key',
         },
         body: jsonEncode(body),
       );
@@ -328,7 +329,10 @@ class ApiService {
   }) async {
     final res = await _client.post(
       _config.copilotUri(),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': 'my-dev-technic-key',
+      },
       body: jsonEncode({
         'question': prompt,
         if (symbol != null) 'symbol': symbol,
