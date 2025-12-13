@@ -43,7 +43,47 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
   void initState() {
     super.initState();
     _loadState();
-    _bundleFuture = _fetchBundle();
+    // Load cached data instead of auto-scanning
+    _bundleFuture = _loadCachedBundle();
+  }
+
+  Future<ScannerBundle> _loadCachedBundle() async {
+    try {
+      final state = await LocalStore.loadScannerState();
+      final scansList = state?['last_scans'] as List?;
+      final lastScans = scansList
+        ?.map((e) => ScanResult.fromJson(e as Map<String, dynamic>))
+        .toList() ?? [];
+      
+      final moversList = state?['last_movers'] as List?;
+      final lastMovers = moversList
+        ?.map((e) => MarketMover.fromJson(e as Map<String, dynamic>))
+        .toList() ?? [];
+
+      if (lastScans.isNotEmpty) {
+        return ScannerBundle(
+          scanResults: lastScans,
+          movers: lastMovers,
+          scoreboard: [],
+          progress: 'Cached results (tap Run Scan for fresh data)',
+        );
+      }
+
+      // If no cache, return empty bundle
+      return ScannerBundle(
+        scanResults: [],
+        movers: [],
+        scoreboard: [],
+        progress: 'Tap Run Scan to start',
+      );
+    } catch (e) {
+      return ScannerBundle(
+        scanResults: [],
+        movers: [],
+        scoreboard: [],
+        progress: 'Tap Run Scan to start',
+      );
+    }
   }
 
   Future<void> _loadState() async {
