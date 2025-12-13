@@ -137,7 +137,7 @@ class ApiService {
     try {
       // Build request body from params
       final body = {
-        'max_symbols': int.tryParse(params?['max_symbols'] ?? '25') ?? 25,
+        'max_symbols': int.tryParse(params?['max_symbols'] ?? '6000') ?? 6000,
         'trade_style': params?['trade_style'] ?? 'Short-term swing',
         'min_tech_rating': double.tryParse(params?['min_tech_rating'] ?? '0.0') ?? 0.0,
       };
