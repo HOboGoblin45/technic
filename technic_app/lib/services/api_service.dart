@@ -402,16 +402,6 @@ class ApiService {
     }
   }
 
-  /// Safe execution with fallback
-  Future<T> _safe<T>(Future<T> Function() task, T fallback) async {
-    try {
-      return await task();
-    } catch (e) {
-      debugPrint('API fallback for $task: $e');
-      return fallback;
-    }
-  }
-
   /// Dispose resources
   void dispose() {
     _client.close();
