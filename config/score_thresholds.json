@@ -1,21 +1,21 @@
 {
   "fwd_ret_5d": {
-    "ics_core_min": 60.0,
-    "ics_satellite_min": 50.0,
-    "win_prob_5d_min": 0.50,
+    "ics_core_min": 0.0,
+    "ics_satellite_min": 0.0,
+    "win_prob_5d_min": 0.0,
     "quality_min": 0.0
   },
   "fwd_ret_10d": {
-    "ics_core_min": 65.0,
-    "ics_satellite_min": 55.0,
-    "win_prob_10d_min": 0.50,
+    "ics_core_min": 0.0,
+    "ics_satellite_min": 0.0,
+    "win_prob_10d_min": 0.0,
     "quality_min": 0.0
   },
   "defaults": {
-    "ics_core_min": 65.0,
-    "ics_satellite_min": 55.0,
-    "win_prob_5d_min": 0.50,
-    "win_prob_10d_min": 0.50,
+    "ics_core_min": 0.0,
+    "ics_satellite_min": 0.0,
+    "win_prob_5d_min": 0.0,
+    "win_prob_10d_min": 0.0,
     "quality_min": 0.0
   }
 }
