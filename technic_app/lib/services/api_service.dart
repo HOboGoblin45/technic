@@ -16,6 +16,7 @@ import '../models/scoreboard_slice.dart';
 import '../models/scanner_bundle.dart';
 import '../models/copilot_message.dart';
 import '../models/universe_stats.dart';
+import '../models/symbol_detail.dart';
 
 /// API Configuration
 class ApiConfig {
@@ -375,6 +376,45 @@ class ApiService {
       }
       
       return CopilotMessage('assistant', decoded.toString());
+    }
+    
+    throw Exception('HTTP ${res.statusCode}: ${res.body}');
+  }
+
+  /// Fetch detailed information for a specific symbol
+  /// 
+  /// Returns comprehensive data including:
+  /// - Price history (candlestick data)
+  /// - MERIT Score and all quantitative metrics
+  /// - Fundamentals
+  /// - Events (earnings, dividends)
+  /// - Factor breakdown
+  Future<SymbolDetail> fetchSymbolDetail(String ticker, {int days = 90}) async {
+    final uri = Uri.parse('${_config.baseUrl}${_config.symbolPath}/$ticker')
+        .replace(queryParameters: {'days': days.toString()});
+    
+    debugPrint('[API] Fetching symbol detail: $uri');
+    
+    final res = await _client.get(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'X-API-Key': 'my-dev-technic-key',
+      },
+    );
+    
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final decoded = _decode(res.body);
+      
+      if (decoded is Map<String, dynamic>) {
+        return SymbolDetail.fromJson(decoded);
+      }
+      
+      throw Exception('Invalid response format for symbol detail');
+    }
+    
+    if (res.statusCode == 404) {
+      throw Exception('Symbol $ticker not found');
     }
     
     throw Exception('HTTP ${res.statusCode}: ${res.body}');
