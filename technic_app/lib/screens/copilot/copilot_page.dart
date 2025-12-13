@@ -10,7 +10,6 @@ import '../../models/copilot_message.dart';
 import '../../providers/app_providers.dart';
 import '../../theme/app_colors.dart'; // Using tone from helpers.dart
 import '../../utils/helpers.dart';
-import '../../utils/mock_data.dart';
 import '../../widgets/info_card.dart';
 import 'widgets/message_bubble.dart';
 
@@ -24,7 +23,7 @@ class CopilotPage extends ConsumerStatefulWidget {
 class _CopilotPageState extends ConsumerState<CopilotPage>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _controller = TextEditingController();
-  final List<CopilotMessage> _messages = List.of(copilotMessages);
+  final List<CopilotMessage> _messages = []; // Start with empty conversation
   bool _sending = false;
   bool _copilotError = false;
 
@@ -225,9 +224,13 @@ class _CopilotPageState extends ConsumerState<CopilotPage>
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: copilotPrompts
-                  .map(
-                    (p) => Padding(
+              children: <String>[
+                'Summarize today\'s scan',
+                'Explain top idea',
+                'Compare momentum leaders',
+              ]
+                  .map<Widget>(
+                    (String p) => Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ActionChip(
                         backgroundColor: tone(Colors.white, 0.04),

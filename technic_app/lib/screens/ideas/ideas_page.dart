@@ -11,7 +11,6 @@ import '../../models/scan_result.dart';
 import '../../providers/app_providers.dart';
 import '../../theme/app_colors.dart'; // Using tone from helpers.dart
 import '../../utils/helpers.dart';
-import '../../utils/mock_data.dart';
 import '../../widgets/info_card.dart';
 import '../../widgets/pulse_badge.dart';
 import 'widgets/idea_card.dart';
@@ -44,7 +43,7 @@ class _IdeasPageState extends ConsumerState<IdeasPage>
   }
 
   Future<List<Idea>> _loadIdeasFromLastScan() async {
-    // Derive ideas from last scan results; if empty, try pulling from API as fallback
+    // Derive ideas from last scan results; if empty, try pulling from API
     final scans = ref.read(lastScanResultsProvider);
     
     if (scans.isNotEmpty) {
@@ -61,7 +60,7 @@ class _IdeasPageState extends ConsumerState<IdeasPage>
       final apiService = ref.read(apiServiceProvider);
       return await apiService.fetchIdeas();
     } catch (_) {
-      return mockIdeas;
+      return []; // Return empty list instead of mock data
     }
   }
 
@@ -136,7 +135,7 @@ class _IdeasPageState extends ConsumerState<IdeasPage>
       child: FutureBuilder<List<Idea>>(
         future: _ideasFuture,
         builder: (context, snapshot) {
-          final ideas = snapshot.data ?? mockIdeas;
+          final ideas = snapshot.data ?? [];
           final loading = snapshot.connectionState == ConnectionState.waiting;
           final hasError = snapshot.hasError;
           final hasIdeas = ideas.isNotEmpty;
