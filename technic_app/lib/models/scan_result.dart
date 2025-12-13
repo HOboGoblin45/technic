@@ -30,6 +30,10 @@ class ScanResult {
   final String? eventFlags;
   final String? fundamentalSnapshot;
   final List<OptionStrategy> optionStrategies;
+  final double? meritScore;
+  final String? meritBand;
+  final String? meritFlags;
+  final String? meritSummary;
 
   const ScanResult(
     this.ticker,
@@ -57,6 +61,10 @@ class ScanResult {
     this.eventFlags,
     this.fundamentalSnapshot,
     this.optionStrategies = const [],
+    this.meritScore,
+    this.meritBand,
+    this.meritFlags,
+    this.meritSummary,
   ]);
 
   factory ScanResult.fromJson(Map<String, dynamic> json) {
@@ -100,6 +108,10 @@ class ScanResult {
       json['EventFlags']?.toString(),
       json['FundamentalSnapshot']?.toString(),
       _parseOptionStrategies(json),
+      dbl(json['merit_score'] ?? json['MeritScore']),
+      json['merit_band']?.toString() ?? json['MeritBand']?.toString(),
+      json['merit_flags']?.toString() ?? json['MeritFlags']?.toString(),
+      json['merit_summary']?.toString() ?? json['MeritSummary']?.toString(),
     );
   }
 
@@ -140,6 +152,10 @@ class ScanResult {
         'EventFlags': eventFlags,
         'FundamentalSnapshot': fundamentalSnapshot,
         'option_strategies': optionStrategies.map((e) => e.toJson()).toList(),
+        'merit_score': meritScore,
+        'merit_band': meritBand,
+        'merit_flags': meritFlags,
+        'merit_summary': meritSummary,
       };
   
   /// Get tier label based on ICS score

@@ -79,6 +79,15 @@ def _role_note(playstyle: str, atr: float, sector: str, sector_over: bool) -> st
 
 
 def build_recommendation(row: pd.Series, sector_overweights: Dict[str, float], sector_cap: float = 0.3) -> str:
+    # Use MERIT Score summary if available (Prompt 3 integration)
+    merit_score = row.get("MeritScore")
+    merit_summary = row.get("MeritSummary")
+    
+    if merit_score is not None and merit_summary:
+        # MERIT-based recommendation (preferred)
+        return str(merit_summary)
+    
+    # Fallback to original logic if MERIT not available
     play = str(row.get("PlayStyle", "Neutral"))
     ics = row.get("InstitutionalCoreScore", np.nan)
     tr = row.get("TechRating", np.nan)
