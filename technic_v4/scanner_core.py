@@ -1559,29 +1559,29 @@ def _finalize_results(
         results_df["SectorAlphaPct"] = np.nan
 
     # ============================
-    # INSTITUTIONAL FILTERS v1
+    # INSTITUTIONAL FILTERS v1 (RELAXED)
     # ============================
     # Compute dollar volume
     if {"Close", "Volume"}.issubset(results_df.columns):
         results_df["DollarVolume"] = results_df["Close"] * results_df["Volume"]
 
-        # Minimum liquidity filter (institution-grade)
-        MIN_DOLLAR_VOL = 5_000_000  # $5M/day minimum
+        # Minimum liquidity filter (relaxed for broader results)
+        MIN_DOLLAR_VOL = 500_000  # $500K/day minimum (was $5M)
         results_df = results_df[results_df["DollarVolume"] >= MIN_DOLLAR_VOL]
 
-    # Price filter ? investors don't want sub-$5 stocks
+    # Price filter (relaxed)
     if "Close" in results_df.columns:
-        results_df = results_df[results_df["Close"] >= 5.00]
+        results_df = results_df[results_df["Close"] >= 1.00]  # $1 minimum (was $5)
 
-    # Market-cap filter (skip microcaps)
+    # Market-cap filter (relaxed - skip only nano-caps)
     if "market_cap" in results_df.columns:
-        results_df = results_df[results_df["market_cap"] >= 300_000_000]  # $300M minimum
+        results_df = results_df[results_df["market_cap"] >= 50_000_000]  # $50M minimum (was $300M)
     else:
-        print("WARNING: market_cap missing ? add it in feature_engine.py")
+        logger.info("[FILTER] market_cap column missing; skipping market cap filter")
 
-    # ATR% ceiling ? block high-volatility junk
-        if "ATR14_pct" in results_df.columns:
-            results_df = results_df[results_df["ATR14_pct"] <= 0.20]  # max 20% ATR%
+    # ATR% ceiling (relaxed)
+    if "ATR14_pct" in results_df.columns:
+        results_df = results_df[results_df["ATR14_pct"] <= 0.50]  # max 50% ATR% (was 20%)
 
     # ---------------------------------------------
     # Sort strictly by TechRating before diversification
