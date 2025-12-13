@@ -41,7 +41,7 @@ class ApiConfig {
   factory ApiConfig.fromEnv() {
     final rawBase = const String.fromEnvironment(
       'TECHNIC_API_BASE',
-      defaultValue: 'http://localhost:8501',
+      defaultValue: 'https://technic-m5vn.onrender.com',
     );
     final normalizedBase = _normalizeBaseForPlatform(rawBase);
     
@@ -49,31 +49,31 @@ class ApiConfig {
       baseUrl: normalizedBase,
       moversPath: const String.fromEnvironment(
         'TECHNIC_API_MOVERS',
-        defaultValue: '/api/movers',
+        defaultValue: '/scan',
       ),
       scanPath: const String.fromEnvironment(
         'TECHNIC_API_SCANNER',
-        defaultValue: '/api/scanner',
+        defaultValue: '/scan',
       ),
       ideasPath: const String.fromEnvironment(
         'TECHNIC_API_IDEAS',
-        defaultValue: '/api/ideas',
+        defaultValue: '/scan',
       ),
       scoreboardPath: const String.fromEnvironment(
         'TECHNIC_API_SCOREBOARD',
-        defaultValue: '/api/scoreboard',
+        defaultValue: '/scan',
       ),
       copilotPath: const String.fromEnvironment(
         'TECHNIC_API_COPILOT',
-        defaultValue: '/api/copilot',
+        defaultValue: '/copilot',
       ),
       universeStatsPath: const String.fromEnvironment(
         'TECHNIC_API_UNIVERSE',
-        defaultValue: '/api/universe_stats',
+        defaultValue: '/universe_stats',
       ),
       symbolPath: const String.fromEnvironment(
         'TECHNIC_API_SYMBOL',
-        defaultValue: '/api/symbol',
+        defaultValue: '/symbol',
       ),
     );
   }
@@ -128,23 +128,73 @@ class ApiService {
   final ApiConfig _config;
 
   /// Fetch complete scanner bundle (movers + results + scoreboard)
+  /// 
+  /// The FastAPI /scan endpoint returns all three in one response
   Future<ScannerBundle> fetchScannerBundle({
     Map<String, String>? params,
   }) async {
-    final results = await Future.wait([
-      _safe(() => fetchMovers(params: params), <MarketMover>[]),
-      _safe(
-        () => fetchScanResults(params: params),
-        const ScanResultsPayload([], null),
-      ),
-      _safe(() => fetchScoreboard(), <ScoreboardSlice>[]),
-    ]);
+    final targetUri = params == null
+        ? _config.scanUri()
+        : _config.scanUri().replace(queryParameters: {
+            ..._config.scanUri().queryParameters,
+            ...params,
+          });
     
-    return ScannerBundle(
-      movers: results[0] as List<MarketMover>,
-      scanResults: (results[1] as ScanResultsPayload).results,
-      scoreboard: results[2] as List<ScoreboardSlice>,
-      progress: (results[1] as ScanResultsPayload).progress,
+    try {
+      final res = await _client.get(
+        targetUri,
+        headers: {'Accept': 'application/json'},
+      );
+      
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final decoded = _decode(res.body);
+        
+        if (decoded is Map<String, dynamic>) {
+          // Parse results
+          final resultsList = decoded['results'] as List<dynamic>? ?? [];
+          final scanResults = resultsList
+              .map((e) => ScanResult.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+          
+          // Parse movers
+          final moversList = decoded['movers'] as List<dynamic>? ?? [];
+          final movers = moversList
+              .map((e) => MarketMover.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+          
+          // Parse ideas (convert to scoreboard slices for now)
+          final ideasList = decoded['ideas'] as List<dynamic>? ?? [];
+          final scoreboard = ideasList.take(3).map((e) {
+            final idea = Map<String, dynamic>.from(e as Map);
+            return ScoreboardSlice(
+              idea['title'] ?? 'Idea',
+              idea['meta'] ?? '',
+              '',
+              idea['plan'] ?? '',
+              const Color(0xFF99BFFF),
+            );
+          }).toList();
+          
+          final progress = decoded['log']?.toString();
+          
+          return ScannerBundle(
+            scanResults: scanResults,
+            movers: movers,
+            scoreboard: scoreboard,
+            progress: progress,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('API error: $e');
+    }
+    
+    // Fallback to empty bundle
+    return const ScannerBundle(
+      scanResults: [],
+      movers: [],
+      scoreboard: [],
+      progress: null,
     );
   }
 
