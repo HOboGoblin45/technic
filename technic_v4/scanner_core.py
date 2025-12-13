@@ -1714,7 +1714,8 @@ def _finalize_results(
         sector_counts = results_df["Sector"].value_counts(normalize=True)
         penalty_map = (1 - sector_counts).to_dict()  # crowded sectors get lower score
         results_df["SectorPenalty"] = results_df["Sector"].map(penalty_map).fillna(1.0)
-        results_df["InstitutionalCoreScore"] *= results_df["SectorPenalty"]
+        if "InstitutionalCoreScore" in results_df.columns:
+            results_df["InstitutionalCoreScore"] *= results_df["SectorPenalty"]
 
     # ------------------------------------------------------------------
     # Classify rows into Investor Core / Satellite / Reject tiers
