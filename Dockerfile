@@ -17,10 +17,14 @@ RUN if [ -f "requirements.txt" ]; then \
 
 COPY technic_v4 ./technic_v4
 COPY models ./models
+COPY start.sh ./start.sh
+
+# Make start.sh executable
+RUN chmod +x start.sh
 
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8502
 
-CMD ["sh", "-c", "uvicorn technic_v4.api_server:app --host 0.0.0.0 --port ${PORT:-8502}"]
+CMD ["bash", "start.sh"]
 
