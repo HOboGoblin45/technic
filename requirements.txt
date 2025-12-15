@@ -23,3 +23,9 @@ lightgbm>=4.6
 pytorch-lightning>=2.6
 torch>=2.9
 torchvision>=0.24
+
+# Week 2 Optimizations - Redis & Async I/O
+redis>=5.0.0
+hiredis>=2.2.0
+aiohttp>=3.9.0
+ray>=2.9.0
