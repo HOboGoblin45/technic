@@ -16,7 +16,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
 class Settings:
     # Pro Plus Performance Optimization
     PRO_PLUS_OPTIMIZED: bool = True
-    max_workers: int = 20  # 4 CPU cores can handle 20 I/O workers
     
     # ML / model flags
     # Default ON for ML alpha so the engine behaves like a real quant by default.
@@ -47,8 +46,9 @@ class Settings:
     # Alpha blending weight (0..1) for factor vs ML alpha
     alpha_weight: float = field(default=0.35)
 
-    # Parallelism control for thread-pool scans
-    max_workers: int = field(default=6)
+    # Parallelism control - WEEK 2 OPTIMIZATION: Increased from 20 to 50
+    # Render Pro Plus (4 CPU, 8GB RAM) can handle 50 I/O-bound workers
+    max_workers: int = field(default=50)
 
     def __post_init__(self) -> None:
         prefix = "TECHNIC_"
