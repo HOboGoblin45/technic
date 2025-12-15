@@ -1,0 +1,17 @@
+# Copy these EXACT values to Render Environment Variables
+# Go to: Render Dashboard → Your Service → Environment → Add Environment Variable
+
+REDIS_URL=redis://default:ytvZ1OVXoGV40enJH3GJYkDLeg2emqad@redis-12579.fcrce190.us-east-1-1.ec2.cloud.redislabs.com:12579/0
+
+REDIS_HOST=redis-12579.fcrce190.us-east-1-1.ec2.cloud.redislabs.com
+
+REDIS_PORT=12579
+
+REDIS_PASSWORD=ytvZ1OVXoGV40enJH3GJYkDLeg2emqad
+
+REDIS_DB=0
+
+TECHNIC_USE_REDIS=true
+
+# After adding these, click "Save Changes" and Render will redeploy
+# Then run: python test_redis_connection.py

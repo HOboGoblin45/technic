@@ -10,15 +10,29 @@
 
 ## 🚀 QUICK START (5 Steps)
 
-### Step 1: Get Your Redis Password
+### Step 1: Get Your Redis Password (EASIEST METHOD)
 
-1. Go to your Redis dashboard (screenshot you shared)
-2. Click the **"Connect"** button (blue button in the screenshot)
+**Option A: From Redis Dashboard (Recommended - No tools needed!)**
+
+1. Go to your Redis dashboard at https://app.redislabs.com
+2. Click on your database: **database-MJ6OLK48**
+3. Look for the **"Configuration"** tab (you're already there in your screenshot!)
+4. Scroll down to find **"Default user password"** or **"Access Control"**
+5. Click the **eye icon** 👁️ to reveal the password
+6. **Copy the password**
+
+**Option B: From "Connect" Button (Also Easy)**
+
+1. In your Redis dashboard, click the blue **"Connect"** button
+2. Select **"Redis CLI, Client, or Insight"** (any option works)
 3. You'll see a connection string like:
    ```
    redis://default:YOUR_PASSWORD_HERE@redis-12579.fcrce190.us-east-1-1.ec2.cloud.redislabs.com:12579
    ```
-4. **Copy the password** (the part after `default:` and before `@`)
+4. **Copy the password** (the part between `default:` and `@`)
+
+**You DON'T need to install Redis Insight, CLI, or Client!**  
+Just copy the password from the dashboard and use it in Render environment variables.
 
 ### Step 2: Add Redis to Render Environment
 
