@@ -13,7 +13,11 @@ class TestRiskSettings:
     
     def test_default_risk_settings(self):
         """Test default risk settings"""
-        settings = RiskSettings()
+        settings = RiskSettings(
+            account_size=10000,
+            risk_pct=0.01,
+            target_rr=2.0
+        )
         
         assert settings.account_size > 0
         assert 0 < settings.risk_pct <= 0.05  # Max 5% risk
@@ -47,7 +51,7 @@ class TestEntryCalculation:
             'ATR_pct_14': [0.02],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)
@@ -74,7 +78,7 @@ class TestEntryCalculation:
             'ATR_pct_14': [0.02],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01, allow_shorts=True)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0, allow_shorts=True)
         
         try:
             result = plan_trades(df, settings)
@@ -106,7 +110,7 @@ class TestStopLossCalculation:
             'ATR14': [3.0],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)
@@ -137,7 +141,7 @@ class TestStopLossCalculation:
             'ATR14': [3.0],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01, allow_shorts=True)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0, allow_shorts=True)
         
         try:
             result = plan_trades(df, settings)
@@ -167,7 +171,7 @@ class TestStopLossCalculation:
             'ATR14': [3.0],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)
@@ -264,7 +268,7 @@ class TestPositionSizing:
             'Volume': [50000000],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)  # $100 risk
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)  # $100 risk
         
         try:
             result = plan_trades(df, settings)
@@ -296,7 +300,7 @@ class TestPositionSizing:
             'Volume': [50000000],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)
@@ -324,7 +328,7 @@ class TestPositionSizing:
             'DollarVolume': [150000000],  # $150M daily
         })
         
-        settings = RiskSettings(account_size=100000, risk_pct=0.02)  # Large account
+        settings = RiskSettings(account_size=100000, risk_pct=0.02, target_rr=2.0)  # Large account
         
         try:
             result = plan_trades(df, settings)
@@ -356,7 +360,7 @@ class TestAvoidSignals:
             'ATR_pct_14': [0.02],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)
@@ -376,7 +380,7 @@ class TestEdgeCases:
     def test_empty_dataframe(self):
         """Test handling of empty DataFrame"""
         df = pd.DataFrame()
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)
@@ -392,7 +396,7 @@ class TestEdgeCases:
             'Close': [150.0],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)
@@ -414,7 +418,7 @@ class TestEdgeCases:
             'ATR14': [25.0],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)
@@ -446,7 +450,7 @@ class TestMultipleSymbols:
             'Volume': [50000000, 1500000, 25000000],
         })
         
-        settings = RiskSettings(account_size=10000, risk_pct=0.01)
+        settings = RiskSettings(account_size=10000, risk_pct=0.01, target_rr=2.0)
         
         try:
             result = plan_trades(df, settings)

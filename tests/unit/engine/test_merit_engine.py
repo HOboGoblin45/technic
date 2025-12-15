@@ -123,12 +123,13 @@ class TestMERITConfig:
         
         # Check that weights sum to reasonable value
         total_weight = (
-            config.tech_weight +
-            config.alpha_weight +
-            config.quality_weight +
-            config.stability_weight +
-            config.liquidity_weight +
-            config.event_weight
+            config.weight_tech +
+            config.weight_alpha +
+            config.weight_win_prob +
+            config.weight_ics +
+            config.weight_quality +
+            config.weight_liquidity +
+            config.weight_vol_safety
         )
         
         assert 0.9 <= total_weight <= 1.1, "Weights should sum to ~1.0"
@@ -136,16 +137,16 @@ class TestMERITConfig:
     def test_custom_config(self):
         """Test that custom config can be created"""
         config = MeritConfig(
-            tech_weight=0.4,
-            alpha_weight=0.3,
-            quality_weight=0.2,
-            stability_weight=0.05,
-            liquidity_weight=0.03,
-            event_weight=0.02,
+            weight_tech=0.4,
+            weight_alpha=0.3,
+            weight_quality=0.2,
+            weight_liquidity=0.05,
+            weight_vol_safety=0.03,
+            weight_ics=0.02,
         )
         
-        assert config.tech_weight == 0.4
-        assert config.alpha_weight == 0.3
+        assert config.weight_tech == 0.4
+        assert config.weight_alpha == 0.3
 
 
 class TestMERITComponents:
