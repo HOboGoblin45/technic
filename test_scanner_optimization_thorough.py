@@ -28,10 +28,10 @@ class TestResults:
         self.tests_run += 1
         if passed:
             self.tests_passed += 1
-            status = "✓ PASS"
+            status = "[PASS]"
         else:
             self.tests_failed += 1
-            status = "✗ FAIL"
+            status = "[FAIL]"
         
         result = {
             "test": test_name,
@@ -530,10 +530,10 @@ def main():
     all_passed = results.summary()
     
     if all_passed:
-        print("\n✅ ALL TESTS PASSED - Scanner optimization is production-ready!")
+        print("\n[SUCCESS] ALL TESTS PASSED - Scanner optimization is production-ready!")
         return 0
     else:
-        print(f"\n⚠️  {results.tests_failed} TEST(S) FAILED - Review results above")
+        print(f"\n[WARNING] {results.tests_failed} TEST(S) FAILED - Review results above")
         return 1
 
 
