@@ -1295,6 +1295,14 @@ def _run_symbol_scans(
     use_ray = getattr(settings, "use_ray", False)
     ray_rows = None
 
+    # Calculate max_workers BEFORE any branching so it's available for logging
+    cfg_workers = getattr(settings, "max_workers", None)
+    try:
+        cfg_workers = int(cfg_workers) if cfg_workers is not None else None
+    except Exception:
+        cfg_workers = None
+    max_workers = MAX_WORKERS if cfg_workers is None else max(MAX_WORKERS, cfg_workers)
+
     start_ts = time.time()
 
     # ---------------- Ray path (optional) ----------------
@@ -1346,12 +1354,6 @@ def _run_symbol_scans(
                 return ("error", symbol, None, urow)
             return ("ok", symbol, latest_local, urow)
 
-        cfg_workers = getattr(settings, "max_workers", None)
-        try:
-            cfg_workers = int(cfg_workers) if cfg_workers is not None else None
-        except Exception:
-            cfg_workers = None
-        max_workers = MAX_WORKERS if cfg_workers is None else max(MAX_WORKERS, cfg_workers)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             for status, symbol, latest, urow in ex.map(_worker, enumerate(universe, start=1)):
                 attempted += 1
