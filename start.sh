@@ -12,4 +12,4 @@ else
 fi
 
 # Start the API server
-exec python -m uvicorn api:app --host 0.0.0.0 --port "$PORT"
+exec python -m uvicorn technic_v4.api_server:app --host 0.0.0.0 --port "$PORT"
