@@ -25,7 +25,7 @@ class Settings:
     use_deep_alpha: bool = field(default=False)
     use_onnx_alpha: bool = field(default=False)
     use_tft_features: bool = field(default=False)
-    use_ray: bool = field(default=False)
+    use_ray: bool = field(default=True)  # ENABLED for Pro Plus optimization
     use_explainability: bool = field(default=False)
     enable_shadow_mode: bool = field(default=False)
 

@@ -239,6 +239,88 @@ def get_price_history(symbol: str, days: int, freq: str = "daily") -> pd.DataFra
         return pd.DataFrame()
 
 
+def get_price_history_batch(symbols: list, days: int, freq: str = "daily") -> dict:
+    """
+    OPTIMIZATION: Batch fetch price history for multiple symbols.
+    This dramatically reduces API calls by fetching data in parallel.
+    
+    Args:
+        symbols: List of stock symbols
+        days: Number of days of history
+        freq: Frequency ("daily" or "intraday")
+    
+    Returns:
+        Dict mapping symbol to DataFrame
+    """
+    if not symbols:
+        return {}
+    
+    logger.info("[BATCH] Fetching %d symbols in batch mode", len(symbols))
+    
+    # Normalize days for better cache reuse
+    normalized_days = _normalize_days_for_cache(days)
+    
+    # Check L1 cache first for all symbols
+    results = {}
+    uncached_symbols = []
+    now = time.time()
+    
+    for symbol in symbols:
+        symbol = symbol.upper().strip()
+        cache_key = f"{symbol}_{normalized_days}_{freq}"
+        
+        if cache_key in _MEMORY_CACHE:
+            cached_data, timestamp = _MEMORY_CACHE[cache_key]
+            if now - timestamp < _CACHE_TTL:
+                results[symbol] = cached_data.tail(days).copy()
+                _CACHE_STATS["hits"] += 1
+                _CACHE_STATS["total"] += 1
+            else:
+                uncached_symbols.append(symbol)
+                _CACHE_STATS["misses"] += 1
+                _CACHE_STATS["total"] += 1
+        else:
+            uncached_symbols.append(symbol)
+            _CACHE_STATS["misses"] += 1
+            _CACHE_STATS["total"] += 1
+    
+    if not uncached_symbols:
+        logger.info("[BATCH] All %d symbols served from cache", len(symbols))
+        return results
+    
+    logger.info("[BATCH] Fetching %d uncached symbols", len(uncached_symbols))
+    
+    # Fetch uncached symbols in parallel using ThreadPoolExecutor
+    import concurrent.futures
+    
+    def fetch_single(sym):
+        """Fetch a single symbol"""
+        try:
+            df = get_price_history(sym, days, freq)
+            if df is not None and not df.empty:
+                return (sym, df)
+        except Exception as e:
+            logger.warning("[BATCH] Failed to fetch %s: %s", sym, e)
+        return (sym, None)
+    
+    # Use thread pool for parallel fetching (I/O-bound)
+    max_workers = min(20, len(uncached_symbols))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(fetch_single, sym) for sym in uncached_symbols]
+        
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                sym, df = future.result()
+                if df is not None and not df.empty:
+                    results[sym] = df
+            except Exception as e:
+                logger.error("[BATCH] Batch fetch error: %s", e)
+    
+    logger.info("[BATCH] Completed: %d/%d symbols fetched", len(results), len(symbols))
+    
+    return results
+
+
 def clear_redis_cache():
     """Clear Redis cache (best-effort)"""
     redis_client = get_redis_client()
@@ -319,6 +401,7 @@ def get_options_chain(symbol: str, as_of_date: Optional[date] = None) -> pd.Data
 
 __all__ = [
     "get_price_history",
+    "get_price_history_batch",
     "get_fundamentals",
     "get_options_chain",
     "get_ticker_details",
