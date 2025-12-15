@@ -1789,26 +1789,7 @@ def _finalize_results(
     if {"Close", "Volume"}.issubset(results_df.columns):
         results_df["DollarVolume"] = results_df["Close"] * results_df["Volume"]
 
-        # Minimum liquidity filter (relaxed for broader results)
-        MIN_DOLLAR_VOL = 500_000  # $500K/day minimum (was $5M)
-
-# Phase 3A: Sector-specific market cap requirements for better pre-screening
-SECTOR_MIN_MARKET_CAP = {
-    'Technology': 200_000_000,           # $200M - Tech needs scale
-    'Healthcare': 200_000_000,           # $200M - Healthcare needs scale
-    'Financial Services': 300_000_000,   # $300M - Financials need larger cap
-    'Consumer Cyclical': 150_000_000,    # $150M
-    'Industrials': 150_000_000,          # $150M
-    'Energy': 200_000_000,               # $200M - Energy needs scale
-    'Real Estate': 100_000_000,          # $100M - REITs can be smaller
-    'Utilities': 500_000_000,            # $500M - Utilities are typically large
-    'Basic Materials': 150_000_000,      # $150M
-    'Communication Services': 200_000_000,  # $200M
-    'Consumer Defensive': 200_000_000,      # $200M
-}
-
     # Minimum liquidity filter (relaxed for broader results)
-    MIN_DOLLAR_VOL = 1_000_000  # $1M/day minimum (Phase 3A)
     if "DollarVolume" in results_df.columns:
         results_df = results_df[results_df["DollarVolume"] >= MIN_DOLLAR_VOL]
 
