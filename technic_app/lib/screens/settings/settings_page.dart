@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/app_providers.dart';
-import '../../services/auth_service.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/section_header.dart';
@@ -387,10 +386,35 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
 
-        // Appearance Section - Theme toggle removed (dark mode only)
-        const SizedBox(height: 8),
+        // Appearance Section
+        const SizedBox(height: 16),
+        const SectionHeader('Appearance', caption: 'Theme and display settings'),
+        InfoCard(
+          title: 'Theme',
+          subtitle: 'Choose your preferred color scheme',
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  ref.watch(themeModeProvider) ? 'Dark Mode' : 'Light Mode',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Switch(
+                value: ref.watch(themeModeProvider),
+                onChanged: (value) {
+                  ref.read(themeModeProvider.notifier).toggleTheme();
+                },
+                activeThumbColor: AppColors.primaryBlue,
+              ),
+            ],
+          ),
+        ),
 
-        
+        const SizedBox(height: 16),
 
         // Legal Disclaimer Card
         Container(

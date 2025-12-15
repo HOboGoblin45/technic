@@ -318,8 +318,8 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                             _acceptedTerms = value ?? false;
                           });
                         },
-                        fillColor: MaterialStateProperty.resolveWith((states) {
-                          if (states.contains(MaterialState.selected)) {
+                        fillColor: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) {
                             return theme.primaryColor;
                           }
                           return Colors.white24;
@@ -359,9 +359,9 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                       padding: const EdgeInsets.all(12),
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
+                        color: Colors.red.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         children: [

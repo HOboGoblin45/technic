@@ -14,6 +14,8 @@ import '../symbol_detail/symbol_detail_page.dart';
 import '../auth/login_page.dart';
 import 'widgets/add_note_dialog.dart';
 import 'widgets/tag_selector.dart';
+import 'widgets/add_alert_dialog.dart';
+import '../../providers/alert_provider.dart';
 
 class WatchlistPage extends ConsumerStatefulWidget {
   const WatchlistPage({super.key});
@@ -176,14 +178,22 @@ class _WatchlistPageState extends ConsumerState<WatchlistPage> {
     );
   }
 
-  void _toggleTagFilter(String tag) {
-    setState(() {
-      if (_selectedTagFilters.contains(tag)) {
-        _selectedTagFilters.remove(tag);
-      } else {
-        _selectedTagFilters.add(tag);
-      }
-    });
+  Future<void> _addAlert(String ticker) async {
+    await showAddAlertDialog(
+      context: context,
+      ticker: ticker,
+      onSave: (alert) async {
+        await ref.read(alertProvider.notifier).addAlert(alert);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Alert set for $ticker'),
+              backgroundColor: AppColors.warningOrange,
+            ),
+          );
+        }
+      },
+    );
   }
 
   void _clearFilters() {
@@ -222,7 +232,6 @@ class _WatchlistPageState extends ConsumerState<WatchlistPage> {
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            // Navigate to symbol detail page
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (context) => SymbolDetailPage(ticker: item.ticker),
@@ -232,101 +241,248 @@ class _WatchlistPageState extends ConsumerState<WatchlistPage> {
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Symbol Icon
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: tone(AppColors.primaryBlue, 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.primaryBlue.withValues(alpha: 0.3),
-                      width: 2,
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      item.ticker.substring(0, item.ticker.length > 2 ? 2 : 1),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                Row(
+                  children: [
+                    // Symbol Icon
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: tone(AppColors.primaryBlue, 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          item.ticker.substring(0, item.ticker.length > 2 ? 2 : 1),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
+                    const SizedBox(width: 12),
 
-                // Symbol Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.ticker,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                    // Symbol Info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.ticker,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (item.hasSignal)
+                            Text(
+                              item.signal!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.successGreen,
+                              ),
+                            )
+                          else
+                            Text(
+                              'Added ${item.daysSinceAdded} ${item.daysSinceAdded == 1 ? "day" : "days"} ago',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.white70,
+                              ),
+                            ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      if (item.hasSignal)
-                        Text(
-                          item.signal!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.successGreen,
-                          ),
-                        )
-                      else
-                        Text(
-                          'Added ${item.daysSinceAdded} ${item.daysSinceAdded == 1 ? "day" : "days"} ago',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Colors.white70,
-                          ),
+                    ),
+
+                    // Actions
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_forward_ios, size: 16),
+                          color: Colors.white70,
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => SymbolDetailPage(ticker: item.ticker),
+                              ),
+                            );
+                          },
                         ),
-                      if (item.hasNote) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          item.note!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white60,
-                            fontStyle: FontStyle.italic,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          color: Colors.red,
+                          onPressed: () => _removeSymbol(item.ticker),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-
-                // Actions
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_forward_ios, size: 16),
-                      color: Colors.white70,
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => SymbolDetailPage(ticker: item.ticker),
-                          ),
-                        );
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      color: Colors.red,
-                      onPressed: () => _removeSymbol(item.ticker),
                     ),
                   ],
+                ),
+
+                // Note
+                if (item.hasNote) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: tone(Colors.white, 0.05),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.note, size: 14, color: Colors.white.withValues(alpha: 0.5)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            item.note!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.white60,
+                              fontStyle: FontStyle.italic,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Tags
+                if (item.hasTags) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: item.tags.map((tag) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryBlue.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          tag,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.primaryBlue,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+
+                // Alerts Indicator
+                Builder(
+                  builder: (context) {
+                    final alerts = ref.watch(alertProvider);
+                    final tickerAlerts = alerts.where((a) => a.ticker == item.ticker && a.isActive).toList();
+                    
+                    if (tickerAlerts.isNotEmpty) {
+                      return Column(
+                        children: [
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.warningOrange.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: AppColors.warningOrange.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.notifications_active,
+                                  size: 14,
+                                  color: AppColors.warningOrange,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '${tickerAlerts.length} active ${tickerAlerts.length == 1 ? "alert" : "alerts"}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.warningOrange,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+                // Action Buttons
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _editNote(item.ticker, item.note),
+                        icon: Icon(
+                          item.hasNote ? Icons.edit_note : Icons.note_add,
+                          size: 16,
+                        ),
+                        label: Text(item.hasNote ? 'Edit Note' : 'Add Note'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          side: BorderSide(color: tone(Colors.white, 0.2)),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _editTags(item.ticker, item.tags),
+                        icon: Icon(
+                          item.hasTags ? Icons.label : Icons.label_outline,
+                          size: 16,
+                        ),
+                        label: Text(item.hasTags ? 'Edit Tags' : 'Add Tags'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          side: BorderSide(color: tone(Colors.white, 0.2)),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _addAlert(item.ticker),
+                  icon: const Icon(Icons.notifications_active, size: 16),
+                  label: const Text('Set Alert'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.warningOrange,
+                    side: BorderSide(color: AppColors.warningOrange.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
                 ),
               ],
             ),
@@ -466,83 +622,338 @@ class _WatchlistPageState extends ConsumerState<WatchlistPage> {
           ),
         ),
         actions: [
-          if (authState.isAuthenticated && watchlist.isNotEmpty)
+          if (authState.isAuthenticated && watchlist.isNotEmpty) ...[
+            // Search Button
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: AppColors.darkCard,
+                    title: const Text('Search Watchlist'),
+                    content: TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Search by ticker or note...',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1F3A),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                      },
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _searchQuery = '';
+                            _searchController.clear();
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Clear'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryBlue,
+                        ),
+                        child: const Text('Search'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              tooltip: 'Search',
+            ),
+            // Filter Button
+            IconButton(
+              icon: Icon(
+                Icons.filter_list,
+                color: _selectedTagFilters.isNotEmpty ? AppColors.primaryBlue : null,
+              ),
+              onPressed: () async {
+                final allTags = ref.read(watchlistProvider.notifier).getAllTags();
+                await showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: AppColors.darkCard,
+                    title: const Text('Filter by Tags'),
+                    content: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: allTags.isEmpty
+                            ? [
+                                const Padding(
+                                  padding: EdgeInsets.all(16.0),
+                                  child: Text(
+                                    'No tags available.\nAdd tags to watchlist items first.',
+                                    style: TextStyle(color: Colors.white70),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ]
+                            : allTags.map((tag) {
+                                return CheckboxListTile(
+                                  title: Text(tag),
+                                  value: _selectedTagFilters.contains(tag),
+                                  onChanged: (checked) {
+                                    setState(() {
+                                      if (checked == true) {
+                                        _selectedTagFilters.add(tag);
+                                      } else {
+                                        _selectedTagFilters.remove(tag);
+                                      }
+                                    });
+                                    if (mounted) Navigator.pop(context);
+                                    // Reopen dialog to show updated state
+                                    Future.delayed(const Duration(milliseconds: 100), () {
+                                      if (mounted) {
+                                        showDialog(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            backgroundColor: AppColors.darkCard,
+                                            title: const Text('Filter by Tags'),
+                                            content: SingleChildScrollView(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: allTags.map((tag) {
+                                                  return CheckboxListTile(
+                                                    title: Text(tag),
+                                                    value: _selectedTagFilters.contains(tag),
+                                                    onChanged: (checked) {
+                                                      setState(() {
+                                                        if (checked == true) {
+                                                          _selectedTagFilters.add(tag);
+                                                        } else {
+                                                          _selectedTagFilters.remove(tag);
+                                                        }
+                                                      });
+                                                      if (mounted) Navigator.pop(context);
+                                                    },
+                                                    activeColor: AppColors.primaryBlue,
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () {
+                                                  setState(() {
+                                                    _selectedTagFilters.clear();
+                                                  });
+                                                  if (mounted) Navigator.pop(context);
+                                                },
+                                                child: const Text('Clear All'),
+                                              ),
+                                              ElevatedButton(
+                                                onPressed: () => Navigator.pop(context),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: AppColors.primaryBlue,
+                                                ),
+                                                child: const Text('Done'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }
+                                    });
+                                  },
+                                  activeColor: AppColors.primaryBlue,
+                                );
+                              }).toList(),
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedTagFilters.clear();
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Clear All'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryBlue,
+                        ),
+                        child: const Text('Done'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              tooltip: 'Filter by Tags',
+            ),
             IconButton(
               icon: const Icon(Icons.add),
               onPressed: _showAddSymbolDialog,
               tooltip: 'Add Symbol',
             ),
+          ],
         ],
       ),
       body: !authState.isAuthenticated
           ? _buildUnauthenticatedState()
           : watchlist.isEmpty
               ? _buildEmptyState()
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    // Header Stats
-                    Container(
+              : Builder(
+                  builder: (context) {
+                    final filteredWatchlist = _getFilteredWatchlist(watchlist);
+                    final hasActiveFilters = _selectedTagFilters.isNotEmpty || _searchQuery.isNotEmpty;
+                    
+                    return ListView(
                       padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: tone(AppColors.darkCard, 0.5),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: tone(Colors.white, 0.08)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Column(
+                      children: [
+                        // Header Stats
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: tone(AppColors.darkCard, 0.5),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: tone(Colors.white, 0.08)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
                             children: [
-                              Text(
-                                '${watchlist.length}',
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                              Column(
+                                children: [
+                                  Text(
+                                    '${watchlist.length}',
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const Text(
+                                    'Symbols',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const Text(
-                                'Symbols',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.white70,
-                                ),
+                              Container(
+                                width: 1,
+                                height: 40,
+                                color: tone(Colors.white, 0.1),
+                              ),
+                              Column(
+                                children: [
+                                  Text(
+                                    '${watchlist.where((item) => item.hasSignal).length}',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.successGreen,
+                                    ),
+                                  ),
+                                  const Text(
+                                    'With Signals',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                          Container(
-                            width: 1,
-                            height: 40,
-                            color: tone(Colors.white, 0.1),
-                          ),
-                          Column(
-                            children: [
-                              Text(
-                                '${watchlist.where((item) => item.hasSignal).length}',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.successGreen,
-                                ),
-                              ),
-                              const Text(
-                                'With Signals',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
+                        ),
+                        const SizedBox(height: 24),
 
-                    // Watchlist Items
-                    ...watchlist.map((item) => _buildWatchlistItem(item)),
-                  ],
+                        // Active Filters Indicator
+                        if (hasActiveFilters) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryBlue.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.filter_list,
+                                  size: 16,
+                                  color: AppColors.primaryBlue,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Showing ${filteredWatchlist.length} of ${watchlist.length} symbols',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.primaryBlue,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _clearFilters,
+                                  child: const Text('Clear'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // Watchlist Items
+                        if (filteredWatchlist.isEmpty && hasActiveFilters)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32.0),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.search_off,
+                                    size: 64,
+                                    color: Colors.white.withValues(alpha: 0.3),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    'No matching symbols',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Try adjusting your filters',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.white.withValues(alpha: 0.7),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          ...filteredWatchlist.map((item) => _buildWatchlistItem(item)),
+                      ],
+                    );
+                  },
                 ),
       floatingActionButton: authState.isAuthenticated && watchlist.isNotEmpty
           ? FloatingActionButton(

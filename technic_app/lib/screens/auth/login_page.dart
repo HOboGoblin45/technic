@@ -218,9 +218,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       padding: const EdgeInsets.all(12),
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
+                        color: Colors.red.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         children: [
@@ -270,15 +270,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   // Divider
                   Row(
                     children: [
-                      Expanded(child: Divider(color: Colors.white.withOpacity(0.2))),
+                      Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.2))),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
                           'OR',
-                          style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                         ),
                       ),
-                      Expanded(child: Divider(color: Colors.white.withOpacity(0.2))),
+                      Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.2))),
                     ],
                   ),
                   const SizedBox(height: 24),

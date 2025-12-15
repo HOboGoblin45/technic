@@ -303,6 +303,78 @@ class StorageService {
   }
 
   // ============================================================================
+  // SCAN HISTORY
+  // ============================================================================
+
+  /// Load scan history
+  Future<List<dynamic>> loadScanHistory() async {
+    final p = await _prefsInstance;
+    final historyJson = p.getString('scan_history');
+    
+    if (historyJson == null) return [];
+    
+    try {
+      final list = jsonDecode(historyJson) as List;
+      return list;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Save scan history
+  Future<void> saveScanHistory(List<dynamic> items) async {
+    final p = await _prefsInstance;
+    await p.setString(
+      'scan_history',
+      jsonEncode(items),
+    );
+  }
+
+  // ============================================================================
+  // PRICE ALERTS
+  // ============================================================================
+
+  /// Load price alerts
+  Future<List<dynamic>> loadAlerts() async {
+    final p = await _prefsInstance;
+    final alertsJson = p.getString('price_alerts');
+    
+    if (alertsJson == null) return [];
+    
+    try {
+      final list = jsonDecode(alertsJson) as List;
+      return list;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Save price alerts
+  Future<void> saveAlerts(List<dynamic> alerts) async {
+    final p = await _prefsInstance;
+    await p.setString(
+      'price_alerts',
+      jsonEncode(alerts),
+    );
+  }
+
+  // ============================================================================
+  // ONBOARDING
+  // ============================================================================
+
+  /// Check if onboarding is complete
+  Future<bool> isOnboardingComplete() async {
+    final p = await _prefsInstance;
+    return p.getBool('onboarding_complete') ?? false;
+  }
+
+  /// Set onboarding complete status
+  Future<void> setOnboardingComplete(bool complete) async {
+    final p = await _prefsInstance;
+    await p.setBool('onboarding_complete', complete);
+  }
+
+  // ============================================================================
   // UTILITY METHODS
   // ============================================================================
 

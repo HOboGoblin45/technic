@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_shell.dart';
 import 'providers/app_providers.dart';
 import 'services/storage_service.dart';
-import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
 
 // ============================================================================

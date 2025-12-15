@@ -85,12 +85,12 @@ class _TagSelectorState extends State<TagSelector> {
     final theme = Theme.of(context);
 
     // Separate selected tags into predefined and custom
-    final selectedPredefined = _selectedTags
-        .where((tag) => predefinedTags.contains(tag))
-        .toList();
-    final selectedCustom = _selectedTags
-        .where((tag) => !predefinedTags.contains(tag))
-        .toList();
+    // final selectedPredefined = _selectedTags
+    //     .where((tag) => predefinedTags.contains(tag))
+    //     .toList();
+    // final selectedCustom = _selectedTags
+    //     .where((tag) => !predefinedTags.contains(tag))
+    //     .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

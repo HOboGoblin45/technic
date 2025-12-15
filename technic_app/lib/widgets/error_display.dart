@@ -207,9 +207,9 @@ class ErrorBanner extends StatelessWidget {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _getErrorColor().withOpacity(0.1),
+        color: _getErrorColor().withValues(alpha: 0.1),
         border: Border.all(
-          color: _getErrorColor().withOpacity(0.3),
+          color: _getErrorColor().withValues(alpha: 0.3),
           width: 1,
         ),
         borderRadius: BorderRadius.circular(12),
