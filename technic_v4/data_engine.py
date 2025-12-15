@@ -64,8 +64,12 @@ _OPTION_SERVICE: Optional[OptionChainService] = None
 
 # In-memory cache for ultra-fast repeated access (L1 cache)
 _MEMORY_CACHE = {}
-_CACHE_TTL = 3600  # 1 hour TTL for in-memory cache
+_CACHE_TTL = 14400  # 4 hour TTL for in-memory cache (increased from 1 hour)
 _CACHE_STATS = {"hits": 0, "misses": 0, "total": 0}
+
+# Cache warming: Track frequently accessed symbols
+_SYMBOL_ACCESS_COUNT = {}
+_CACHE_WARM_THRESHOLD = 3  # Warm cache after 3 accesses
 
 
 def _get_market_cache() -> Optional[MarketCache]:
@@ -118,26 +122,72 @@ def _standardize_history(df: pd.DataFrame) -> pd.DataFrame:
     return out[cols] if all(c in out.columns for c in cols) else out
 
 
+def _normalize_days_for_cache(days: int) -> int:
+    """
+    Normalize days to common values to improve cache hit rate.
+    E.g., 88 days -> 90 days, 148 days -> 150 days
+    This allows more cache reuse across similar requests.
+    """
+    # Common lookback periods
+    common_periods = [30, 60, 90, 120, 150, 180, 252, 365, 500, 1000]
+    
+    # Find closest common period (within 10% tolerance)
+    for period in common_periods:
+        if abs(days - period) / period < 0.1:  # Within 10%
+            return period
+    
+    # Round to nearest 10 for other values
+    return ((days + 5) // 10) * 10
+
+
+def _track_symbol_access(symbol: str):
+    """Track symbol access frequency for cache warming."""
+    global _SYMBOL_ACCESS_COUNT
+    _SYMBOL_ACCESS_COUNT[symbol] = _SYMBOL_ACCESS_COUNT.get(symbol, 0) + 1
+
+
 def get_price_history(symbol: str, days: int, freq: str = "daily") -> pd.DataFrame:
     """Fetch price history with multi-layer cache (memory → MarketCache → Polygon)."""
     symbol = symbol.upper().strip()
     if days <= 0:
         return pd.DataFrame()
 
+    # Track symbol access for cache warming
+    _track_symbol_access(symbol)
+
     # Track cache statistics
     _CACHE_STATS["total"] += 1
 
+    # Normalize days for better cache hit rate
+    normalized_days = _normalize_days_for_cache(days)
+    
     # L1 Cache: Check in-memory cache first (fastest)
-    cache_key = f"{symbol}_{days}_{freq}"
+    # Try both exact and normalized cache keys
+    cache_key_exact = f"{symbol}_{days}_{freq}"
+    cache_key_normalized = f"{symbol}_{normalized_days}_{freq}"
     now = time.time()
     
-    if cache_key in _MEMORY_CACHE:
-        cached_data, timestamp = _MEMORY_CACHE[cache_key]
+    # Try exact match first
+    if cache_key_exact in _MEMORY_CACHE:
+        cached_data, timestamp = _MEMORY_CACHE[cache_key_exact]
         if now - timestamp < _CACHE_TTL:
             _CACHE_STATS["hits"] += 1
             hit_rate = (_CACHE_STATS["hits"] / _CACHE_STATS["total"]) * 100
-            logger.debug("[data_engine] L1 cache hit for %s (hit rate: %.1f%%)", symbol, hit_rate)
+            logger.debug("[data_engine] L1 cache hit (exact) for %s (hit rate: %.1f%%)", symbol, hit_rate)
             return cached_data.copy()  # Return copy to avoid mutations
+    
+    # Try normalized match (allows cache reuse for similar requests)
+    if cache_key_normalized != cache_key_exact and cache_key_normalized in _MEMORY_CACHE:
+        cached_data, timestamp = _MEMORY_CACHE[cache_key_normalized]
+        if now - timestamp < _CACHE_TTL and len(cached_data) >= days:
+            _CACHE_STATS["hits"] += 1
+            hit_rate = (_CACHE_STATS["hits"] / _CACHE_STATS["total"]) * 100
+            logger.debug("[data_engine] L1 cache hit (normalized) for %s (hit rate: %.1f%%)", symbol, hit_rate)
+            # Return subset if needed
+            result = cached_data.tail(days).copy()
+            # Also cache under exact key for future exact matches
+            _MEMORY_CACHE[cache_key_exact] = (result.copy(), now)
+            return result
     
     _CACHE_STATS["misses"] += 1
 
@@ -147,24 +197,27 @@ def get_price_history(symbol: str, days: int, freq: str = "daily") -> pd.DataFra
             cache = _get_market_cache()
             if cache:
                 try:
-                    df = cache.get_symbol_history(symbol, days)
+                    df = cache.get_symbol_history(symbol, normalized_days)
                     if df is not None and not df.empty and len(df) >= days:
                         logger.info("[data_engine] L2 cache hit for %s (%d bars)", symbol, len(df))
                         result = _standardize_history(df.tail(days))
-                        # Promote to L1 cache
-                        _MEMORY_CACHE[cache_key] = (result.copy(), now)
+                        # Promote to L1 cache (both exact and normalized keys)
+                        _MEMORY_CACHE[cache_key_exact] = (result.copy(), now)
+                        _MEMORY_CACHE[cache_key_normalized] = (result.copy(), now)
                         return result
                 except Exception as exc:
                     logger.warning("[data_engine] MarketCache miss for %s: %s", symbol, exc)
 
             # L3: Fetch from Polygon API (slowest)
             try:
-                df = _price_history(symbol=symbol, days=days, use_intraday=False)
-                logger.info("[data_engine] Polygon API fetch for %s", symbol)
+                # Fetch normalized amount for better cache reuse
+                df = _price_history(symbol=symbol, days=normalized_days, use_intraday=False)
+                logger.info("[data_engine] Polygon API fetch for %s (%d days)", symbol, normalized_days)
                 result = _standardize_history(df)
-                # Store in L1 cache for future requests
-                _MEMORY_CACHE[cache_key] = (result.copy(), now)
-                return result
+                # Store in L1 cache (both exact and normalized keys)
+                _MEMORY_CACHE[cache_key_exact] = (result.tail(days).copy(), now)
+                _MEMORY_CACHE[cache_key_normalized] = (result.copy(), now)
+                return result.tail(days)
             except Exception as exc:
                 logger.error("[data_engine] Polygon daily failed for %s", symbol, exc_info=True)
                 return pd.DataFrame()
@@ -175,7 +228,7 @@ def get_price_history(symbol: str, days: int, freq: str = "daily") -> pd.DataFra
             logger.info("[data_engine] intraday fetch for %s", symbol)
             result = _standardize_history(df)
             # Store in L1 cache
-            _MEMORY_CACHE[cache_key] = (result.copy(), now)
+            _MEMORY_CACHE[cache_key_exact] = (result.copy(), now)
             return result
         except Exception as exc:
             logger.error("[data_engine] intraday fetch failed for %s", symbol, exc_info=True)
