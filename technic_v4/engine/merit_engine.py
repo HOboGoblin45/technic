@@ -268,7 +268,8 @@ def compute_merit(
     # ===== STEP 4: Penalties & Flags =====
     
     penalties = pd.Series(0.0, index=result.index)
-    flags_list = [[] for _ in range(n)]
+    # Use dict keyed by index to avoid position/index mismatch
+    flags_dict = {idx: [] for idx in result.index}
     
     # Earnings risk
     days_to_earnings = None
@@ -287,15 +288,15 @@ def compute_merit(
         penalties[mask_7d] += config.penalty_earnings_7d
         
         for i in result.index[mask_3d]:
-            flags_list[i].append('EARNINGS_SOON')
+            flags_dict[i].append('EARNINGS_SOON')
         for i in result.index[mask_7d]:
-            flags_list[i].append('EARNINGS_7D')
+            flags_dict[i].append('EARNINGS_7D')
     
     # Liquidity risk
     mask_low_liq = dollar_vol < config.liquidity_threshold
     penalties[mask_low_liq] += config.penalty_low_liquidity
     for i in result.index[mask_low_liq]:
-        flags_list[i].append('LOW_LIQUIDITY')
+        flags_dict[i].append('LOW_LIQUIDITY')
     
     # Volatility risk
     mask_very_high_atr = atr_pct_val > config.atr_very_high_threshold
@@ -305,9 +306,9 @@ def compute_merit(
     penalties[mask_high_atr] += config.penalty_high_atr
     
     for i in result.index[mask_very_high_atr]:
-        flags_list[i].append('VERY_HIGH_ATR')
+        flags_dict[i].append('VERY_HIGH_ATR')
     for i in result.index[mask_high_atr]:
-        flags_list[i].append('HIGH_ATR')
+        flags_dict[i].append('HIGH_ATR')
     
     # Market cap risk
     if 'market_cap' in result.columns:
@@ -319,27 +320,27 @@ def compute_merit(
         penalties[mask_small] += config.penalty_small_cap
         
         for i in result.index[mask_micro]:
-            flags_list[i].append('MICRO_CAP')
+            flags_dict[i].append('MICRO_CAP')
         for i in result.index[mask_small]:
-            flags_list[i].append('SMALL_CAP')
+            flags_dict[i].append('SMALL_CAP')
     
     # Ultra-risky flag
     if 'IsUltraRisky' in result.columns:
         mask_ultra = _to_bool(result['IsUltraRisky'])
         penalties[mask_ultra] += config.penalty_ultra_risk
         for i in result.index[mask_ultra]:
-            flags_list[i].append('ULTRA_RISK')
+            flags_dict[i].append('ULTRA_RISK')
     
     # Missing data flags (informational, no penalty)
     if 'InstitutionalCoreScore' not in result.columns or result.get('InstitutionalCoreScore', pd.Series()).isna().any():
         for i in result.index[ics == config.default_ics]:
-            if 'MISSING_ICS' not in flags_list[i]:
-                flags_list[i].append('MISSING_ICS')
+            if 'MISSING_ICS' not in flags_dict[i]:
+                flags_dict[i].append('MISSING_ICS')
     
     if 'QualityScore' not in result.columns or result.get('QualityScore', pd.Series()).isna().any():
         for i in result.index[quality == config.default_quality]:
-            if 'MISSING_QUALITY' not in flags_list[i]:
-                flags_list[i].append('MISSING_QUALITY')
+            if 'MISSING_QUALITY' not in flags_dict[i]:
+                flags_dict[i].append('MISSING_QUALITY')
     
     # ===== STEP 5: Final Score =====
     
@@ -364,7 +365,7 @@ def compute_merit(
     
     # ===== STEP 7: Flags =====
     
-    result['MeritFlags'] = ['|'.join(flags) if flags else '' for flags in flags_list]
+    result['MeritFlags'] = [('|'.join(flags_dict[idx]) if flags_dict[idx] else '') for idx in result.index]
     
     # ===== STEP 8: Summary =====
     
