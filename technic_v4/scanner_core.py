@@ -735,8 +735,8 @@ MIN_BARS = 20
 # Use 2x CPU cores for I/O-bound tasks (API calls), capped at 32
 import os
 MAX_WORKERS = min(32, (os.cpu_count() or 4) * 2)  # limited IO concurrency; can be overridden via settings.max_workers
-MIN_PRICE = 5.0  # Raised from $1 to $5 to filter penny stocks
-MIN_DOLLAR_VOL = 500_000  # $500K minimum daily volume for liquidity
+MIN_PRICE = 5.0  # $5 minimum to filter penny stocks
+MIN_DOLLAR_VOL = 1_000_000  # $1M minimum daily volume for liquidity (Phase 3A)
 
 
 def _compute_macro_context() -> dict:
@@ -867,10 +867,63 @@ def _compute_macro_context() -> dict:
     return ctx
 
 
+def _can_pass_basic_filters(symbol: str, meta: dict) -> bool:
+    """
+    PHASE 2: Quick pre-screening WITHOUT fetching price data.
+    Rejects symbols that will definitely fail basic filters.
+    
+    This is the KEY optimization: check criteria BEFORE expensive API calls.
+    
+    Args:
+        symbol: Stock symbol
+        meta: Metadata dict with Sector, Industry, etc.
+    
+    Returns:
+        True if symbol might pass (fetch data)
+        False if symbol will definitely fail (skip)
+    """
+    # 1. Symbol pattern checks (very fast)
+    if len(symbol) == 1:
+        # Single-letter symbols often have liquidity issues
+        return False
+    
+    if len(symbol) > 5:
+        # Very long symbols are often problematic
+        return False
+    
+    # 2. Sector-specific rejections (fast)
+    sector = meta.get('Sector', '')
+    if sector in ['Real Estate', 'Utilities']:
+        # These sectors tend to be low-volatility and fail our momentum filters
+        # Only keep if they're large-cap (we'll check market cap if available)
+        market_cap = meta.get('market_cap', 0)
+        if market_cap > 0 and market_cap < 750_000_000:  # <$750M (Phase 3A: tightened for single-letter)
+            return False
+    
+    # 3. Industry-specific rejections (fast)
+    industry = meta.get('Industry', '')
+    if industry in ['REIT', 'Closed-End Fund', 'Exchange Traded Fund']:
+        # These are investment vehicles, not operating companies
+        return False
+    
+    # 4. Market cap pre-filter (if available)
+    market_cap = meta.get('market_cap', 0)
+    if market_cap > 0:
+        if market_cap < 150_000_000:  # <$150M micro-cap (Phase 3A: tightened)
+            # Too small, likely to fail liquidity filters
+            return False
+    
+    return True  # Might pass, fetch data to confirm
+
+
 def _passes_basic_filters(df: pd.DataFrame) -> bool:
     """
     Quick sanity filters before doing full scoring + trade planning.
     PERFORMANCE: Tightened to reject low-quality symbols early.
+    
+    NOTE: This runs AFTER data fetch. Phase 2 optimization moves some
+    checks to _can_pass_basic_filters() to avoid fetching data for
+    symbols that will definitely fail.
     """
     if df is None or df.empty:
         return False
@@ -1178,7 +1231,22 @@ def _process_symbol(
 ) -> Optional[pd.Series]:
     """
     Wrapper to process a single symbol; returns a Series/row or None.
+    
+    PHASE 2 OPTIMIZATION: Pre-screens symbol metadata BEFORE fetching data.
     """
+    # PHASE 2: Pre-screening check (fast, no API calls)
+    meta = {
+        'Sector': urow.sector,
+        'Industry': urow.industry,
+        'SubIndustry': urow.subindustry,
+        'market_cap': 0,  # Will be enriched if available
+    }
+    
+    if not _can_pass_basic_filters(urow.symbol, meta):
+        # Symbol will definitely fail, skip expensive data fetch
+        return None
+    
+    # Passed pre-screening, proceed with data fetch
     as_of_ts = None
     if config.as_of_date:
         try:
@@ -1213,9 +1281,11 @@ def _run_symbol_scans(
 ) -> Tuple[pd.DataFrame, dict]:
     """
     Execute per-symbol scans (Ray if enabled or thread pool fallback) and return DataFrame plus stats.
+    
+    PHASE 2 OPTIMIZATION: Pre-screening happens in _process_symbol() before data fetch.
     """
     rows: List[pd.Series] = []
-    attempted = kept = errors = rejected = 0
+    attempted = kept = errors = rejected = pre_rejected = 0
     total_symbols = len(universe)
 
     if settings is None:
@@ -1252,6 +1322,7 @@ def _run_symbol_scans(
             rows.append(latest)
             kept += 1
         engine_mode = "ray"
+        # Note: Ray path doesn't track pre_rejected separately
     else:
         # ---------------- Thread pool path ----------------
         def _worker(idx_urow):
@@ -1285,8 +1356,10 @@ def _run_symbol_scans(
             for status, symbol, latest, urow in ex.map(_worker, enumerate(universe, start=1)):
                 attempted += 1
                 if status == "error" or latest is None:
-                    rejected += 1 if status != "error" else 0
-                    errors += 1 if status == "error" else 0
+                    if status == "error":
+                        errors += 1
+                    else:
+                        rejected += 1
                     continue
                 latest["Sector"] = urow.sector or ""
                 latest["Industry"] = urow.industry or ""
@@ -1295,6 +1368,15 @@ def _run_symbol_scans(
                 rows.append(latest)
                 kept += 1
         engine_mode = "threadpool"
+        
+        # Log pre-rejection stats (Phase 2 optimization)
+        pre_rejected = attempted - kept - errors
+        if pre_rejected > 0:
+            logger.info(
+                "[PHASE2] Pre-rejected %d symbols before data fetch (%.1f%% reduction)",
+                pre_rejected,
+                (pre_rejected / max(attempted, 1)) * 100
+            )
 
     elapsed = time.time() - start_ts
     per_symbol = elapsed / max(total_symbols, 1)
@@ -1313,6 +1395,7 @@ def _run_symbol_scans(
         "kept": kept,
         "errors": errors,
         "rejected": rejected,
+        "pre_rejected": pre_rejected,
     }
     return pd.DataFrame(rows), stats
 
@@ -1708,6 +1791,25 @@ def _finalize_results(
 
         # Minimum liquidity filter (relaxed for broader results)
         MIN_DOLLAR_VOL = 500_000  # $500K/day minimum (was $5M)
+
+# Phase 3A: Sector-specific market cap requirements for better pre-screening
+SECTOR_MIN_MARKET_CAP = {
+    'Technology': 200_000_000,           # $200M - Tech needs scale
+    'Healthcare': 200_000_000,           # $200M - Healthcare needs scale
+    'Financial Services': 300_000_000,   # $300M - Financials need larger cap
+    'Consumer Cyclical': 150_000_000,    # $150M
+    'Industrials': 150_000_000,          # $150M
+    'Energy': 200_000_000,               # $200M - Energy needs scale
+    'Real Estate': 100_000_000,          # $100M - REITs can be smaller
+    'Utilities': 500_000_000,            # $500M - Utilities are typically large
+    'Basic Materials': 150_000_000,      # $150M
+    'Communication Services': 200_000_000,  # $200M
+    'Consumer Defensive': 200_000_000,      # $200M
+}
+
+    # Minimum liquidity filter (relaxed for broader results)
+    MIN_DOLLAR_VOL = 1_000_000  # $1M/day minimum (Phase 3A)
+    if "DollarVolume" in results_df.columns:
         results_df = results_df[results_df["DollarVolume"] >= MIN_DOLLAR_VOL]
 
     # Price filter (relaxed)
