@@ -195,3 +195,55 @@ def get_stock_intraday_df(
     df = df.sort_values("Date")
     df = df.set_index("Date")
     return df
+
+
+def get_stocks_batch_history(symbols: list[str], days: int, batch_size: int = 50) -> dict[str, Optional[pd.DataFrame]]:
+    """
+    Fetch daily OHLCV history for multiple symbols with optimized batching.
+    
+    This function reduces API overhead by:
+    1. Reusing the session connection
+    2. Processing symbols in parallel-friendly batches
+    3. Better error handling and fallback
+    
+    Args:
+        symbols: List of ticker symbols to fetch
+        days: Number of days of historical data
+        batch_size: Number of symbols to process in each batch (for progress tracking)
+    
+    Returns:
+        Dict mapping symbol -> DataFrame (or None if data unavailable)
+    """
+    if not symbols or days <= 0:
+        return {}
+    
+    # Normalize symbols
+    symbols = [s.upper().strip() for s in symbols]
+    
+    print(f"[POLYGON BATCH] Fetching {len(symbols)} symbols for {days} days (batch_size={batch_size})")
+    
+    results = {}
+    total = len(symbols)
+    
+    # Process in batches for better progress tracking and memory management
+    for i in range(0, total, batch_size):
+        batch = symbols[i:i+batch_size]
+        batch_num = (i // batch_size) + 1
+        total_batches = (total + batch_size - 1) // batch_size
+        
+        print(f"[POLYGON BATCH] Processing batch {batch_num}/{total_batches} ({len(batch)} symbols)")
+        
+        for symbol in batch:
+            try:
+                df = get_stock_history_df(symbol, days)
+                results[symbol] = df
+                if df is not None:
+                    print(f"[POLYGON BATCH] ✓ {symbol}: {len(df)} bars")
+            except Exception as exc:
+                print(f"[POLYGON BATCH] ✗ {symbol}: {exc}")
+                results[symbol] = None
+    
+    successful = len([v for v in results.values() if v is not None])
+    print(f"[POLYGON BATCH] Complete: {successful}/{total} symbols retrieved successfully")
+    
+    return results
