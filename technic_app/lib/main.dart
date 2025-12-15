@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_shell.dart';
 import 'providers/app_providers.dart';
 import 'services/storage_service.dart';
+import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
 
 // ============================================================================
@@ -49,7 +50,7 @@ Future<void> main() async {
   // Load user ID
   userId.value = await storage.loadUser();
   
-  // Run app
+  // Run app with ProviderScope for state management
   runApp(
     const ProviderScope(
       child: TechnicApp(),
@@ -62,28 +63,38 @@ Future<void> main() async {
 // ============================================================================
 
 /// Main application widget
-class TechnicApp extends StatelessWidget {
+class TechnicApp extends ConsumerStatefulWidget {
   const TechnicApp({super.key});
 
   @override
+  ConsumerState<TechnicApp> createState() => _TechnicAppState();
+}
+
+class _TechnicAppState extends ConsumerState<TechnicApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Attempt auto-login on app start
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authProvider.notifier).tryAutoLogin();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Consumer(
-      builder: (context, ref, _) {
-        final isDark = ref.watch(themeModeProvider);
-        
-        return MaterialApp(
-          title: 'Technic',
-          debugShowCheckedModeBanner: false,
-          
-          // Theme configuration
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
-          
-          // Home
-          home: const TechnicShell(),
-        );
-      },
+    final isDark = ref.watch(themeModeProvider);
+    
+    return MaterialApp(
+      title: 'Technic',
+      debugShowCheckedModeBanner: false,
+      
+      // Theme configuration
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+      
+      // Home
+      home: const TechnicShell(),
     );
   }
 }

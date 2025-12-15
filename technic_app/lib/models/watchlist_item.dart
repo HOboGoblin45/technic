@@ -7,12 +7,14 @@ class WatchlistItem {
   final String ticker;
   final String? signal;
   final String? note;
+  final List<String> tags;
   final DateTime addedAt;
 
   const WatchlistItem({
     required this.ticker,
     this.signal,
     this.note,
+    this.tags = const [],
     required this.addedAt,
   });
 
@@ -21,6 +23,9 @@ class WatchlistItem {
       ticker: json['ticker']?.toString() ?? '',
       signal: json['signal']?.toString(),
       note: json['note']?.toString(),
+      tags: json['tags'] != null
+          ? List<String>.from(json['tags'] as List)
+          : [],
       addedAt: json['addedAt'] != null
           ? DateTime.parse(json['addedAt'].toString())
           : DateTime.now(),
@@ -31,6 +36,7 @@ class WatchlistItem {
         'ticker': ticker,
         'signal': signal,
         'note': note,
+        'tags': tags,
         'addedAt': addedAt.toIso8601String(),
       };
   
@@ -40,8 +46,28 @@ class WatchlistItem {
   /// Check if item has a note
   bool get hasNote => note != null && note!.isNotEmpty;
   
+  /// Check if item has tags
+  bool get hasTags => tags.isNotEmpty;
+  
   /// Get days since added
   int get daysSinceAdded {
     return DateTime.now().difference(addedAt).inDays;
+  }
+  
+  /// Copy with method for updating fields
+  WatchlistItem copyWith({
+    String? ticker,
+    String? signal,
+    String? note,
+    List<String>? tags,
+    DateTime? addedAt,
+  }) {
+    return WatchlistItem(
+      ticker: ticker ?? this.ticker,
+      signal: signal ?? this.signal,
+      note: note ?? this.note,
+      tags: tags ?? this.tags,
+      addedAt: addedAt ?? this.addedAt,
+    );
   }
 }

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/auth_service.dart';
 import '../models/scan_result.dart';
 import '../models/market_mover.dart';
 import '../models/watchlist_item.dart';
@@ -24,6 +25,11 @@ final apiServiceProvider = Provider<ApiService>((ref) {
 /// Storage Service Provider (singleton)
 final storageServiceProvider = Provider<StorageService>((ref) {
   return StorageService.instance;
+});
+
+/// Auth Service Provider (singleton)
+final authServiceProvider = Provider<AuthService>((ref) {
+  return AuthService();
 });
 
 // ============================================================================
@@ -85,7 +91,150 @@ class OptionsModeNotifier extends StateNotifier<String> {
 }
 
 // ============================================================================
-// USER PROVIDER
+// AUTHENTICATION PROVIDERS
+// ============================================================================
+
+/// Authentication State
+class AuthState {
+  final User? user;
+  final bool isLoading;
+  final String? error;
+  final bool isAuthenticated;
+
+  const AuthState({
+    this.user,
+    this.isLoading = false,
+    this.error,
+    this.isAuthenticated = false,
+  });
+
+  AuthState copyWith({
+    User? user,
+    bool? isLoading,
+    String? error,
+    bool? isAuthenticated,
+  }) {
+    return AuthState(
+      user: user ?? this.user,
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+    );
+  }
+
+  AuthState clearError() {
+    return AuthState(
+      user: user,
+      isLoading: isLoading,
+      error: null,
+      isAuthenticated: isAuthenticated,
+    );
+  }
+}
+
+/// Auth Provider
+final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
+  return AuthNotifier(ref.read(authServiceProvider));
+});
+
+class AuthNotifier extends StateNotifier<AuthState> {
+  AuthNotifier(this._authService) : super(const AuthState()) {
+    _checkAuthStatus();
+  }
+
+  final AuthService _authService;
+
+  /// Check if user is already authenticated on app start
+  Future<void> _checkAuthStatus() async {
+    try {
+      final isAuth = await _authService.isAuthenticated();
+      if (isAuth) {
+        final user = await _authService.getCurrentUser();
+        if (user != null) {
+          state = AuthState(
+            user: user,
+            isAuthenticated: true,
+          );
+        }
+      }
+    } catch (e) {
+      // Silent fail - user just needs to login
+    }
+  }
+
+  /// Login with email and password
+  Future<bool> login(String email, String password) async {
+    state = state.copyWith(isLoading: true, error: null);
+    
+    try {
+      final response = await _authService.login(email, password);
+      state = AuthState(
+        user: response.user,
+        isAuthenticated: true,
+        isLoading: false,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll('Exception: ', ''),
+      );
+      return false;
+    }
+  }
+
+  /// Sign up new user
+  Future<bool> signup(String email, String password, String name) async {
+    state = state.copyWith(isLoading: true, error: null);
+    
+    try {
+      final response = await _authService.signup(email, password, name);
+      state = AuthState(
+        user: response.user,
+        isAuthenticated: true,
+        isLoading: false,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll('Exception: ', ''),
+      );
+      return false;
+    }
+  }
+
+  /// Logout user
+  Future<void> logout() async {
+    state = state.copyWith(isLoading: true);
+    
+    try {
+      await _authService.logout();
+      state = const AuthState();
+    } catch (e) {
+      // Even if logout fails, clear local state
+      state = const AuthState();
+    }
+  }
+
+  /// Clear error message
+  void clearError() {
+    state = state.clearError();
+  }
+
+  /// Refresh authentication status
+  Future<void> refresh() async {
+    await _checkAuthStatus();
+  }
+
+  /// Try to auto-login on app start
+  Future<void> tryAutoLogin() async {
+    await _checkAuthStatus();
+  }
+}
+
+// ============================================================================
+// USER PROVIDER (Legacy - kept for backward compatibility)
 // ============================================================================
 
 /// User ID Provider
@@ -180,11 +329,12 @@ class WatchlistNotifier extends StateNotifier<List<WatchlistItem>> {
     state = items;
   }
 
-  Future<void> add(String ticker, {String? signal, String? note}) async {
+  Future<void> add(String ticker, {String? signal, String? note, List<String>? tags}) async {
     final item = WatchlistItem(
       ticker: ticker,
       signal: signal,
       note: note,
+      tags: tags ?? [],
       addedAt: DateTime.now(),
     );
     state = [...state, item];
@@ -196,12 +346,70 @@ class WatchlistNotifier extends StateNotifier<List<WatchlistItem>> {
     await _saveWatchlist();
   }
 
-  Future<void> toggle(String ticker, {String? signal, String? note}) async {
+  Future<void> toggle(String ticker, {String? signal, String? note, List<String>? tags}) async {
     if (contains(ticker)) {
       await remove(ticker);
     } else {
-      await add(ticker, signal: signal, note: note);
+      await add(ticker, signal: signal, note: note, tags: tags);
     }
+  }
+
+  /// Update note for a watchlist item
+  Future<void> updateNote(String ticker, String? note) async {
+    state = state.map((item) {
+      if (item.ticker == ticker) {
+        return item.copyWith(note: note);
+      }
+      return item;
+    }).toList();
+    await _saveWatchlist();
+  }
+
+  /// Update tags for a watchlist item
+  Future<void> updateTags(String ticker, List<String> tags) async {
+    state = state.map((item) {
+      if (item.ticker == ticker) {
+        return item.copyWith(tags: tags);
+      }
+      return item;
+    }).toList();
+    await _saveWatchlist();
+  }
+
+  /// Get watchlist item by ticker
+  WatchlistItem? getItem(String ticker) {
+    try {
+      return state.firstWhere((item) => item.ticker == ticker);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Filter watchlist by tags
+  List<WatchlistItem> filterByTags(List<String> tags) {
+    if (tags.isEmpty) return state;
+    return state.where((item) {
+      return tags.any((tag) => item.tags.contains(tag));
+    }).toList();
+  }
+
+  /// Search watchlist by ticker or note
+  List<WatchlistItem> search(String query) {
+    if (query.isEmpty) return state;
+    final lowerQuery = query.toLowerCase();
+    return state.where((item) {
+      return item.ticker.toLowerCase().contains(lowerQuery) ||
+             (item.note?.toLowerCase().contains(lowerQuery) ?? false);
+    }).toList();
+  }
+
+  /// Get all unique tags from watchlist
+  List<String> getAllTags() {
+    final allTags = <String>{};
+    for (final item in state) {
+      allTags.addAll(item.tags);
+    }
+    return allTags.toList()..sort();
   }
 
   bool contains(String ticker) {

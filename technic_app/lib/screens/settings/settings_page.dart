@@ -7,13 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/app_providers.dart';
-// import '../../services/local_store.dart'; // Unused
+import '../../services/auth_service.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/info_card.dart';
 import '../../widgets/pulse_badge.dart';
 import 'widgets/profile_row.dart';
+import '../auth/login_page.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -84,60 +85,166 @@ class SettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userId = ref.watch(userIdProvider);
+    final authState = ref.watch(authProvider);
     final copilotStatus = ref.watch(copilotStatusProvider);
-    // Note: isDarkMode variable removed - app is dark mode only now
+    final user = authState.user;
 
     return ListView(
       children: [
-        // Sign In Section
-        InfoCard(
-          title: userId == null ? 'Sign in to sync' : 'Signed in as $userId',
-          subtitle: 'Sync presets, streaks, and preferences across devices.',
-          child: Row(
-            children: [
-              ElevatedButton.icon(
-                onPressed: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  await ref.read(userIdProvider.notifier).signIn('google_user');
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Signed in with Google (stub)'),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.login),
-                label: const Text('Google'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  await ref.read(userIdProvider.notifier).signIn('apple_user');
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Signed in with Apple (stub)'),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.apple),
-                label: const Text('Apple'),
-              ),
-              const SizedBox(width: 8),
-              if (userId != null)
-                TextButton(
-                  onPressed: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    await ref.read(userIdProvider.notifier).signOut();
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('Signed out')),
+        // Authentication Section
+        if (!authState.isAuthenticated)
+          InfoCard(
+            title: 'Sign in to unlock all features',
+            subtitle: 'Access your watchlist, saved scans, and sync preferences across devices.',
+            child: Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const LoginPage(),
+                      ),
                     );
                   },
-                  child: const Text('Sign out'),
+                  icon: const Icon(Icons.login),
+                  label: const Text('Sign In'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
-            ],
+              ],
+            ),
+          )
+        else
+          InfoCard(
+            title: 'Account',
+            subtitle: 'Signed in as ${user?.email ?? "User"}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: tone(AppColors.primaryBlue, 0.2),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          (user?.name ?? 'U').substring(0, 1).toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            user?.name ?? 'User',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            user?.email ?? '',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          // TODO: Navigate to profile edit page
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Profile editing coming soon'),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Edit Profile'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          side: BorderSide(color: tone(Colors.white, 0.2)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          // Show confirmation dialog
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              backgroundColor: AppColors.darkCard,
+                              title: const Text('Sign Out'),
+                              content: const Text(
+                                'Are you sure you want to sign out?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                  ),
+                                  child: const Text('Sign Out'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (confirmed == true) {
+                            await ref.read(authProvider.notifier).logout();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Signed out successfully'),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.logout),
+                        label: const Text('Sign Out'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
 
         // Copilot Status Section
         if (copilotStatus != null)

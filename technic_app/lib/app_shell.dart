@@ -9,7 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'screens/scanner/scanner_page.dart';
 import 'screens/ideas/ideas_page.dart';
 import 'screens/copilot/copilot_page.dart';
-import 'screens/my_ideas/my_ideas_page.dart';
+import 'screens/watchlist/watchlist_page.dart';
 import 'screens/settings/settings_page.dart';
 import 'services/local_store.dart';
 import 'theme/app_colors.dart';
@@ -30,7 +30,7 @@ class _TechnicShellState extends State<TechnicShell> {
     ScannerPage(),
     IdeasPage(),
     CopilotPage(),
-    MyIdeasPage(),
+    WatchlistPage(),
     SettingsPage(),
   ];
 
@@ -180,9 +180,9 @@ class _TechnicShellState extends State<TechnicShell> {
               label: 'Copilot',
             ),
             NavigationDestination(
-              icon: Icon(Icons.trending_up_outlined),
-              selectedIcon: Icon(Icons.trending_up),
-              label: 'Scoreboard',
+              icon: Icon(Icons.bookmark_outline),
+              selectedIcon: Icon(Icons.bookmark),
+              label: 'Watchlist',
             ),
             NavigationDestination(
               icon: Icon(Icons.settings_outlined),

@@ -16,6 +16,8 @@ import '../../theme/app_colors.dart'; // Using tone from helpers.dart
 import '../../utils/helpers.dart';
 import '../../widgets/section_header.dart';
 import 'widgets/widgets.dart';
+import 'widgets/sort_filter_bar.dart';
+import 'widgets/scan_progress_overlay.dart';
 import '../symbol_detail/symbol_detail_page.dart';
 
 class ScannerPage extends ConsumerStatefulWidget {
@@ -35,6 +37,18 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
   DateTime? _lastScan;
   bool _advancedMode = false;
   bool _showOnboarding = true;
+  
+  // Sort and filter state
+  SortOption _currentSort = SortOption.meritScore;
+  bool _sortDescending = true;
+  FilterOption _currentFilter = FilterOption.all;
+  
+  // Scan progress state
+  bool _isScanning = false;
+  DateTime? _scanStartTime;
+  int? _symbolsScanned;
+  int? _totalSymbols;
+  String? _scanProgress;
 
   @override
   bool get wantKeepAlive => true;
@@ -122,6 +136,14 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
   }
 
   Future<ScannerBundle> _fetchBundle() async {
+    setState(() {
+      _isScanning = true;
+      _scanStartTime = DateTime.now();
+      _symbolsScanned = 0;
+      _totalSymbols = int.tryParse(_filters['max_symbols'] ?? '6000') ?? 6000;
+      _scanProgress = 'Initializing scan...';
+    });
+
     try {
       final apiService = ref.read(apiServiceProvider);
       final bundle = await apiService.fetchScannerBundle(
@@ -141,6 +163,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
           _streakDays = 1;
         }
         _lastScan = now;
+        _isScanning = false;
       });
       _saveState();
 
@@ -149,6 +172,10 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
 
       return bundle;
     } catch (e) {
+      setState(() {
+        _isScanning = false;
+      });
+      
       // Try to load cached data
       final state = await LocalStore.loadScannerState();
       final scansList = state?['last_scans'] as List?;
@@ -178,6 +205,83 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
     setState(() {
       _bundleFuture = _fetchBundle();
     });
+  }
+  
+  void _cancelScan() {
+    setState(() {
+      _isScanning = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Scan cancelled')),
+    );
+  }
+  
+  List<ScanResult> _sortAndFilterResults(List<ScanResult> results) {
+    // Apply filter first
+    List<ScanResult> filtered = results;
+    
+    switch (_currentFilter) {
+      case FilterOption.highQuality:
+        filtered = results.where((r) => 
+          r.institutionalCoreScore != null && r.institutionalCoreScore! >= 80
+        ).toList();
+        break;
+      case FilterOption.core:
+        filtered = results.where((r) => 
+          r.icsTier?.toUpperCase() == 'CORE' || 
+          (r.institutionalCoreScore != null && r.institutionalCoreScore! >= 80)
+        ).toList();
+        break;
+      case FilterOption.satellite:
+        filtered = results.where((r) => 
+          r.icsTier?.toUpperCase() == 'SATELLITE' ||
+          (r.institutionalCoreScore != null && 
+           r.institutionalCoreScore! >= 65 && 
+           r.institutionalCoreScore! < 80)
+        ).toList();
+        break;
+      case FilterOption.hasOptions:
+        filtered = results.where((r) => r.hasOptions).toList();
+        break;
+      case FilterOption.all:
+        // No filtering
+        break;
+    }
+    
+    // Then sort
+    filtered.sort((a, b) {
+      int comparison = 0;
+      
+      switch (_currentSort) {
+        case SortOption.meritScore:
+          final aScore = a.meritScore ?? 0;
+          final bScore = b.meritScore ?? 0;
+          comparison = aScore.compareTo(bScore);
+          break;
+        case SortOption.techRating:
+          final aRating = a.techRating ?? 0;
+          final bRating = b.techRating ?? 0;
+          comparison = aRating.compareTo(bRating);
+          break;
+        case SortOption.ics:
+          final aIcs = a.institutionalCoreScore ?? 0;
+          final bIcs = b.institutionalCoreScore ?? 0;
+          comparison = aIcs.compareTo(bIcs);
+          break;
+        case SortOption.winProb:
+          final aProb = a.winProb10d ?? 0;
+          final bProb = b.winProb10d ?? 0;
+          comparison = aProb.compareTo(bProb);
+          break;
+        case SortOption.ticker:
+          comparison = a.ticker.compareTo(b.ticker);
+          break;
+      }
+      
+      return _sortDescending ? -comparison : comparison;
+    });
+    
+    return filtered;
   }
 
   void _applyProfile(String profile) {
@@ -324,8 +428,10 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
   Widget build(BuildContext context) {
     super.build(context);
 
-    return Scaffold(
-      body: RefreshIndicator(
+    return Stack(
+      children: [
+        Scaffold(
+          body: RefreshIndicator(
         onRefresh: () async {
           _refresh();
           await _bundleFuture;
@@ -484,6 +590,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                   }
 
                   final bundle = snapshot.data!;
+                  final sortedResults = _sortAndFilterResults(bundle.scanResults);
 
                   return SliverList(
                     delegate: SliverChildListDelegate([
@@ -522,10 +629,35 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                       if (bundle.scoreboard.isNotEmpty)
                         ScoreboardCard(slices: bundle.scoreboard),
 
+                      // Sort and Filter Bar
+                      if (bundle.scanResults.isNotEmpty)
+                        SortFilterBar(
+                          currentSort: _currentSort,
+                          sortDescending: _sortDescending,
+                          currentFilter: _currentFilter,
+                          totalResults: bundle.scanResults.length,
+                          filteredResults: sortedResults.length,
+                          onSortChanged: (option) {
+                            setState(() {
+                              _currentSort = option;
+                            });
+                          },
+                          onSortDirectionChanged: (descending) {
+                            setState(() {
+                              _sortDescending = descending;
+                            });
+                          },
+                          onFilterChanged: (option) {
+                            setState(() {
+                              _currentFilter = option;
+                            });
+                          },
+                        ),
+
                       // Results Header
                       SectionHeader(
                         'Scan Results',
-                        caption: '${bundle.scanResults.length} opportunities',
+                        caption: '${sortedResults.length} opportunities',
                         trailing: IconButton(
                           onPressed: _refresh,
                           icon: const Icon(Icons.refresh, size: 20),
@@ -534,7 +666,49 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                       ),
 
                       // Results List
-                      if (bundle.scanResults.isEmpty)
+                      if (sortedResults.isEmpty && bundle.scanResults.isNotEmpty)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(40),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.filter_alt_off,
+                                  size: 64,
+                                  color: Colors.white38,
+                                ),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'No results match filters',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Try adjusting your filter settings',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.white38,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 16),
+                                OutlinedButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _currentFilter = FilterOption.all;
+                                    });
+                                  },
+                                  child: const Text('Clear Filters'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else if (bundle.scanResults.isEmpty)
                         Center(
                           child: Padding(
                             padding: const EdgeInsets.all(40),
@@ -568,7 +742,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                           ),
                         )
                       else
-                        ...bundle.scanResults.map(
+                        ...sortedResults.map(
                           (result) => ScanResultCard(
                             result: result,
                             onTap: () {
@@ -594,6 +768,23 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
           ],
         ),
       ),
+        ),
+        
+        // Scan Progress Overlay
+        if (_isScanning)
+          Positioned.fill(
+            child: ScanProgressOverlay(
+              progressMessage: _scanProgress,
+              progress: _symbolsScanned != null && _totalSymbols != null
+                  ? _symbolsScanned! / _totalSymbols!
+                  : null,
+              symbolsScanned: _symbolsScanned,
+              totalSymbols: _totalSymbols,
+              startTime: _scanStartTime,
+              onCancel: _cancelScan,
+            ),
+          ),
+      ],
     );
   }
 }

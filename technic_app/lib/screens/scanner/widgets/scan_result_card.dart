@@ -269,21 +269,52 @@ class ScanResultCard extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      ref.read(watchlistProvider.notifier).add(
-                            result.ticker,
-                            note: result.signal,
-                          );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${result.ticker} saved to My Ideas'),
-                          duration: const Duration(seconds: 2),
+                  Builder(
+                    builder: (context) {
+                      final watchlist = ref.watch(watchlistProvider);
+                      final isWatched = watchlist.any((item) => item.ticker == result.ticker);
+                      
+                      return OutlinedButton.icon(
+                        onPressed: () async {
+                          if (isWatched) {
+                            await ref.read(watchlistProvider.notifier).remove(result.ticker);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('${result.ticker} removed from watchlist'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          } else {
+                            await ref.read(watchlistProvider.notifier).add(
+                              result.ticker,
+                              signal: result.signal,
+                            );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('${result.ticker} added to watchlist'),
+                                  duration: const Duration(seconds: 2),
+                                  backgroundColor: AppColors.successGreen,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        icon: Icon(
+                          isWatched ? Icons.bookmark : Icons.bookmark_outline,
+                          size: 16,
+                        ),
+                        label: Text(isWatched ? 'Saved' : 'Save'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: isWatched ? AppColors.successGreen : null,
+                          side: isWatched 
+                            ? BorderSide(color: AppColors.successGreen)
+                            : null,
                         ),
                       );
                     },
-                    icon: const Icon(Icons.star_outline, size: 16),
-                    label: const Text('Save'),
                   ),
                 ],
               ),
