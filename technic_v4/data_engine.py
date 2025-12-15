@@ -15,6 +15,7 @@ from technic_v4.data_layer.price_layer import get_stock_history_df as _price_his
 from technic_v4.data_layer.fundamentals import get_fundamentals as _fundamentals
 from technic_v4.data_layer.options_data import OptionChainService
 from technic_v4.infra.logging import get_logger
+from technic_v4.config.settings import get_settings
 
 # Optional Redis import (graceful degradation)
 try:
