@@ -169,7 +169,6 @@ class ApiService {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
-          'X-API-Key': 'my-dev-technic-key',
         },
         body: jsonEncode(body),
       );
@@ -353,7 +352,6 @@ class ApiService {
       _config.copilotUri(),
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': 'my-dev-technic-key',
       },
       body: jsonEncode({
         'question': prompt,
@@ -399,7 +397,6 @@ class ApiService {
       uri,
       headers: {
         'Accept': 'application/json',
-        'X-API-Key': 'my-dev-technic-key',
       },
     );
     
