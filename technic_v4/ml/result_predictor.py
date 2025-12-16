@@ -284,7 +284,7 @@ class ResultCountPredictor:
         if not load_path.exists():
             raise FileNotFoundError(f"Model file not found: {load_path}")
         
-        data = joblib.dump(load_path)
+        data = joblib.load(load_path)
         self.model = data['model']
         self.feature_names = data['feature_names']
         self.is_trained = data['is_trained']
