@@ -735,8 +735,8 @@ MIN_BARS = 20
 # Use 2x CPU cores for I/O-bound tasks (API calls), capped at 32
 import os
 MAX_WORKERS = min(32, (os.cpu_count() or 4) * 2)  # limited IO concurrency; can be overridden via settings.max_workers
-MIN_PRICE = 5.0  # $5 minimum to filter penny stocks
-MIN_DOLLAR_VOL = 1_000_000  # $1M minimum daily volume for liquidity (Phase 3A)
+MIN_PRICE = 1.0  # $1 minimum to filter penny stocks (relaxed from $5)
+MIN_DOLLAR_VOL = 250_000  # $250K minimum daily volume for liquidity (relaxed from $1M)
 
 
 def _compute_macro_context() -> dict:
@@ -1797,17 +1797,17 @@ def _finalize_results(
 
     # Price filter (relaxed)
     if "Close" in results_df.columns:
-        results_df = results_df[results_df["Close"] >= 1.00]  # $1 minimum (was $5)
+        results_df = results_df[results_df["Close"] >= 1.00]  # $1 minimum
 
     # Market-cap filter (relaxed - skip only nano-caps)
     if "market_cap" in results_df.columns:
-        results_df = results_df[results_df["market_cap"] >= 50_000_000]  # $50M minimum (was $300M)
+        results_df = results_df[results_df["market_cap"] >= 10_000_000]  # $10M minimum (relaxed from $50M)
     else:
         logger.info("[FILTER] market_cap column missing; skipping market cap filter")
 
     # ATR% ceiling (relaxed)
     if "ATR14_pct" in results_df.columns:
-        results_df = results_df[results_df["ATR14_pct"] <= 0.50]  # max 50% ATR% (was 20%)
+        results_df = results_df[results_df["ATR14_pct"] <= 1.00]  # max 100% ATR% (relaxed from 50%)
 
     # ---------------------------------------------
     # Sort by MERIT Score (primary) then TechRating (secondary)
