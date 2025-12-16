@@ -63,7 +63,46 @@ except ImportError:
     REDIS_AVAILABLE = False
     logger.warning("[REDIS] Redis cache not available")
 
-ProgressCallback = Callable[[str, int, int], None]
+# PHASE 3D-B: Enhanced error handling and progress tracking
+from technic_v4.errors import ErrorType, ScanError, get_error_message, create_custom_error
+from technic_v4.progress import ProgressTracker, MultiStageProgressTracker
+
+# Progress callback type: (stage, current, total, message, metadata)
+ProgressCallback = Callable[[str, int, int, str, dict], None]
+# Error callback type: (error)
+ErrorCallback = Callable[[ScanError], None]
+
+
+def _safe_progress_callback(
+    callback: Optional[ProgressCallback],
+    stage: str,
+    current: int,
+    total: int,
+    message: str = "",
+    metadata: Optional[dict] = None
+) -> None:
+    """
+    Safely invoke progress callback, handling both old and new signatures.
+    
+    Old signature: (symbol, current, total)
+    New signature: (stage, current, total, message, metadata)
+    """
+    if callback is None:
+        return
+    
+    try:
+        # Try new signature first
+        callback(stage, current, total, message, metadata or {})
+    except TypeError:
+        # Fallback to old signature for backward compatibility
+        try:
+            callback(stage, current, total)
+        except Exception:
+            # Silently ignore callback errors to not break scans
+            pass
+    except Exception:
+        # Silently ignore callback errors
+        pass
 
 # Legacy compatibility for tests/monkeypatch
 # PERFORMANCE: Pro Plus optimization - aggressive caching enabled
@@ -1394,11 +1433,30 @@ def _run_symbol_scans(
         def _worker(idx_urow):
             idx, urow = idx_urow
             symbol = urow.symbol
+            
+            # PHASE 3D-B: Enhanced progress tracking with ETA and speed metrics
             if progress_cb is not None:
-                try:
-                    progress_cb(symbol, idx, total_symbols)
-                except Exception:
-                    pass
+                elapsed = time.time() - start_ts
+                symbols_per_sec = idx / elapsed if elapsed > 0 and idx > 0 else 0
+                remaining = total_symbols - idx
+                eta_seconds = remaining / symbols_per_sec if symbols_per_sec > 0 else 0
+                percentage = (idx / total_symbols * 100) if total_symbols > 0 else 0
+                
+                _safe_progress_callback(
+                    progress_cb,
+                    stage='symbol_scanning',
+                    current=idx,
+                    total=total_symbols,
+                    message=f"Scanning {symbol} ({idx}/{total_symbols})",
+                    metadata={
+                        'symbol': symbol,
+                        'percentage': percentage,
+                        'symbols_per_second': symbols_per_sec,
+                        'eta_seconds': eta_seconds,
+                        'elapsed_seconds': elapsed
+                    }
+                )
+            
             try:
                 latest_local = _process_symbol(
                     config=config,
@@ -1408,8 +1466,9 @@ def _run_symbol_scans(
                     regime_tags=regime_tags,
                     price_cache=price_cache,  # PHASE 1: Pass pre-fetched data
                 )
-            except Exception:
-                logger.warning("[SCAN ERROR] %s", symbol, exc_info=True)
+            except Exception as e:
+                # PHASE 3D-B: Convert to structured error
+                logger.warning("[SCAN ERROR] %s: %s", symbol, str(e), exc_info=True)
                 return ("error", symbol, None, urow)
             return ("ok", symbol, latest_local, urow)
 
