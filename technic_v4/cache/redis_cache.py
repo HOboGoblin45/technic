@@ -303,6 +303,96 @@ class RedisCache:
         except Exception as e:
             logger.warning(f"[REDIS] Stats failed: {e}")
             return {'available': False, 'error': str(e)}
+    
+    def get_detailed_stats(self) -> Dict[str, Any]:
+        """
+        Get detailed cache statistics including memory usage and key breakdown.
+        
+        Returns:
+            Dictionary with detailed cache statistics
+        """
+        if not self.available:
+            return {
+                'available': False,
+                'message': 'Redis cache not available'
+            }
+        
+        try:
+            # Get basic stats
+            stats_info = self.client.info('stats')
+            memory_info = self.client.info('memory')
+            
+            # Get all keys and analyze by type
+            all_keys = self.client.keys('technic:*')
+            keys_by_type = {}
+            
+            for key in all_keys[:1000]:  # Limit to first 1000 for performance
+                try:
+                    key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+                    parts = key_str.split(':')
+                    if len(parts) >= 2:
+                        key_type = parts[1]
+                        keys_by_type[key_type] = keys_by_type.get(key_type, 0) + 1
+                except Exception:
+                    continue
+            
+            # Calculate hit rate
+            hits = stats_info.get('keyspace_hits', 0)
+            misses = stats_info.get('keyspace_misses', 0)
+            total_requests = hits + misses
+            hit_rate = (hits / total_requests * 100) if total_requests > 0 else 0
+            
+            # Memory usage
+            memory_used = memory_info.get('used_memory', 0)
+            memory_peak = memory_info.get('used_memory_peak', 0)
+            memory_used_mb = memory_used / (1024 * 1024)
+            memory_peak_mb = memory_peak / (1024 * 1024)
+            
+            return {
+                'available': True,
+                'connection': {
+                    'host': self.client.connection_pool.connection_kwargs.get('host', 'unknown'),
+                    'port': self.client.connection_pool.connection_kwargs.get('port', 0),
+                    'db': self.client.connection_pool.connection_kwargs.get('db', 0)
+                },
+                'performance': {
+                    'total_keys': self.client.dbsize(),
+                    'hits': hits,
+                    'misses': misses,
+                    'hit_rate': round(hit_rate, 2),
+                    'total_requests': total_requests
+                },
+                'memory': {
+                    'used_mb': round(memory_used_mb, 2),
+                    'peak_mb': round(memory_peak_mb, 2),
+                    'used_bytes': memory_used,
+                    'fragmentation_ratio': memory_info.get('mem_fragmentation_ratio', 0)
+                },
+                'keys_by_type': keys_by_type,
+                'server_info': {
+                    'redis_version': memory_info.get('redis_version', 'unknown'),
+                    'uptime_seconds': stats_info.get('uptime_in_seconds', 0)
+                }
+            }
+        except Exception as e:
+            logger.warning(f"[REDIS] Detailed stats failed: {e}")
+            return {
+                'available': False,
+                'error': str(e)
+            }
+    
+    def clear_all(self):
+        """Clear all cache keys (use with caution!)"""
+        if not self.available:
+            return False
+        
+        try:
+            self.client.flushdb()
+            logger.info("[REDIS] Cleared all cache keys")
+            return True
+        except Exception as e:
+            logger.warning(f"[REDIS] Clear all failed: {e}")
+            return False
 
 # Global instance
 redis_cache = RedisCache()
