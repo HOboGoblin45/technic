@@ -5,6 +5,7 @@ WORKDIR /app
 # Layer 1: System dependencies (rarely changes)
 RUN apt-get update && apt-get install -y \
     build-essential \
+    redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Layer 2: Python dependencies (changes only when requirements.txt changes)
