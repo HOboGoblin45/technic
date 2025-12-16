@@ -386,33 +386,8 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
 
-        // Appearance Section
-        const SizedBox(height: 16),
-        const SectionHeader('Appearance', caption: 'Theme and display settings'),
-        InfoCard(
-          title: 'Theme',
-          subtitle: 'Choose your preferred color scheme',
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  ref.watch(themeModeProvider) ? 'Dark Mode' : 'Light Mode',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Switch(
-                value: ref.watch(themeModeProvider),
-                onChanged: (value) {
-                  ref.read(themeModeProvider.notifier).toggleTheme();
-                },
-                activeThumbColor: AppColors.primaryBlue,
-              ),
-            ],
-          ),
-        ),
+        // Appearance Section - REMOVED (Dark mode only)
+        // Light mode has visibility issues, so we're keeping dark mode only
 
         const SizedBox(height: 16),
 

@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../providers/app_providers.dart';
 import 'signup_page.dart';
@@ -62,6 +63,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+          tooltip: 'Back to app',
+        ),
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -72,13 +82,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo
-                  Icon(
-                    Icons.show_chart,
-                    size: 80,
-                    color: theme.primaryColor,
+                  // Technic Logo
+                  SvgPicture.asset(
+                    'assets/logo_tq.svg',
+                    width: 120,
+                    height: 120,
+                    colorFilter: ColorFilter.mode(
+                      theme.primaryColor,
+                      BlendMode.srcIn,
+                    ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
                   // Title
                   Text(
@@ -192,7 +206,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Forgot Password
+                  // Forgot Password - Made more visible
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
@@ -204,9 +218,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                         );
                       },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
                       child: Text(
                         'Forgot Password?',
-                        style: TextStyle(color: theme.primaryColor),
+                        style: TextStyle(
+                          color: theme.primaryColor,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -283,16 +304,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Sign Up Button
-                  OutlinedButton(
+                  // Sign Up Button - Made more visible with filled style
+                  ElevatedButton(
                     onPressed: authState.isLoading ? null : _navigateToSignup,
-                    style: OutlinedButton.styleFrom(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.primaryColor.withValues(alpha: 0.2),
                       foregroundColor: theme.primaryColor,
-                      side: BorderSide(color: theme.primaryColor),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: theme.primaryColor, width: 2),
                       ),
+                      elevation: 0,
                     ),
                     child: const Text(
                       'Create Account',

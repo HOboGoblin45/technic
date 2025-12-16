@@ -4,6 +4,7 @@
 /// Provides methods for scanning, fetching ideas, copilot interactions, etc.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -163,6 +164,7 @@ class ApiService {
       }
       
       debugPrint('[API] Final request body: $body');
+      debugPrint('[API] Sending request to: ${_config.scanUri()}');
       
       final res = await _client.post(
         _config.scanUri(),
@@ -171,7 +173,15 @@ class ApiService {
           'Content-Type': 'application/json',
         },
         body: jsonEncode(body),
+      ).timeout(
+        const Duration(minutes: 3), // 3 minute timeout for full scans
+        onTimeout: () {
+          debugPrint('[API] Request timed out after 3 minutes');
+          throw TimeoutException('Scan request timed out. Try reducing max_symbols or check your connection.');
+        },
       );
+      
+      debugPrint('[API] Response status: ${res.statusCode}');
       
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = _decode(res.body);
