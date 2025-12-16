@@ -18,6 +18,9 @@ def init_ray_if_enabled() -> bool:
     """
     Initialize Ray if TECHNIC_USE_RAY is true. Returns True if Ray is ready.
     """
+    import os
+    import warnings
+    
     settings = get_settings()
     use_ray = settings.use_ray
     if not use_ray or ray is None:
@@ -25,7 +28,13 @@ def init_ray_if_enabled() -> bool:
     if ray.is_initialized():
         return True
     try:
-        ray.init(ignore_reinit_error=True, include_dashboard=False, logging_level="ERROR")
+        # Suppress Ray GPU warning when num_gpus=0
+        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+        
+        # Suppress FutureWarning about GPU env vars
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=FutureWarning, module="ray")
+            ray.init(ignore_reinit_error=True, include_dashboard=False, logging_level="ERROR")
         return True
     except Exception:
         return False
