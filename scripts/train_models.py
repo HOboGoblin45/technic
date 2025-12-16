@@ -4,15 +4,30 @@ Phase 3E-C Week 3: Model Training
 """
 
 import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pathlib import Path
+
+# Ensure project root on sys.path so technic_v4 imports work when run as a script
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from technic_v4.ml import (
     ScanHistoryDB,
     ResultCountPredictor,
     ScanDurationPredictor
 )
-import matplotlib.pyplot as plt
+
+# Import matplotlib with proper backend to avoid warnings
+try:
+    import matplotlib  # type: ignore[import]
+    matplotlib.use('Agg')  # Use non-interactive backend
+    import matplotlib.pyplot as plt  # type: ignore[import]
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    plt = None  # type: ignore[assignment]
+    print("Warning: matplotlib not available, skipping plot generation")
+
 import numpy as np
 
 
@@ -26,6 +41,10 @@ def plot_training_results(predictor_name: str, metrics: dict, predictions: list,
         predictions: Predicted values
         actuals: Actual values
     """
+    if not MATPLOTLIB_AVAILABLE:
+        print(f"  Skipping plot generation (matplotlib not available)")
+        return
+    
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     
     # Plot 1: Predictions vs Actuals
