@@ -140,7 +140,8 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
       _isScanning = true;
       _scanStartTime = DateTime.now();
       _symbolsScanned = 0;
-      _totalSymbols = int.tryParse(_filters['max_symbols'] ?? '6000') ?? 6000;
+      // Use a placeholder - will be updated when API responds
+      _totalSymbols = null;
       _scanProgress = 'Initializing scan...';
     });
 
@@ -150,7 +151,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
         params: _filters.isNotEmpty ? _filters : null,
       );
 
-      // Update scan stats
+      // Update scan stats and use actual universe size from API
       setState(() {
         _scanCount++;
         final now = DateTime.now();
@@ -164,6 +165,9 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
         }
         _lastScan = now;
         _isScanning = false;
+        // Update total symbols with actual universe size from API
+        _totalSymbols = bundle.universeSize ?? bundle.symbolsScanned;
+        _symbolsScanned = bundle.symbolsScanned;
       });
       _saveState();
 
@@ -217,8 +221,8 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
   }
   
   List<ScanResult> _sortAndFilterResults(List<ScanResult> results) {
-    // Apply filter first
-    List<ScanResult> filtered = results;
+    // Apply filter first - create mutable copy
+    List<ScanResult> filtered = List.from(results);
     
     switch (_currentFilter) {
       case FilterOption.highQuality:
@@ -527,25 +531,9 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                 future: _bundleFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return SliverFillRemaining(
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(
-                              color: AppColors.primaryBlue,
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Scanning markets...',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    // Don't show anything here - the overlay handles loading state
+                    return const SliverFillRemaining(
+                      child: SizedBox.shrink(),
                     );
                   }
 

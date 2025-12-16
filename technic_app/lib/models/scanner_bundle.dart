@@ -16,12 +16,16 @@ class ScannerBundle {
   final List<ScanResult> scanResults;
   final List<ScoreboardSlice> scoreboard;
   final String? progress;
+  final int? universeSize;  // Total symbols in selected universe
+  final int? symbolsScanned;  // Actual symbols scanned
 
   const ScannerBundle({
     required this.movers,
     required this.scanResults,
     required this.scoreboard,
     this.progress,
+    this.universeSize,
+    this.symbolsScanned,
   });
 
   factory ScannerBundle.fromJson(Map<String, dynamic> json) {
@@ -39,6 +43,8 @@ class ScannerBundle {
               .toList() ??
           [],
       progress: json['progress']?.toString(),
+      universeSize: json['universe_size'] as int?,
+      symbolsScanned: json['symbols_scanned'] as int?,
     );
   }
 
@@ -47,6 +53,8 @@ class ScannerBundle {
         'scanResults': scanResults.map((e) => e.toJson()).toList(),
         'scoreboard': scoreboard.map((e) => e.toJson()).toList(),
         'progress': progress,
+        'universe_size': universeSize,
+        'symbols_scanned': symbolsScanned,
       };
   
   /// Check if bundle has any data

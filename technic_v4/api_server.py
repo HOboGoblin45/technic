@@ -74,6 +74,8 @@ class ScanResponse(BaseModel):
     status: str
     disclaimer: str
     results: List[ScanResultRow]
+    universe_size: Optional[int] = None  # Total symbols in selected universe
+    symbols_scanned: Optional[int] = None  # Actual symbols scanned
 
 
 # -----------------------------
@@ -195,6 +197,8 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
     """
     Run a scan and return a stable, versioned schema.
     """
+    from technic_v4.universe_loader import load_universe
+    
     options_mode = req.options_mode or "stock_plus_options"
     cfg = ScanConfig(
         max_symbols=req.max_symbols,
@@ -204,11 +208,35 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
         sectors=req.sectors,
         lookback_days=req.lookback_days,
     )
+    
+    # Calculate universe size BEFORE scanning
+    universe = load_universe()
+    universe_size = len(universe)
+    
+    # Apply sector filters to get actual universe size
+    if req.sectors:
+        sector_set = {s.lower().strip() for s in req.sectors}
+        filtered_universe = [
+            row for row in universe
+            if row.sector and row.sector.lower().strip() in sector_set
+        ]
+        universe_size = len(filtered_universe)
+    
+    # Run the scan
     df, status_text = run_scan(cfg)
+    
+    # Track how many symbols were actually scanned
+    symbols_scanned = len(df) if df is not None and not df.empty else 0
 
     disclaimer = " ".join(PRODUCT.disclaimers)
 
-    return ScanResponse(status=status_text, disclaimer=disclaimer, results=_format_scan_results(df))
+    return ScanResponse(
+        status=status_text,
+        disclaimer=disclaimer,
+        results=_format_scan_results(df),
+        universe_size=universe_size,
+        symbols_scanned=symbols_scanned,
+    )
 
 
 @app.post("/v1/copilot")

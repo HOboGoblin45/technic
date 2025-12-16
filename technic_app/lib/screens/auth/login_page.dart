@@ -82,13 +82,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Technic Logo
+                  // Technic Logo - Light blue branding color
                   SvgPicture.asset(
                     'assets/logo_tq.svg',
                     width: 120,
                     height: 120,
-                    colorFilter: ColorFilter.mode(
-                      theme.primaryColor,
+                    colorFilter: const ColorFilter.mode(
+                      Color(0xFF4A9EFF), // Light blue branding color
                       BlendMode.srcIn,
                     ),
                   ),

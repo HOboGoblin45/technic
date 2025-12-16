@@ -174,10 +174,10 @@ class ApiService {
         },
         body: jsonEncode(body),
       ).timeout(
-        const Duration(minutes: 3), // 3 minute timeout for full scans
+        const Duration(minutes: 10), // 10 minute timeout for full scans
         onTimeout: () {
-          debugPrint('[API] Request timed out after 3 minutes');
-          throw TimeoutException('Scan request timed out. Try reducing max_symbols or check your connection.');
+          debugPrint('[API] Request timed out after 10 minutes');
+          throw TimeoutException('Scan request timed out. The backend may be processing a large scan. Try reducing max_symbols or check your connection.');
         },
       );
       
@@ -213,12 +213,16 @@ class ApiService {
           }).toList();
           
           final progress = decoded['log']?.toString();
+          final universeSize = decoded['universe_size'] as int?;
+          final symbolsScanned = decoded['symbols_scanned'] as int?;
           
           return ScannerBundle(
             scanResults: scanResults,
             movers: movers,
             scoreboard: scoreboard,
             progress: progress,
+            universeSize: universeSize,
+            symbolsScanned: symbolsScanned,
           );
         }
       }
