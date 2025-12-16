@@ -44,3 +44,6 @@ redis>=5.0.0
 hiredis>=2.2.0
 aiohttp>=3.9.0
 ray[default]>=2.9.0
+
+# Technical indicators
+TA-Lib>=0.4.28

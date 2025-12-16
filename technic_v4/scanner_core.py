@@ -13,6 +13,8 @@ from technic_v4.universe_loader import load_universe, UniverseRow
 from technic_v4 import data_engine
 from technic_v4.config.settings import get_settings
 from .infra.logging import get_logger
+
+logger = get_logger()
 from technic_v4.engine.scoring import compute_scores, build_institutional_core_score
 from technic_v4.engine.factor_engine import zscore, compute_factor_bundle
 from technic_v4.engine.regime_engine import classify_regime
@@ -30,6 +32,13 @@ from technic_v4.engine import meta_experience
 from technic_v4.config.risk_profiles import get_risk_profile
 from technic_v4.engine import setup_library
 from technic_v4.engine import ray_runner
+# PHASE 3B: Import optimized Ray runner with stateful workers
+try:
+    from technic_v4.engine.ray_runner_optimized import run_ray_scans_optimized, get_worker_pool
+    PHASE3B_AVAILABLE = True
+except ImportError:
+    PHASE3B_AVAILABLE = False
+    logger.warning("[PHASE3B] Optimized Ray runner not available, using standard version")
 from technic_v4.data_layer.events import get_event_info
 from technic_v4.data_layer.earnings_surprises import get_latest_surprise, get_surprise_stats
 from technic_v4.data_layer.fundamental_trend import get_fundamental_trend
@@ -46,8 +55,6 @@ from technic_v4.engine.portfolio_optim import (
 from technic_v4.engine.recommendation import build_recommendation
 from technic_v4.engine.batch_processor import get_batch_processor
 from technic_v4.engine.meta_inference import score_win_prob_10d
-
-logger = get_logger()
 
 ProgressCallback = Callable[[str, int, int], None]
 
@@ -1049,25 +1056,9 @@ def _scan_symbol(
     # Fundamentals (best-effort)
     fundamentals = data_engine.get_fundamentals(symbol)
 
-    # PHASE 3A: Use BatchProcessor for vectorized calculations
-    # This provides 10-20x speedup on technical indicators
-    try:
-        batch_processor = get_batch_processor()
-        if batch_processor and hasattr(batch_processor, 'compute_indicators_single'):
-            # Use vectorized computation if available
-            scored = batch_processor.compute_indicators_single(
-                df, 
-                trade_style=trade_style, 
-                fundamentals=fundamentals
-            )
-            logger.debug("[BATCH] Used vectorized computation for %s", symbol)
-        else:
-            # Fallback to original scoring
-            scored = compute_scores(df, trade_style=trade_style, fundamentals=fundamentals)
-    except Exception as e:
-        logger.debug("[BATCH] Vectorized computation failed for %s: %s, using fallback", symbol, e)
-        # Fallback to original scoring pipeline
-        scored = compute_scores(df, trade_style=trade_style, fundamentals=fundamentals)
+    # Always use compute_scores() to ensure all scoring columns are present
+    # BatchProcessor is disabled for now as it doesn't include scoring columns
+    scored = compute_scores(df, trade_style=trade_style, fundamentals=fundamentals)
     
     if scored is None or scored.empty:
         return None
@@ -1341,14 +1332,35 @@ def _run_symbol_scans(
     # ---------------- Ray path (optional) ----------------
     if use_ray and total_symbols > 0:
         try:
-            ray_rows = ray_runner.run_ray_scans(
-                [u.symbol for u in universe],
-                config,
-                regime_tags,
-                price_cache,  # PHASE 1: Pass pre-fetched data
-            )
-        except Exception:
-            logger.warning("[RAY] run_ray_scans failed; falling back to thread pool", exc_info=True)
+            # PHASE 3B: Try optimized Ray runner first
+            if PHASE3B_AVAILABLE:
+                logger.info("[PHASE3B] Using optimized Ray runner with stateful workers")
+                from technic_v4.engine.ray_runner_optimized import run_ray_scans_optimized
+                
+                ray_results = run_ray_scans_optimized(
+                    symbols=[u.symbol for u in universe],
+                    config=config,
+                    regime_tags=regime_tags,
+                    price_cache=price_cache,
+                )
+                
+                # Results are already pd.Series or None
+                if ray_results:
+                    ray_rows = ray_results
+                    logger.info("[PHASE3B] Optimized Ray runner returned %d results", len(ray_rows))
+                else:
+                    ray_rows = None
+            else:
+                # Fallback to standard Ray runner
+                logger.info("[RAY] Using standard Ray runner")
+                ray_rows = ray_runner.run_ray_scans(
+                    [u.symbol for u in universe],
+                    config,
+                    regime_tags,
+                    price_cache,
+                )
+        except Exception as e:
+            logger.warning("[RAY] Ray runner failed: %s; falling back to thread pool", e, exc_info=True)
             ray_rows = None
 
     if ray_rows is not None:
@@ -1358,12 +1370,17 @@ def _run_symbol_scans(
             if latest is None:
                 rejected += 1
                 continue
+            
+            # Ensure latest is a Series
+            if isinstance(latest, dict):
+                latest = pd.Series(latest)
+            
             latest["Sector"] = urow.sector or ""
             latest["Industry"] = urow.industry or ""
             latest["SubIndustry"] = urow.subindustry or ""
             rows.append(latest)
             kept += 1
-        engine_mode = "ray"
+        engine_mode = "ray_optimized" if PHASE3B_AVAILABLE else "ray"
         # Note: Ray path doesn't track pre_rejected separately
     else:
         # ---------------- Thread pool path ----------------

@@ -46,10 +46,11 @@ class Settings:
     # Alpha blending weight (0..1) for factor vs ML alpha
     alpha_weight: float = field(default=0.35)
 
-    # Parallelism control - PHASE 1 OPTIMIZATION: Increased to 100
-    # Render Pro Plus (4 CPU, 8GB RAM) can handle 100 I/O-bound workers
-    # This maximizes parallelism for API calls and indicator calculations
-    max_workers: int = field(default=100)
+    # Parallelism control - PHASE 3B OPTIMIZATION: Increased to 200
+    # I/O-bound tasks (API calls, data fetching) benefit from high worker count
+    # Ray workers handle true parallelism without GIL limitations
+    # This maximizes throughput for batch processing and parallel scans
+    max_workers: int = field(default=200)
 
     def __post_init__(self) -> None:
         prefix = "TECHNIC_"

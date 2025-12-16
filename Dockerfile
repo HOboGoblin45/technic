@@ -5,7 +5,12 @@ WORKDIR /app
 # Layer 1: System dependencies (rarely changes)
 RUN apt-get update && apt-get install -y \
     build-essential \
+    wget \
     redis-tools \
+    && wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+    && tar -xzf ta-lib-0.4.0-src.tar.gz \
+    && cd ta-lib-0.4.0 && ./configure --prefix=/usr && make && make install \
+    && cd .. && rm -rf ta-lib-0.4.0 ta-lib-0.4.0-src.tar.gz \
     && rm -rf /var/lib/apt/lists/*
 
 # Layer 2: Python dependencies (changes only when requirements.txt changes)
@@ -27,4 +32,3 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8502
 
 CMD ["bash", "start.sh"]
-

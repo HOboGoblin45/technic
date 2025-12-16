@@ -166,10 +166,23 @@ def compute_scores(
         out["Volume"] = float(df["Volume"].iloc[-1])
 
     # Backward-compatible ATR fields
-    if "Close" in out and pd.notna(atr):
+    if "Close" in out.columns and pd.notna(atr):
+        close_val = out["Close"].iloc[0]
         out["ATR14_pct"] = float(atr)
-        atr_series = atr * out["Close"]
-        out["ATR14"] = atr_series.iloc[-1]
+        out["ATR_pct"] = float(atr)  # Alias for compatibility
+        out["ATR14"] = float(atr * close_val)
+        out["ATR"] = float(atr * close_val)  # Alias for compatibility
+    
+    # Add indicator values from features
+    if pd.notna(rsi):
+        out["RSI"] = float(rsi)
+    
+    macd = feats.get("macd")
+    macd_signal = feats.get("macd_signal")
+    if pd.notna(macd):
+        out["MACD"] = float(macd)
+    if pd.notna(macd_signal):
+        out["MACD_Signal"] = float(macd_signal)
 
     out["TrendScore"] = trend
     out["MomentumScore"] = momentum
@@ -189,6 +202,18 @@ def compute_scores(
     # For now, AlphaScore starts as TechRating; later overridden by ML alpha
     out["AlphaScore"] = tech_rating
     out["TradeType"] = "None"
+    
+    # Generate Signal based on TechRating and subscores
+    if tech_rating >= 22 and trend >= 2 and momentum >= 1:
+        out["Signal"] = "Strong Long"
+    elif tech_rating >= 16 and trend >= 1:
+        out["Signal"] = "Long"
+    elif tech_rating <= -22 and trend <= -2 and momentum <= -1:
+        out["Signal"] = "Strong Short"
+    elif tech_rating <= -16 and trend <= -1:
+        out["Signal"] = "Short"
+    else:
+        out["Signal"] = "Avoid"
 
     return out
 
