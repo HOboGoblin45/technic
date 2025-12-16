@@ -286,10 +286,13 @@ def get_price_history_batch(symbols: list, days: int, freq: str = "daily") -> di
             _CACHE_STATS["total"] += 1
     
     if not uncached_symbols:
-        logger.info("[BATCH] All %d symbols served from cache", len(symbols))
+        logger.info("[BATCH] All %d symbols served from cache (100%% hit rate)", len(symbols))
         return results
     
-    logger.info("[BATCH] Fetching %d uncached symbols", len(uncached_symbols))
+    cache_hits = len(results)
+    hit_rate = (cache_hits / len(symbols)) * 100 if symbols else 0
+    logger.info("[BATCH] Cache: %d hits, %d misses (%.1f%% hit rate)", 
+                cache_hits, len(uncached_symbols), hit_rate)
     
     # Fetch uncached symbols in parallel using ThreadPoolExecutor
     import concurrent.futures
@@ -304,20 +307,31 @@ def get_price_history_batch(symbols: list, days: int, freq: str = "daily") -> di
             logger.warning("[BATCH] Failed to fetch %s: %s", sym, e)
         return (sym, None)
     
-    # Use thread pool for parallel fetching (I/O-bound)
-    max_workers = min(20, len(uncached_symbols))
+    # OPTIMIZATION: Use more workers for I/O-bound batch fetching
+    # Pro Plus can handle 50 concurrent API calls
+    max_workers = min(50, len(uncached_symbols))
+    
+    logger.info("[BATCH] Fetching %d symbols with %d workers", len(uncached_symbols), max_workers)
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(fetch_single, sym) for sym in uncached_symbols]
         
+        completed = 0
         for future in concurrent.futures.as_completed(futures):
             try:
                 sym, df = future.result()
                 if df is not None and not df.empty:
                     results[sym] = df
+                completed += 1
+                
+                # Log progress every 100 symbols
+                if completed % 100 == 0:
+                    logger.info("[BATCH] Progress: %d/%d symbols fetched", completed, len(uncached_symbols))
             except Exception as e:
                 logger.error("[BATCH] Batch fetch error: %s", e)
     
-    logger.info("[BATCH] Completed: %d/%d symbols fetched", len(results), len(symbols))
+    successful = len([v for v in results.values() if v is not None])
+    logger.info("[BATCH] Completed: %d/%d symbols fetched successfully", successful, len(symbols))
     
     return results
 
