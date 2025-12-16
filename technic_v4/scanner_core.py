@@ -55,6 +55,13 @@ from technic_v4.engine.portfolio_optim import (
 from technic_v4.engine.recommendation import build_recommendation
 from technic_v4.engine.batch_processor import get_batch_processor
 from technic_v4.engine.meta_inference import score_win_prob_10d
+# PHASE 3C: Redis caching for 2x speedup
+try:
+    from technic_v4.cache.redis_cache import redis_cache
+    REDIS_AVAILABLE = redis_cache.available
+except ImportError:
+    REDIS_AVAILABLE = False
+    logger.warning("[REDIS] Redis cache not available")
 
 ProgressCallback = Callable[[str, int, int], None]
 

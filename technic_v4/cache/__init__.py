@@ -1,13 +1,8 @@
 """
-Technic Cache Module
-====================
-
-Multi-layer caching for optimal performance:
-- L1: In-memory dict (instant)
-- L2: LRU cache (very fast)
-- L3: Redis (persistent, shared)
+Cache module for Technic Scanner
+Provides Redis-based caching for performance optimization
 """
 
-from .redis_cache import get_redis_cache, get_cache_stats, clear_all_cache
+from .redis_cache import RedisCache, redis_cache
 
-__all__ = ['get_redis_cache', 'get_cache_stats', 'clear_all_cache']
+__all__ = ['RedisCache', 'redis_cache']
