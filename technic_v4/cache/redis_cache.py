@@ -289,20 +289,39 @@ class RedisCache:
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
         if not self.available:
-            return {'available': False}
+            return {
+                'available': False,
+                'connected': False
+            }
         
         try:
             info = self.client.info('stats')
+            memory_info = self.client.info('memory')
+            
+            hits = info.get('keyspace_hits', 0)
+            misses = info.get('keyspace_misses', 0)
+            total_requests = hits + misses
+            hit_rate = (hits / total_requests * 100) if total_requests > 0 else 0
+            
+            memory_used = memory_info.get('used_memory', 0)
+            memory_used_mb = memory_used / (1024 * 1024)
+            
             return {
                 'available': True,
+                'connected': True,
                 'total_keys': self.client.dbsize(),
-                'hits': info.get('keyspace_hits', 0),
-                'misses': info.get('keyspace_misses', 0),
-                'hit_rate': info.get('keyspace_hits', 0) / max(info.get('keyspace_hits', 0) + info.get('keyspace_misses', 1), 1) * 100
+                'hits': hits,
+                'misses': misses,
+                'hit_rate': round(hit_rate, 2),
+                'memory_used_mb': round(memory_used_mb, 2)
             }
         except Exception as e:
             logger.warning(f"[REDIS] Stats failed: {e}")
-            return {'available': False, 'error': str(e)}
+            return {
+                'available': False,
+                'connected': False,
+                'error': str(e)
+            }
     
     def get_detailed_stats(self) -> Dict[str, Any]:
         """

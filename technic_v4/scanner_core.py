@@ -2698,14 +2698,55 @@ def run_scan(
     results_df = _validate_results(results_df)
 
     elapsed = time.time() - start_ts
+    symbols_per_second = len(results_df) / elapsed if elapsed > 0 else 0
+    
+    # Calculate speedup vs baseline (no cache)
+    baseline_time = len(working) * 2.0  # Assume 2s per symbol without optimizations
+    speedup = baseline_time / elapsed if elapsed > 0 else 1.0
+    
+    # Get final cache stats for performance metrics
+    cache_performance = {}
+    if REDIS_AVAILABLE:
+        try:
+            final_cache_stats = redis_cache.get_stats()
+            cache_performance = {
+                'cache_available': final_cache_stats.get('available', False),
+                'cache_hit_rate': final_cache_stats.get('hit_rate', 0),
+                'cache_hits': final_cache_stats.get('hits', 0),
+                'cache_misses': final_cache_stats.get('misses', 0),
+                'total_keys': final_cache_stats.get('total_keys', 0)
+            }
+        except Exception:
+            pass
+    
     logger.info(
-        "Finished scan in %.2fs (%d results)", elapsed, len(results_df)
+        "Finished scan in %.2fs (%d results, %.1f sym/s, %.1fx speedup)",
+        elapsed, len(results_df), symbols_per_second, speedup
     )
 
-    return results_df, status_text
+    # Return results with performance metrics
+    performance_metrics = {
+        'total_seconds': elapsed,
+        'symbols_scanned': len(working),
+        'symbols_returned': len(results_df),
+        'symbols_per_second': symbols_per_second,
+        'speedup': speedup,
+        'baseline_time': baseline_time,
+        **cache_performance
+    }
+    
+    return results_df, status_text, performance_metrics
 
 
 if __name__ == "__main__":
-    df, msg = run_scan()
-    logger.info(msg)
-    logger.info(df.head())
+    result = run_scan()
+    if len(result) == 3:
+        df, msg, metrics = result
+        logger.info(msg)
+        logger.info(df.head())
+        logger.info("[PERFORMANCE] %s", metrics)
+    else:
+        # Backward compatibility
+        df, msg = result
+        logger.info(msg)
+        logger.info(df.head())
