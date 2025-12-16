@@ -10,6 +10,7 @@ import 'app_shell.dart';
 import 'providers/app_providers.dart';
 import 'services/storage_service.dart';
 import 'theme/app_theme.dart';
+import 'screens/splash/splash_screen.dart';
 
 // ============================================================================
 // GLOBAL STATE
@@ -70,12 +71,20 @@ class TechnicApp extends ConsumerStatefulWidget {
 }
 
 class _TechnicAppState extends ConsumerState<TechnicApp> {
+  bool _showSplash = true;
+  
   @override
   void initState() {
     super.initState();
     // Attempt auto-login on app start
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(authProvider.notifier).tryAutoLogin();
+    });
+  }
+
+  void _onSplashComplete() {
+    setState(() {
+      _showSplash = false;
     });
   }
 
@@ -92,8 +101,10 @@ class _TechnicAppState extends ConsumerState<TechnicApp> {
       darkTheme: AppTheme.darkTheme,
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       
-      // Home
-      home: const TechnicShell(),
+      // Home - Show splash first, then main app
+      home: _showSplash
+          ? SplashScreen(onComplete: _onSplashComplete)
+          : const TechnicShell(),
     );
   }
 }

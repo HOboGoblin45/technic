@@ -67,7 +67,8 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
     if (widget.startTime == null ||
         widget.symbolsScanned == null ||
         widget.totalSymbols == null ||
-        widget.symbolsScanned == 0) {
+        widget.symbolsScanned == 0 ||
+        widget.totalSymbols == 0) {
       return 'Calculating...';
     }
 
@@ -76,17 +77,23 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
     
     if (symbolsRemaining <= 0) return 'Almost done...';
 
+    // Calculate average time per symbol
     final avgTimePerSymbol = elapsed.inMilliseconds / widget.symbolsScanned!;
     final estimatedRemainingMs = (avgTimePerSymbol * symbolsRemaining).round();
     
     final remainingSeconds = (estimatedRemainingMs / 1000).round();
     
+    // Format the time remaining
     if (remainingSeconds < 60) {
-      return '$remainingSeconds seconds';
-    } else {
+      return '$remainingSeconds sec';
+    } else if (remainingSeconds < 3600) {
       final minutes = (remainingSeconds / 60).floor();
       final seconds = remainingSeconds % 60;
-      return '$minutes min ${seconds}s';
+      return '${minutes}m ${seconds}s';
+    } else {
+      final hours = (remainingSeconds / 3600).floor();
+      final minutes = ((remainingSeconds % 3600) / 60).floor();
+      return '${hours}h ${minutes}m';
     }
   }
 
@@ -178,7 +185,7 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            '${widget.symbolsScanned} / ${widget.totalSymbols} symbols',
+                            '${widget.symbolsScanned ?? 0} / ${widget.totalSymbols ?? 0} symbols',
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -186,7 +193,7 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
                             ),
                           ),
                           Text(
-                            '${(progress * 100).toStringAsFixed(0)}%',
+                            '${(progress * 100).toStringAsFixed(1)}%',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -194,6 +201,20 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
                             ),
                           ),
                         ],
+                      ),
+                    
+                    // Universe size info
+                    if (widget.totalSymbols != null && widget.totalSymbols! > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Universe: ${widget.totalSymbols} tickers',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white38,
+                          ),
+                        ),
                       ),
                   ],
                 ),
