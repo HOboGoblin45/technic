@@ -1,0 +1,123 @@
+{
+  "last_updated": "2025-12-16T22:30:36.807509",
+  "indexes": {
+    "idx_symbols_symbol": {
+      "name": "idx_symbols_symbol",
+      "table": "symbols",
+      "columns": [
+        "symbol"
+      ],
+      "index_type": "hash",
+      "unique": true,
+      "partial_condition": null,
+      "created": true
+    },
+    "idx_symbols_sector": {
+      "name": "idx_symbols_sector",
+      "table": "symbols",
+      "columns": [
+        "sector"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": null,
+      "created": true
+    },
+    "idx_symbols_industry": {
+      "name": "idx_symbols_industry",
+      "table": "symbols",
+      "columns": [
+        "industry"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": null,
+      "created": true
+    },
+    "idx_symbols_sector_industry": {
+      "name": "idx_symbols_sector_industry",
+      "table": "symbols",
+      "columns": [
+        "sector",
+        "industry"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": null,
+      "created": true
+    },
+    "idx_symbols_market_cap": {
+      "name": "idx_symbols_market_cap",
+      "table": "symbols",
+      "columns": [
+        "market_cap"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": null,
+      "created": true
+    },
+    "idx_symbols_active": {
+      "name": "idx_symbols_active",
+      "table": "symbols",
+      "columns": [
+        "symbol",
+        "sector"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": "active = true",
+      "created": true
+    },
+    "idx_price_history_symbol_date": {
+      "name": "idx_price_history_symbol_date",
+      "table": "price_history",
+      "columns": [
+        "symbol",
+        "date"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": null,
+      "created": true
+    },
+    "idx_price_history_recent": {
+      "name": "idx_price_history_recent",
+      "table": "price_history",
+      "columns": [
+        "symbol",
+        "date",
+        "close"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": "date >= CURRENT_DATE - INTERVAL '90 days'",
+      "created": true
+    },
+    "idx_scan_results_date": {
+      "name": "idx_scan_results_date",
+      "table": "scan_results",
+      "columns": [
+        "scan_date",
+        "symbol"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": null,
+      "created": true
+    },
+    "idx_scan_results_high_score": {
+      "name": "idx_scan_results_high_score",
+      "table": "scan_results",
+      "columns": [
+        "scan_date",
+        "tech_rating",
+        "alpha_score"
+      ],
+      "index_type": "btree",
+      "unique": false,
+      "partial_condition": "tech_rating >= 70",
+      "created": true
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "exported_at": "2025-12-16T22:30:36.796924",
+  "slow_query_threshold": 50.0,
+  "stats": {
+    "fast_query": {
+      "count": 5,
+      "errors": 0,
+      "avg_time": 10.059165954589844,
+      "min_time": 10.022640228271484,
+      "max_time": 10.157346725463867,
+      "p95_time": 10.157346725463867,
+      "p99_time": 10.157346725463867,
+      "slow_queries": 0,
+      "total_time": 50.29582977294922,
+      "avg_result_count": 6.0
+    },
+    "slow_query": {
+      "count": 2,
+      "errors": 0,
+      "avg_time": 60.44650077819824,
+      "min_time": 60.09721755981445,
+      "max_time": 60.79578399658203,
+      "p95_time": 60.79578399658203,
+      "p99_time": 60.79578399658203,
+      "slow_queries": 2,
+      "total_time": 120.89300155639648,
+      "avg_result_count": 6.0
+    }
+  },
+  "profiles": {
+    "fast_query": [
+      {
+        "query_name": "fast_query",
+        "execution_time": 10.062217712402344,
+        "timestamp": "2025-12-16T22:30:36.631774",
+        "parameters": {
+          "args": "()",
+          "kwargs": "{}"
+        },
+        "result_count": 6,
+        "error": null
+      },
+      {
+        "query_name": "fast_query",
+        "execution_time": 10.02645492553711,
+        "timestamp": "2025-12-16T22:30:36.701898",
+        "parameters": {
+          "args": "()",
+          "kwargs": "{}"
+        },
+        "result_count": 6,
+        "error": null
+      },
+      {
+        "query_name": "fast_query",
+        "execution_time": 10.027170181274414,
+        "timestamp": "2025-12-16T22:30:36.772721",
+        "parameters": {
+          "args": "()",
+          "kwargs": "{}"
+        },
+        "result_count": 6,
+        "error": null
+      },
+      {
+        "query_name": "fast_query",
+        "execution_time": 10.022640228271484,
+        "timestamp": "2025-12-16T22:30:36.782743",
+        "parameters": {
+          "args": "()",
+          "kwargs": "{}"
+        },
+        "result_count": 6,
+        "error": null
+      },
+      {
+        "query_name": "fast_query",
+        "execution_time": 10.157346725463867,
+        "timestamp": "2025-12-16T22:30:36.792901",
+        "parameters": {
+          "args": "()",
+          "kwargs": "{}"
+        },
+        "result_count": 6,
+        "error": null
+      }
+    ],
+    "slow_query": [
+      {
+        "query_name": "slow_query",
+        "execution_time": 60.09721755981445,
+        "timestamp": "2025-12-16T22:30:36.691871",
+        "parameters": {
+          "args": "()",
+          "kwargs": "{}"
+        },
+        "result_count": 6,
+        "error": null
+      },
+      {
+        "query_name": "slow_query",
+        "execution_time": 60.79578399658203,
+        "timestamp": "2025-12-16T22:30:36.762693",
+        "parameters": {
+          "args": "()",
+          "kwargs": "{}"
+        },
+        "result_count": 6,
+        "error": null
+      }
+    ]
+  }
+}
