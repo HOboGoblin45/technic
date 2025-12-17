@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -11,7 +12,7 @@ class HomeScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.pushNamed(context, '/settings'),
+            onPressed: () => context.go('/settings'),
           ),
         ],
       ),
@@ -36,7 +37,7 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 48),
             ElevatedButton.icon(
-              onPressed: () => Navigator.pushNamed(context, '/scanner'),
+              onPressed: () => context.go('/scanner'),
               icon: const Icon(Icons.search),
               label: const Text('Start Scanning'),
             ),
@@ -62,10 +63,10 @@ class HomeScreen extends StatelessWidget {
         onTap: (index) {
           switch (index) {
             case 1:
-              Navigator.pushNamed(context, '/scanner');
+              context.go('/scanner');
               break;
             case 2:
-              Navigator.pushNamed(context, '/watchlist');
+              context.go('/watchlist');
               break;
           }
         },

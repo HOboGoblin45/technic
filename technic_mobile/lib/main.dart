@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'screens/home_screen.dart';
 import 'screens/scanner_screen.dart';
 import 'screens/watchlist_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/scanner_test_screen.dart';
 import 'theme/app_theme.dart';
+import 'providers/scanner_provider.dart';
 
 void main() {
   runApp(
-    const ProviderScope(
-      child: TechnicApp(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ScannerProvider()),
+      ],
+      child: const TechnicApp(),
     ),
   );
 }
@@ -33,7 +38,7 @@ class TechnicApp extends StatelessWidget {
 
 // Router configuration
 final _router = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/test', // Start with test screen
   routes: [
     GoRoute(
       path: '/',
@@ -50,6 +55,10 @@ final _router = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/test',
+      builder: (context, state) => const ScannerTestScreen(),
     ),
   ],
 );
