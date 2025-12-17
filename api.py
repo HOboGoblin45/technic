@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # Make sure technic_v4 is importable when running from repo root
@@ -52,6 +53,20 @@ except Exception:  # pragma: no cover
     get_fundamentals = None  # type: ignore
 
 app = FastAPI(title="Technic API", version="0.1.0")
+
+# Add CORS middleware to allow Flutter web app to connect
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "https://technic-m5vn.onrender.com",
+        "https://*.onrender.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -------------------------------------------------------------------
 # Pydantic response models

@@ -17,7 +17,7 @@ import 'screens/splash/splash_screen.dart';
 // ============================================================================
 
 /// Theme mode notifier
-final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(false);
+final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(true);  // Default to dark mode
 
 /// Options mode preference: "stock_only" or "stock_plus_options"
 final ValueNotifier<String> optionsMode = ValueNotifier<String>('stock_plus_options');
@@ -37,9 +37,9 @@ Future<void> main() async {
   final storage = StorageService.instance;
   await storage.init();
   
-  // Load theme preference
+  // Load theme preference (default to dark if not set)
   final savedTheme = await storage.loadThemeMode();
-  themeIsDark.value = savedTheme == 'dark';
+  themeIsDark.value = savedTheme == null ? true : savedTheme == 'dark';
   
   // Load options mode preference
   final savedOptionsMode = await storage.loadOptionsMode();

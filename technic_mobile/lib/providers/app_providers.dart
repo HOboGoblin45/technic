@@ -42,7 +42,7 @@ final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, bool>((ref) {
 });
 
 class ThemeModeNotifier extends StateNotifier<bool> {
-  ThemeModeNotifier(this._storage) : super(false) {
+  ThemeModeNotifier(this._storage) : super(true) {  // Default to dark mode
     _loadThemeMode();
   }
 
@@ -50,7 +50,8 @@ class ThemeModeNotifier extends StateNotifier<bool> {
 
   Future<void> _loadThemeMode() async {
     final mode = await _storage.loadThemeMode();
-    state = mode == 'dark';
+    // Default to dark if no preference saved
+    state = mode == null ? true : mode == 'dark';
   }
 
   Future<void> setDarkMode(bool isDark) async {
