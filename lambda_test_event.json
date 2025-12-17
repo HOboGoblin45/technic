@@ -1,0 +1,8 @@
+﻿{
+    "action": "scan",
+    "config": {
+        "max_symbols": 5,
+        "sectors": ["Technology"],
+        "min_tech_rating": 10.0
+    }
+}
