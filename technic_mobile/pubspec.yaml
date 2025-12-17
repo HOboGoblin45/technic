@@ -77,10 +77,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Assets (commented out until we add them)
-  # assets:
-  #   - assets/images/
-  #   - assets/icons/
+  # Assets
+  assets:
+    - assets/logo_tq.svg
 
   # Fonts (commented out until we add them)
   # fonts:
