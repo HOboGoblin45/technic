@@ -21,6 +21,7 @@ import '../../widgets/section_header.dart';
 import 'widgets/price_chart_widget.dart';
 import 'widgets/merit_breakdown_widget.dart';
 import 'widgets/trade_plan_widget.dart';
+import 'widgets/premium_price_header.dart';
 
 /// Symbol detail page with comprehensive analysis
 class SymbolDetailPage extends ConsumerStatefulWidget {
@@ -59,44 +60,6 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
           widget.ticker,
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
-        actions: [
-          Consumer(
-            builder: (context, ref, _) {
-              final watchlist = ref.watch(watchlistProvider);
-              final isWatched = watchlist.any((item) => item.ticker == widget.ticker);
-              
-              return IconButton(
-                onPressed: () async {
-                  if (isWatched) {
-                    await ref.read(watchlistProvider.notifier).remove(widget.ticker);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${widget.ticker} removed from watchlist'),
-                        ),
-                      );
-                    }
-                  } else {
-                    await ref.read(watchlistProvider.notifier).add(widget.ticker);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${widget.ticker} added to watchlist'),
-                          backgroundColor: AppColors.successGreen,
-                        ),
-                      );
-                    }
-                  }
-                },
-                icon: Icon(
-                  isWatched ? Icons.bookmark : Icons.bookmark_outline,
-                  color: isWatched ? AppColors.successGreen : null,
-                ),
-                tooltip: isWatched ? 'Remove from watchlist' : 'Add to watchlist',
-              );
-            },
-          ),
-        ],
       ),
       body: FutureBuilder<SymbolDetail>(
         future: _detailFuture,
@@ -160,8 +123,50 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Price Header
-            _buildPriceHeader(detail),
+            // Premium Price Header
+            Consumer(
+              builder: (context, ref, _) {
+                final watchlist = ref.watch(watchlistProvider);
+                final isWatched = watchlist.any((item) => item.ticker == detail.symbol);
+                
+                return PremiumPriceHeader(
+                  symbol: detail.symbol,
+                  companyName: null, // TODO: Add company name to API response
+                  currentPrice: detail.lastPrice,
+                  changePct: detail.changePct,
+                  changeAmount: detail.lastPrice != null && detail.changePct != null
+                      ? detail.lastPrice! * (detail.changePct! / 100)
+                      : null,
+                  icsTier: detail.icsTier,
+                  isWatched: isWatched,
+                  onWatchlistToggle: () async {
+                    if (isWatched) {
+                      await ref.read(watchlistProvider.notifier).remove(detail.symbol);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${detail.symbol} removed from watchlist'),
+                          ),
+                        );
+                      }
+                    } else {
+                      await ref.read(watchlistProvider.notifier).add(detail.symbol);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${detail.symbol} added to watchlist'),
+                            backgroundColor: AppColors.successGreen,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  isMarketOpen: _isMarketOpen(),
+                  volume: detail.history.isNotEmpty ? detail.history.last.volume.toDouble() : null,
+                  marketCap: detail.fundamentals?.marketCap,
+                );
+              },
+            ),
             const SizedBox(height: 24),
 
             // Price Chart (NEW - Professional widget with fl_chart)
@@ -567,5 +572,23 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
       default:
         return Colors.grey;
     }
+  }
+
+  bool _isMarketOpen() {
+    final now = DateTime.now();
+    final hour = now.hour;
+    final minute = now.minute;
+    final dayOfWeek = now.weekday;
+    
+    // Market is closed on weekends
+    if (dayOfWeek == DateTime.saturday || dayOfWeek == DateTime.sunday) {
+      return false;
+    }
+    
+    // Market hours: 9:30 AM - 4:00 PM ET (simplified, not accounting for timezone)
+    final marketOpen = hour > 9 || (hour == 9 && minute >= 30);
+    final marketClosed = hour >= 16;
+    
+    return marketOpen && !marketClosed;
   }
 }
