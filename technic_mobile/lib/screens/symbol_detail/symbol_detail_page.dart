@@ -18,10 +18,10 @@ import '../../services/api_service.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/section_header.dart';
-import 'widgets/price_chart_widget.dart';
 import 'widgets/merit_breakdown_widget.dart';
 import 'widgets/trade_plan_widget.dart';
 import 'widgets/premium_price_header.dart';
+import 'widgets/premium_chart_section.dart';
 
 /// Symbol detail page with comprehensive analysis
 class SymbolDetailPage extends ConsumerStatefulWidget {
@@ -169,11 +169,12 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
             ),
             const SizedBox(height: 24),
 
-            // Price Chart (NEW - Professional widget with fl_chart)
+            // Premium Chart Section (NEW - Glass morphism with timeframe selector)
             if (detail.history.isNotEmpty) ...[
-              PriceChartWidget(
+              PremiumChartSection(
                 history: detail.history,
                 symbol: detail.symbol,
+                currentPrice: detail.lastPrice,
               ),
               const SizedBox(height: 24),
             ],
@@ -232,83 +233,6 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
     );
   }
 
-  Widget _buildPriceHeader(SymbolDetail detail) {
-    final isPositive = (detail.changePct ?? 0) >= 0;
-    final changeColor = isPositive ? Colors.green : Colors.red;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      detail.symbol,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (detail.icsTier != null) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _getTierColor(detail.icsTier!),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          detail.icsTier!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (detail.lastPrice != null)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        formatCurrency(detail.lastPrice!),
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (detail.changePct != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '${isPositive ? '+' : ''}${detail.changePct!.toStringAsFixed(2)}%',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: changeColor,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildMetricsGrid(SymbolDetail detail) {
     final metrics = <Map<String, dynamic>>[];
