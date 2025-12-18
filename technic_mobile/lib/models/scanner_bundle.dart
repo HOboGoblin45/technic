@@ -64,7 +64,7 @@ class ScannerBundle {
   bool get hasResults => scanResults.isNotEmpty;
   
   /// Check if bundle has movers
-  bool get hasMovers => movers.isEmpty;
+  bool get hasMovers => movers.isNotEmpty;
   
   /// Check if bundle has scoreboard data
   bool get hasScoreboard => scoreboard.isNotEmpty;

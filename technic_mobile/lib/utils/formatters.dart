@@ -160,6 +160,7 @@ String formatRelativeTime(DateTime dateTime) {
 /// Truncate text with ellipsis
 String truncate(String text, int maxLength, {String ellipsis = '...'}) {
   if (text.length <= maxLength) return text;
+  if (maxLength <= ellipsis.length) return ellipsis.substring(0, maxLength);
   return '${text.substring(0, maxLength - ellipsis.length)}$ellipsis';
 }
 
@@ -217,10 +218,12 @@ bool? parseBool(dynamic value) {
 
 String _getDayName(int weekday) {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  if (weekday < 1 || weekday > 7) return 'Unknown';
   return days[weekday - 1];
 }
 
 String _getMonthAbbr(int month) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (month < 1 || month > 12) return 'Unknown';
   return months[month - 1];
 }

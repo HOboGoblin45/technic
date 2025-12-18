@@ -49,10 +49,19 @@ String fmtLocalTime(DateTime dt) {
 }
 
 /// Converts a hex color string to a Color object
-/// Supports both 6-character (#RRGGBB) and 7-character (#RRGGBB) formats
+/// Supports both 6-character (RRGGBB) and 7-character (#RRGGBB) formats
+/// Returns Colors.transparent if the hex string is invalid
 Color colorFromHex(String hex) {
-  final buffer = StringBuffer();
-  if (hex.length == 6 || hex.length == 7) buffer.write('ff');
-  buffer.write(hex.replaceFirst('#', ''));
-  return Color(int.parse(buffer.toString(), radix: 16));
+  try {
+    final cleanHex = hex.replaceFirst('#', '').trim();
+    if (cleanHex.isEmpty || cleanHex.length < 6) {
+      return Colors.transparent;
+    }
+    final buffer = StringBuffer();
+    if (cleanHex.length == 6) buffer.write('ff');
+    buffer.write(cleanHex.substring(0, cleanHex.length > 8 ? 8 : cleanHex.length));
+    return Color(int.parse(buffer.toString(), radix: 16));
+  } catch (e) {
+    return Colors.transparent;
+  }
 }
