@@ -11,5 +11,5 @@ else
     echo "⚠️  Warning: training_data_v2.parquet not found on persistent disk"
 fi
 
-# Start the API server
-exec python -m uvicorn technic_v4.api_server:app --host 0.0.0.0 --port "$PORT"
+# Start the hybrid API server (with Lambda support)
+exec python -m uvicorn api_hybrid:app --host 0.0.0.0 --port "$PORT"
