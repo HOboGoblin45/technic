@@ -211,7 +211,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () {
-                        // TODO: Implement forgot password
+                        // Note: Password recovery feature planned for future release
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Password recovery coming soon'),

@@ -176,7 +176,7 @@ class SettingsPage extends ConsumerWidget {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () {
-                          // TODO: Navigate to profile edit page
+                          // Note: Profile editing feature planned for future release
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Profile editing coming soon'),

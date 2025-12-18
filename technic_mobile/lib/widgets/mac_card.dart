@@ -165,7 +165,7 @@ class MacCardWithHeader extends StatelessWidget {
           Divider(
             height: 1,
             thickness: 1,
-            color: theme.dividerColor.withOpacity(0.1),
+            color: theme.dividerColor.withValues(alpha: 0.1),
           ),
           // Content
           Padding(

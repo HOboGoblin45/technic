@@ -46,14 +46,14 @@ class GlassContainer extends StatelessWidget {
     
     // Default color based on theme
     final defaultColor = isDark 
-        ? Colors.white.withOpacity(opacity)
-        : Colors.black.withOpacity(opacity);
+        ? Colors.white.withValues(alpha: opacity)
+        : Colors.black.withValues(alpha: opacity);
     
     // Default border
     final defaultBorder = Border.all(
       color: isDark 
-          ? Colors.white.withOpacity(0.2)
-          : Colors.black.withOpacity(0.1),
+          ? Colors.white.withValues(alpha: 0.2)
+          : Colors.black.withValues(alpha: 0.1),
       width: 1,
     );
     
@@ -139,7 +139,7 @@ class GlassNavigationBar extends StatelessWidget {
       borderRadius: BorderRadius.zero,
       border: Border(
         top: BorderSide(
-          color: Colors.white.withOpacity(0.1),
+          color: Colors.white.withValues(alpha: 0.1),
           width: 1,
         ),
       ),

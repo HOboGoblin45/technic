@@ -8,7 +8,6 @@ import '../providers/scanner_provider.dart';
 import '../widgets/mac_button.dart';
 import '../widgets/mac_card.dart';
 import '../theme/spacing.dart';
-import '../theme/app_colors.dart';
 
 class ScannerTestScreen extends StatefulWidget {
   const ScannerTestScreen({super.key});

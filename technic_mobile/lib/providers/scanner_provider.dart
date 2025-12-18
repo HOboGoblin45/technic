@@ -4,7 +4,6 @@ library;
 
 import 'package:flutter/foundation.dart';
 import '../services/scanner_service.dart';
-import '../services/api_client.dart';
 
 /// Scanner state
 enum ScannerState {

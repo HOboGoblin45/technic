@@ -8,14 +8,14 @@ class Shadows {
   Shadows._(); // Private constructor to prevent instantiation
 
   // Shadow colors (with opacity)
-  static final Color shadowColor = Colors.black.withOpacity(0.1);
-  static final Color shadowColorLight = Colors.black.withOpacity(0.05);
-  static final Color shadowColorStrong = Colors.black.withOpacity(0.15);
+  static final Color shadowColor = Colors.black.withValues(alpha: 0.1);
+  static final Color shadowColorLight = Colors.black.withValues(alpha: 0.05);
+  static final Color shadowColorStrong = Colors.black.withValues(alpha: 0.15);
   
   // Subtle shadow (for cards, small elevations)
   static final List<BoxShadow> subtle = [
     BoxShadow(
-      color: Colors.black.withOpacity(0.05),
+      color: Colors.black.withValues(alpha: 0.05),
       blurRadius: 10,
       offset: const Offset(0, 2),
       spreadRadius: 0,
@@ -25,7 +25,7 @@ class Shadows {
   // Medium shadow (for modals, floating elements)
   static final List<BoxShadow> medium = [
     BoxShadow(
-      color: Colors.black.withOpacity(0.1),
+      color: Colors.black.withValues(alpha: 0.1),
       blurRadius: 20,
       offset: const Offset(0, 4),
       spreadRadius: 0,
@@ -35,7 +35,7 @@ class Shadows {
   // Strong shadow (for dialogs, important elements)
   static final List<BoxShadow> strong = [
     BoxShadow(
-      color: Colors.black.withOpacity(0.15),
+      color: Colors.black.withValues(alpha: 0.15),
       blurRadius: 30,
       offset: const Offset(0, 8),
       spreadRadius: 0,
@@ -45,13 +45,13 @@ class Shadows {
   // Layered shadow (for maximum depth)
   static final List<BoxShadow> layered = [
     BoxShadow(
-      color: Colors.black.withOpacity(0.1),
+      color: Colors.black.withValues(alpha: 0.1),
       blurRadius: 10,
       offset: const Offset(0, 2),
       spreadRadius: 0,
     ),
     BoxShadow(
-      color: Colors.black.withOpacity(0.05),
+      color: Colors.black.withValues(alpha: 0.05),
       blurRadius: 20,
       offset: const Offset(0, 4),
       spreadRadius: 0,

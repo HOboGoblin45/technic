@@ -170,7 +170,7 @@ class _MacButtonState extends State<MacButton> with SingleTickerProviderStateMix
               padding: _getPadding(),
               decoration: BoxDecoration(
                 color: isDisabled 
-                    ? backgroundColor.withOpacity(0.5)
+                    ? backgroundColor.withValues(alpha: 0.5)
                     : backgroundColor,
                 borderRadius: BorderRadii.buttonBorderRadius,
                 boxShadow: isDisabled || _isPressed ? null : Shadows.button,
@@ -215,7 +215,6 @@ class MacButtonSecondary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final borderColorFinal = borderColor ?? theme.colorScheme.primary;
     final textColorFinal = textColor ?? theme.colorScheme.primary;
     
     return MacButton(
