@@ -18,6 +18,7 @@ import '../../widgets/section_header.dart';
 import 'widgets/widgets.dart';
 import 'widgets/sort_filter_bar.dart';
 import 'widgets/scan_progress_overlay.dart';
+import 'widgets/premium_scan_result_card.dart';
 import '../symbol_detail/symbol_detail_page.dart';
 
 class ScannerPage extends ConsumerStatefulWidget {
@@ -730,20 +731,25 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
                           ),
                         )
                       else
-                        ...sortedResults.map(
-                          (result) => ScanResultCard(
-                            result: result,
-                            onTap: () {
-                              Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => SymbolDetailPage(
-                                  ticker: result.ticker,
+                        ...sortedResults.asMap().entries.map(
+                          (entry) {
+                            final index = entry.key;
+                            final result = entry.value;
+                            return PremiumScanResultCard(
+                              result: result,
+                              isTopPick: index == 0, // First result is top pick
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => SymbolDetailPage(
+                                      ticker: result.ticker,
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
+                                );
+                              },
+                            );
+                          },
                         ),
 
                       // Bottom spacing
