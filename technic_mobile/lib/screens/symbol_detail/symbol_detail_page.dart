@@ -23,6 +23,9 @@ import 'widgets/trade_plan_widget.dart';
 import 'widgets/premium_price_header.dart';
 import 'widgets/premium_chart_section.dart';
 import 'widgets/premium_metrics_grid.dart';
+import 'widgets/premium_fundamentals_card.dart';
+import 'widgets/premium_events_timeline.dart';
+import 'widgets/premium_action_buttons.dart';
 
 /// Symbol detail page with comprehensive analysis
 class SymbolDetailPage extends ConsumerStatefulWidget {
@@ -213,20 +216,34 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
             _buildPremiumMetricsGrid(detail),
             const SizedBox(height: 16),
 
-            // Fundamentals
+            // Premium Fundamentals Card (NEW - Glass morphism with color-coded indicators)
             if (detail.fundamentals != null) ...[
-              _buildFundamentals(detail.fundamentals!),
-              const SizedBox(height: 16),
+              PremiumFundamentalsCard(fundamentals: detail.fundamentals!),
+              const SizedBox(height: 24),
             ],
 
-            // Events
+            // Premium Events Timeline (NEW - Timeline visualization with countdowns)
             if (detail.events != null) ...[
-              _buildEvents(detail.events!),
-              const SizedBox(height: 16),
+              PremiumEventsTimeline(events: detail.events!),
+              const SizedBox(height: 24),
             ],
 
-            // Actions
-            _buildActions(detail),
+            // Premium Action Buttons (NEW - Gradient buttons with animations)
+            PremiumActionButtons(
+              symbol: detail.symbol,
+              optionsAvailable: detail.optionsAvailable,
+              onCopilotTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Opening Copilot for ${detail.symbol}...')),
+                );
+              },
+              onOptionsTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Options chain coming soon')),
+                );
+              },
+            ),
             const SizedBox(height: 80),
           ],
         ),
@@ -296,174 +313,6 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
     );
   }
 
-  Widget _buildFundamentals(Fundamentals fundamentals) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionHeader('Fundamentals'),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                if (fundamentals.pe != null)
-                  _buildFundamentalRow('P/E Ratio', fundamentals.pe!.toStringAsFixed(2)),
-                if (fundamentals.pe != null && fundamentals.eps != null)
-                  const Divider(height: 24),
-                if (fundamentals.eps != null)
-                  _buildFundamentalRow('EPS', formatCurrency(fundamentals.eps!)),
-                if (fundamentals.eps != null && fundamentals.roe != null)
-                  const Divider(height: 24),
-                if (fundamentals.roe != null)
-                  _buildFundamentalRow('ROE', '${fundamentals.roe!.toStringAsFixed(1)}%'),
-                if (fundamentals.roe != null && fundamentals.debtToEquity != null)
-                  const Divider(height: 24),
-                if (fundamentals.debtToEquity != null)
-                  _buildFundamentalRow('Debt/Equity', fundamentals.debtToEquity!.toStringAsFixed(2)),
-                if (fundamentals.debtToEquity != null && fundamentals.marketCap != null)
-                  const Divider(height: 24),
-                if (fundamentals.marketCap != null)
-                  _buildFundamentalRow('Market Cap', formatCompact(fundamentals.marketCap!)),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFundamentalRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 14, color: Colors.white70),
-        ),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildEvents(EventInfo events) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionHeader('Upcoming Events'),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                if (events.nextEarnings != null) ...[
-                  _buildEventRow(
-                    Icons.event,
-                    'Earnings',
-                    formatDate(events.nextEarnings!),
-                    events.daysToEarnings != null
-                        ? 'in ${events.daysToEarnings} days'
-                        : null,
-                  ),
-                  if (events.nextDividend != null) const Divider(height: 24),
-                ],
-                if (events.nextDividend != null)
-                  _buildEventRow(
-                    Icons.payments,
-                    'Dividend',
-                    formatDate(events.nextDividend!),
-                    events.dividendAmount != null
-                        ? formatCurrency(events.dividendAmount!)
-                        : null,
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildEventRow(IconData icon, String label, String date, String? subtitle) {
-    return Row(
-      children: [
-        Icon(icon, size: 24, color: AppColors.primaryBlue),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                date,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Colors.white70,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (subtitle != null)
-          Text(
-            subtitle,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primaryBlue,
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildActions(SymbolDetail detail) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ElevatedButton.icon(
-          onPressed: () {
-            Navigator.pop(context);
-            // TODO: Navigate to Copilot with symbol context
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Opening Copilot for ${detail.symbol}...')),
-            );
-          },
-          icon: const Icon(Icons.chat_bubble),
-          label: const Text('Ask Copilot'),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            backgroundColor: AppColors.primaryBlue,
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (detail.optionsAvailable)
-          OutlinedButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Options chain coming soon')),
-              );
-            },
-            icon: const Icon(Icons.show_chart),
-            label: const Text('View Options'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-      ],
-    );
-  }
 
   Color _getTierColor(String tier) {
     switch (tier.toUpperCase()) {
