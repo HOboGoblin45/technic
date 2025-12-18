@@ -20,6 +20,7 @@ import 'widgets/sort_filter_bar.dart';
 import 'widgets/scan_progress_overlay.dart';
 import 'widgets/premium_scan_result_card.dart';
 import 'widgets/premium_filter_panel.dart';
+import 'widgets/premium_market_pulse_card.dart';
 import '../symbol_detail/symbol_detail_page.dart';
 
 class ScannerPage extends ConsumerStatefulWidget {
@@ -613,7 +614,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
 
                       // Market Pulse
                       if (bundle.movers.isNotEmpty)
-                        MarketPulseCard(movers: bundle.movers),
+                        PremiumMarketPulseCard(movers: bundle.movers),
 
                       // Scoreboard
                       if (bundle.scoreboard.isNotEmpty)
