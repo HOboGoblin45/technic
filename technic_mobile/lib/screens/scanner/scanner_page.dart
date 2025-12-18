@@ -19,6 +19,7 @@ import 'widgets/widgets.dart';
 import 'widgets/sort_filter_bar.dart';
 import 'widgets/scan_progress_overlay.dart';
 import 'widgets/premium_scan_result_card.dart';
+import 'widgets/premium_filter_panel.dart';
 import '../symbol_detail/symbol_detail_page.dart';
 
 class ScannerPage extends ConsumerStatefulWidget {
@@ -344,7 +345,7 @@ class _ScannerPageState extends ConsumerState<ScannerPage>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => FilterPanel(
+      builder: (context) => PremiumFilterPanel(
         filters: _filters,
         onFiltersChanged: (newFilters) {
           setState(() {
