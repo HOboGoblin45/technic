@@ -1,5 +1,5 @@
 /// App Shell
-/// 
+///
 /// Main navigation shell with bottom tab bar and page management.
 library;
 
@@ -14,6 +14,7 @@ import 'screens/settings/settings_page.dart';
 import 'services/local_store.dart';
 import 'theme/app_colors.dart';
 import 'utils/helpers.dart';
+import 'widgets/premium_bottom_nav.dart';
 
 /// Main app shell with tab navigation
 class TechnicShell extends StatefulWidget {
@@ -60,12 +61,6 @@ class _TechnicShellState extends State<TechnicShell> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    
-    
-    
-    
-    final navBackground = const Color(0xFF0F1C31);  // Dark blue for both modes
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -140,57 +135,15 @@ class _TechnicShellState extends State<TechnicShell> {
         ),
       ),
       
-      // Bottom navigation bar
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: navBackground,
-          border: const Border(top: BorderSide(color: Color(0xFF0F172A))),
-          boxShadow: [
-            BoxShadow(
-              color: tone(Colors.black, 0.35),
-              blurRadius: 12,
-              offset: const Offset(0, -6),
-            ),
-          ],
-        ),
-        child: NavigationBar(
-          selectedIndex: _index,
-          backgroundColor: Colors.transparent,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          indicatorColor: tone(AppColors.primaryBlue, 0.18),
-          height: 70,
-          onDestinationSelected: (value) {
-            setState(() => _index = value);
-            LocalStore.saveLastTab(value);
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.assessment_outlined),
-              selectedIcon: Icon(Icons.assessment),
-              label: 'Scan',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.lightbulb_outline),
-              selectedIcon: Icon(Icons.lightbulb),
-              label: 'Ideas',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.chat_bubble_outline),
-              selectedIcon: Icon(Icons.chat_bubble),
-              label: 'Copilot',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.bookmark_outline),
-              selectedIcon: Icon(Icons.bookmark),
-              label: 'Watchlist',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: 'Settings',
-            ),
-          ],
-        ),
+      // Premium Bottom Navigation (Phase 4.1)
+      bottomNavigationBar: PremiumBottomNav(
+        currentIndex: _index,
+        onTap: (index) {
+          setState(() => _index = index);
+          LocalStore.saveLastTab(index);
+        },
+        items: createTechnicNavItems(),
+        enableHaptics: true,
       ),
     );
   }
