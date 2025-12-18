@@ -22,6 +22,7 @@ import 'widgets/merit_breakdown_widget.dart';
 import 'widgets/trade_plan_widget.dart';
 import 'widgets/premium_price_header.dart';
 import 'widgets/premium_chart_section.dart';
+import 'widgets/premium_metrics_grid.dart';
 
 /// Symbol detail page with comprehensive analysis
 class SymbolDetailPage extends ConsumerStatefulWidget {
@@ -208,8 +209,8 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
             ),
             const SizedBox(height: 24),
 
-            // Quantitative Metrics
-            _buildMetricsGrid(detail),
+            // Premium Metrics Grid (NEW - Glass morphism with animated counters)
+            _buildPremiumMetricsGrid(detail),
             const SizedBox(height: 16),
 
             // Fundamentals
@@ -234,85 +235,64 @@ class _SymbolDetailPageState extends ConsumerState<SymbolDetailPage> {
   }
 
 
-  Widget _buildMetricsGrid(SymbolDetail detail) {
-    final metrics = <Map<String, dynamic>>[];
+  Widget _buildPremiumMetricsGrid(SymbolDetail detail) {
+    final metrics = <MetricData>[];
 
     if (detail.techRating != null) {
-      metrics.add({'label': 'Tech Rating', 'value': detail.techRating!.toStringAsFixed(1)});
+      metrics.add(MetricData(
+        label: 'Tech Rating',
+        value: detail.techRating!.toStringAsFixed(1),
+        icon: Icons.trending_up,
+        progress: detail.techRating! / 10,
+      ));
     }
     if (detail.winProb10d != null) {
-      metrics.add({'label': 'Win Prob (10d)', 'value': '${(detail.winProb10d! * 100).toStringAsFixed(0)}%'});
+      metrics.add(MetricData(
+        label: 'Win Prob (10d)',
+        value: '${(detail.winProb10d! * 100).toStringAsFixed(0)}%',
+        icon: Icons.show_chart,
+        progress: detail.winProb10d,
+      ));
     }
     if (detail.qualityScore != null) {
-      metrics.add({'label': 'Quality', 'value': detail.qualityScore!.toStringAsFixed(1)});
+      metrics.add(MetricData(
+        label: 'Quality',
+        value: detail.qualityScore!.toStringAsFixed(1),
+        icon: Icons.star,
+        progress: detail.qualityScore! / 10,
+      ));
     }
     if (detail.ics != null) {
-      metrics.add({'label': 'ICS', 'value': detail.ics!.toStringAsFixed(1)});
+      metrics.add(MetricData(
+        label: 'ICS',
+        value: detail.ics!.toStringAsFixed(1),
+        icon: Icons.analytics,
+        progress: detail.ics! / 100,
+      ));
     }
     if (detail.alphaScore != null) {
-      metrics.add({'label': 'Alpha', 'value': detail.alphaScore!.toStringAsFixed(1)});
+      metrics.add(MetricData(
+        label: 'Alpha',
+        value: detail.alphaScore!.toStringAsFixed(1),
+        icon: Icons.rocket_launch,
+        progress: (detail.alphaScore! + 5) / 10, // Normalize -5 to 5 range
+      ));
     }
     if (detail.riskScore != null) {
-      metrics.add({'label': 'Risk', 'value': detail.riskScore!});
+      metrics.add(MetricData(
+        label: 'Risk',
+        value: detail.riskScore!,
+        icon: Icons.shield,
+      ));
     }
 
     if (metrics.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionHeader('Quantitative Metrics'),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 2.5,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-              ),
-              itemCount: metrics.length,
-              itemBuilder: (context, index) {
-                final metric = metrics[index];
-                return _buildMetricTile(
-                  metric['label'] as String,
-                  metric['value'] as String,
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMetricTile(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.white54,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
+    return PremiumMetricsGrid(
+      metrics: metrics,
+      title: 'Quantitative Metrics',
     );
   }
 
