@@ -4,7 +4,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import 'screens/scanner/scanner_page.dart';
 import 'screens/ideas/ideas_page.dart';
@@ -13,8 +12,8 @@ import 'screens/watchlist/watchlist_page.dart';
 import 'screens/settings/settings_page.dart';
 import 'services/local_store.dart';
 import 'theme/app_colors.dart';
-import 'utils/helpers.dart';
 import 'widgets/premium_bottom_nav.dart';
+import 'widgets/premium_app_bar.dart';
 
 /// Main app shell with tab navigation
 class TechnicShell extends StatefulWidget {
@@ -64,61 +63,16 @@ class _TechnicShellState extends State<TechnicShell> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(70),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F1C31),  // Dark blue for both modes
-            border: Border(bottom: BorderSide(color: isDark ? AppColors.darkBorder : const Color(0xFFE5E7EB))),
-          ),
-          child: SafeArea(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Logo
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryBlue,  // Light blue background
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.primaryBlue),
-                    boxShadow: [
-                      BoxShadow(
-                        color: tone(Colors.black, 0.15),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: SvgPicture.asset(
-                    'assets/logo_tq.svg',
-                    width: 20,
-                    height: 20,
-                    colorFilter: const ColorFilter.mode(
-                      AppColors.darkBackground,  // Dark blue lettering
-                      BlendMode.srcIn,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                
-                // Title
-                const Text(
-                  'technic',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w300,  // Thin
-                    letterSpacing: 1.5,
-                    color: Colors.white,  // White
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+      // Premium App Bar (Phase 4.2)
+      appBar: PremiumAppBar(
+        title: 'technic',
+        logoAsset: 'assets/logo_tq.svg',
+        showSearch: true,
+        searchHint: 'Search stocks...',
+        onSearchChanged: (query) {
+          // TODO: Implement global search
+          debugPrint('Search query: $query');
+        },
       ),
       
       // Body with gradient background
