@@ -49,11 +49,12 @@ class ApiClient {
     String endpoint, {
     Map<String, String>? headers,
     Map<String, String>? queryParameters,
+    String? authToken,
   }) async {
     try {
       final uri = _buildUri(endpoint, queryParameters);
       final response = await _client
-          .get(uri, headers: _buildHeaders(headers))
+          .get(uri, headers: _buildHeaders(headers, authToken: authToken))
           .timeout(ApiConfig.connectTimeout);
       
       return _handleResponse(response);
@@ -73,13 +74,14 @@ class ApiClient {
     String endpoint, {
     Map<String, dynamic>? body,
     Map<String, String>? headers,
+    String? authToken,
   }) async {
     try {
       final uri = _buildUri(endpoint);
       final response = await _client
           .post(
             uri,
-            headers: _buildHeaders(headers),
+            headers: _buildHeaders(headers, authToken: authToken),
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(ApiConfig.sendTimeout);
@@ -101,13 +103,14 @@ class ApiClient {
     String endpoint, {
     Map<String, dynamic>? body,
     Map<String, String>? headers,
+    String? authToken,
   }) async {
     try {
       final uri = _buildUri(endpoint);
       final response = await _client
           .put(
             uri,
-            headers: _buildHeaders(headers),
+            headers: _buildHeaders(headers, authToken: authToken),
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(ApiConfig.sendTimeout);
@@ -128,11 +131,12 @@ class ApiClient {
   Future<ApiResponse<Map<String, dynamic>>> delete(
     String endpoint, {
     Map<String, String>? headers,
+    String? authToken,
   }) async {
     try {
       final uri = _buildUri(endpoint);
       final response = await _client
-          .delete(uri, headers: _buildHeaders(headers))
+          .delete(uri, headers: _buildHeaders(headers, authToken: authToken))
           .timeout(ApiConfig.connectTimeout);
       
       return _handleResponse(response);
@@ -159,14 +163,22 @@ class ApiClient {
     return Uri.parse(url);
   }
   
-  /// Build headers
-  Map<String, String> _buildHeaders(Map<String, String>? additionalHeaders) {
+  /// Build headers with optional auth token
+  Map<String, String> _buildHeaders(
+    Map<String, String>? additionalHeaders, {
+    String? authToken,
+  }) {
     final headers = Map<String, String>.from(ApiConfig.defaultHeaders);
-    
+
+    // Add authorization header if token provided
+    if (authToken != null && authToken.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $authToken';
+    }
+
     if (additionalHeaders != null) {
       headers.addAll(additionalHeaders);
     }
-    
+
     return headers;
   }
   

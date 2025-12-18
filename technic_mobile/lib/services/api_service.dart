@@ -299,8 +299,10 @@ class ApiService {
         'symbol': symbol,
       },
     );
-    
-    final res = await _client.get(uri, headers: {'Accept': 'application/json'});
+
+    final res = await _client
+        .get(uri, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 30));
     
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final decoded = _decode(res.body);
@@ -341,10 +343,12 @@ class ApiService {
 
   /// Fetch universe statistics (sectors, subindustries)
   Future<UniverseStats?> fetchUniverseStats() async {
-    final res = await _client.get(
-      _config.universeStatsUri(),
-      headers: {'Accept': 'application/json'},
-    );
+    final res = await _client
+        .get(
+          _config.universeStatsUri(),
+          headers: {'Accept': 'application/json'},
+        )
+        .timeout(const Duration(seconds: 30));
     
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final decoded = _decode(res.body);
@@ -362,17 +366,19 @@ class ApiService {
     String? symbol,
     String? optionsMode,
   }) async {
-    final res = await _client.post(
-      _config.copilotUri(),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'question': prompt,
-        if (symbol != null) 'symbol': symbol,
-        if (optionsMode != null) 'options_mode': optionsMode,
-      }),
-    );
+    final res = await _client
+        .post(
+          _config.copilotUri(),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'question': prompt,
+            if (symbol != null) 'symbol': symbol,
+            if (optionsMode != null) 'options_mode': optionsMode,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
     
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final decoded = _decode(res.body);
@@ -406,13 +412,15 @@ class ApiService {
         .replace(queryParameters: {'days': days.toString()});
     
     debugPrint('[API] Fetching symbol detail: $uri');
-    
-    final res = await _client.get(
-      uri,
-      headers: {
-        'Accept': 'application/json',
-      },
-    );
+
+    final res = await _client
+        .get(
+          uri,
+          headers: {
+            'Accept': 'application/json',
+          },
+        )
+        .timeout(const Duration(seconds: 30));
     
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final decoded = _decode(res.body);
@@ -445,11 +453,13 @@ class ApiService {
               ...params,
             },
           );
-    
-    final res = await _client.get(
-      targetUri,
-      headers: {'Accept': 'application/json'},
-    );
+
+    final res = await _client
+        .get(
+          targetUri,
+          headers: {'Accept': 'application/json'},
+        )
+        .timeout(const Duration(seconds: 30));
     
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final decoded = _decode(res.body);

@@ -89,17 +89,19 @@ class AuthService {
       debugPrint('[Auth] Attempting login for: $email');
       
       final uri = Uri.parse('$_baseUrl/api/auth/login');
-      final res = await _client.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email,
-          'password': password,
-        }),
-      );
+      final res = await _client
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'email': email,
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (res.statusCode == 200 || res.statusCode == 201) {
         final decoded = jsonDecode(res.body) as Map<String, dynamic>;
@@ -134,18 +136,20 @@ class AuthService {
       debugPrint('[Auth] Attempting signup for: $email');
       
       final uri = Uri.parse('$_baseUrl/api/auth/signup');
-      final res = await _client.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email,
-          'password': password,
-          'name': name,
-        }),
-      );
+      final res = await _client
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'email': email,
+              'password': password,
+              'name': name,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (res.statusCode == 200 || res.statusCode == 201) {
         final decoded = jsonDecode(res.body) as Map<String, dynamic>;
@@ -181,13 +185,15 @@ class AuthService {
       if (token != null) {
         try {
           final uri = Uri.parse('$_baseUrl/api/auth/logout');
-          await _client.post(
-            uri,
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Accept': 'application/json',
-            },
-          );
+          await _client
+              .post(
+                uri,
+                headers: {
+                  'Authorization': 'Bearer $token',
+                  'Accept': 'application/json',
+                },
+              )
+              .timeout(const Duration(seconds: 30));
         } catch (e) {
           debugPrint('[Auth] Backend logout failed (continuing): $e');
         }
@@ -266,16 +272,18 @@ class AuthService {
       debugPrint('[Auth] Refreshing access token');
       
       final uri = Uri.parse('$_baseUrl/api/auth/refresh');
-      final res = await _client.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
-          'refresh_token': refreshToken,
-        }),
-      );
+      final res = await _client
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'refresh_token': refreshToken,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body) as Map<String, dynamic>;

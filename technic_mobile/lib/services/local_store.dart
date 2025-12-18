@@ -40,37 +40,73 @@ class LocalStore {
 
   /// Load scanner state including filters, presets, and cached results
   static Future<Map<String, dynamic>?> loadScannerState() async {
-    final p = await _prefs();
-    final filters = p.getString('filters');
-    if (filters == null) return null;
-    
-    final saved = p.getString('saved_screens');
-    final lastScans = p.getString('last_scans');
-    final lastMovers = p.getString('last_movers');
-    
-    return {
-      'filters': Map<String, String>.from(jsonDecode(filters)),
-      'saved_screens': saved != null
-          ? (jsonDecode(saved) as List)
-              .map((e) => SavedScreen.fromJson(Map<String, dynamic>.from(e)))
-              .toList()
-          : <SavedScreen>[],
-      'scanCount': p.getInt('scan_count') ?? 0,
-      'streakDays': p.getInt('streak_days') ?? 0,
-      'lastScan': p.getString('last_scan'),
-      'advancedMode': p.getBool('advanced_mode') ?? true,
-      'showOnboarding': p.getBool('show_onboarding') ?? true,
-      'last_scans': lastScans != null
-          ? (jsonDecode(lastScans) as List)
-              .map((e) => ScanResult.fromJson(Map<String, dynamic>.from(e)))
-              .toList()
-          : <ScanResult>[],
-      'last_movers': lastMovers != null
-          ? (jsonDecode(lastMovers) as List)
-              .map((e) => MarketMover.fromJson(Map<String, dynamic>.from(e)))
-              .toList()
-          : <MarketMover>[],
-    };
+    try {
+      final p = await _prefs();
+      final filters = p.getString('filters');
+      if (filters == null) return null;
+
+      final saved = p.getString('saved_screens');
+      final lastScans = p.getString('last_scans');
+      final lastMovers = p.getString('last_movers');
+
+      // Parse filters with error handling
+      Map<String, String> parsedFilters;
+      try {
+        parsedFilters = Map<String, String>.from(jsonDecode(filters) as Map);
+      } catch (_) {
+        parsedFilters = {};
+      }
+
+      // Parse saved screens with error handling
+      List<SavedScreen> parsedSavedScreens = [];
+      if (saved != null) {
+        try {
+          parsedSavedScreens = (jsonDecode(saved) as List)
+              .map((e) => SavedScreen.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        } catch (_) {
+          // Keep empty list on error
+        }
+      }
+
+      // Parse last scans with error handling
+      List<ScanResult> parsedLastScans = [];
+      if (lastScans != null) {
+        try {
+          parsedLastScans = (jsonDecode(lastScans) as List)
+              .map((e) => ScanResult.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        } catch (_) {
+          // Keep empty list on error
+        }
+      }
+
+      // Parse last movers with error handling
+      List<MarketMover> parsedLastMovers = [];
+      if (lastMovers != null) {
+        try {
+          parsedLastMovers = (jsonDecode(lastMovers) as List)
+              .map((e) => MarketMover.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        } catch (_) {
+          // Keep empty list on error
+        }
+      }
+
+      return {
+        'filters': parsedFilters,
+        'saved_screens': parsedSavedScreens,
+        'scanCount': p.getInt('scan_count') ?? 0,
+        'streakDays': p.getInt('streak_days') ?? 0,
+        'lastScan': p.getString('last_scan'),
+        'advancedMode': p.getBool('advanced_mode') ?? true,
+        'showOnboarding': p.getBool('show_onboarding') ?? true,
+        'last_scans': parsedLastScans,
+        'last_movers': parsedLastMovers,
+      };
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Save scanner state including filters, presets, and statistics

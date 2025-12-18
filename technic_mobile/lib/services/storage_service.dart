@@ -151,39 +151,75 @@ class StorageService {
 
   /// Load complete scanner state
   Future<ScannerState?> loadScannerState() async {
-    final p = await _prefsInstance;
-    final filtersJson = p.getString('filters');
-    
-    if (filtersJson == null) return null;
+    try {
+      final p = await _prefsInstance;
+      final filtersJson = p.getString('filters');
 
-    final savedJson = p.getString('saved_screens');
-    final lastScansJson = p.getString('last_scans');
-    final lastMoversJson = p.getString('last_movers');
-    final lastScanStr = p.getString('last_scan');
+      if (filtersJson == null) return null;
 
-    return ScannerState(
-      filters: Map<String, String>.from(jsonDecode(filtersJson) as Map),
-      savedScreens: savedJson != null
-          ? (jsonDecode(savedJson) as List)
+      final savedJson = p.getString('saved_screens');
+      final lastScansJson = p.getString('last_scans');
+      final lastMoversJson = p.getString('last_movers');
+      final lastScanStr = p.getString('last_scan');
+
+      // Parse filters with error handling
+      Map<String, String> parsedFilters;
+      try {
+        parsedFilters = Map<String, String>.from(jsonDecode(filtersJson) as Map);
+      } catch (_) {
+        parsedFilters = {};
+      }
+
+      // Parse saved screens with error handling
+      List<SavedScreen> parsedSavedScreens = [];
+      if (savedJson != null) {
+        try {
+          parsedSavedScreens = (jsonDecode(savedJson) as List)
               .map((e) => SavedScreen.fromJson(Map<String, dynamic>.from(e as Map)))
-              .toList()
-          : [],
-      scanCount: p.getInt('scan_count') ?? 0,
-      streakDays: p.getInt('streak_days') ?? 0,
-      lastScan: lastScanStr != null ? DateTime.tryParse(lastScanStr) : null,
-      advancedMode: p.getBool('advanced_mode') ?? false,
-      showOnboarding: p.getBool('show_onboarding') ?? true,
-      lastScans: lastScansJson != null
-          ? (jsonDecode(lastScansJson) as List)
+              .toList();
+        } catch (_) {
+          // Keep empty list on error
+        }
+      }
+
+      // Parse last scans with error handling
+      List<ScanResult> parsedLastScans = [];
+      if (lastScansJson != null) {
+        try {
+          parsedLastScans = (jsonDecode(lastScansJson) as List)
               .map((e) => ScanResult.fromJson(Map<String, dynamic>.from(e as Map)))
-              .toList()
-          : [],
-      lastMovers: lastMoversJson != null
-          ? (jsonDecode(lastMoversJson) as List)
+              .toList();
+        } catch (_) {
+          // Keep empty list on error
+        }
+      }
+
+      // Parse last movers with error handling
+      List<MarketMover> parsedLastMovers = [];
+      if (lastMoversJson != null) {
+        try {
+          parsedLastMovers = (jsonDecode(lastMoversJson) as List)
               .map((e) => MarketMover.fromJson(Map<String, dynamic>.from(e as Map)))
-              .toList()
-          : [],
-    );
+              .toList();
+        } catch (_) {
+          // Keep empty list on error
+        }
+      }
+
+      return ScannerState(
+        filters: parsedFilters,
+        savedScreens: parsedSavedScreens,
+        scanCount: p.getInt('scan_count') ?? 0,
+        streakDays: p.getInt('streak_days') ?? 0,
+        lastScan: lastScanStr != null ? DateTime.tryParse(lastScanStr) : null,
+        advancedMode: p.getBool('advanced_mode') ?? false,
+        showOnboarding: p.getBool('show_onboarding') ?? true,
+        lastScans: parsedLastScans,
+        lastMovers: parsedLastMovers,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Save complete scanner state

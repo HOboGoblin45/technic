@@ -8,21 +8,29 @@ import 'api_config.dart';
 /// Scanner Service
 class ScannerService {
   final ApiClient _client;
-  
-  ScannerService({ApiClient? client}) : _client = client ?? apiClient;
-  
+  String? _authToken;
+
+  ScannerService({ApiClient? client, String? authToken})
+      : _client = client ?? apiClient,
+        _authToken = authToken;
+
+  /// Set authentication token for subsequent requests
+  void setAuthToken(String? token) {
+    _authToken = token;
+  }
+
   /// Check API health
   Future<ApiResponse<Map<String, dynamic>>> checkHealth() async {
-    return await _client.get(ApiEndpoints.health);
+    return await _client.get(ApiEndpoints.health, authToken: _authToken);
   }
-  
+
   /// Get model status
   Future<ApiResponse<Map<String, dynamic>>> getModelStatus() async {
-    return await _client.get(ApiEndpoints.modelStatus);
+    return await _client.get(ApiEndpoints.modelStatus, authToken: _authToken);
   }
-  
+
   /// Predict scan outcomes
-  /// 
+  ///
   /// Parameters:
   /// - sectors: List of sectors to scan (e.g., ['Technology', 'Healthcare'])
   /// - minTechRating: Minimum technical rating (0-100)
@@ -33,7 +41,7 @@ class ScannerService {
     int? maxSymbols,
   }) async {
     final body = <String, dynamic>{};
-    
+
     if (sectors != null && sectors.isNotEmpty) {
       body['sectors'] = sectors;
     }
@@ -43,22 +51,23 @@ class ScannerService {
     if (maxSymbols != null) {
       body['max_symbols'] = maxSymbols;
     }
-    
+
     return await _client.post(
       ApiEndpoints.scanPredict,
       body: body,
+      authToken: _authToken,
     );
   }
-  
+
   /// Get parameter suggestions
-  /// 
+  ///
   /// Returns ML-suggested parameters for optimal scan results
   Future<ApiResponse<Map<String, dynamic>>> getSuggestions() async {
-    return await _client.get(ApiEndpoints.scanSuggest);
+    return await _client.get(ApiEndpoints.scanSuggest, authToken: _authToken);
   }
-  
+
   /// Execute a scan
-  /// 
+  ///
   /// Parameters:
   /// - sectors: List of sectors to scan
   /// - minTechRating: Minimum technical rating
@@ -73,7 +82,7 @@ class ScannerService {
     String? riskProfile,
   }) async {
     final body = <String, dynamic>{};
-    
+
     if (sectors != null && sectors.isNotEmpty) {
       body['sectors'] = sectors;
     }
@@ -89,18 +98,19 @@ class ScannerService {
     if (riskProfile != null) {
       body['risk_profile'] = riskProfile;
     }
-    
+
     return await _client.post(
       ApiEndpoints.scanExecute,
       body: body,
+      authToken: _authToken,
     );
   }
-  
+
   /// Train ML models
-  /// 
+  ///
   /// Triggers model training with historical scan data
   Future<ApiResponse<Map<String, dynamic>>> trainModels() async {
-    return await _client.post(ApiEndpoints.modelsTrain);
+    return await _client.post(ApiEndpoints.modelsTrain, authToken: _authToken);
   }
 }
 
