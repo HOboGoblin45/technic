@@ -129,17 +129,17 @@ class AppColors {
   static const LinearGradient cardGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF1A1F3A), Color(0xFF252B4A)],
+    colors: [darkCard, darkCardElevated],
   );
-  
+
   /// Shimmer Gradient (Loading states)
   static const LinearGradient shimmerGradient = LinearGradient(
     begin: Alignment(-1.0, 0.0),
     end: Alignment(1.0, 0.0),
     colors: [
-      Color(0xFF1A1F3A),
-      Color(0xFF252B4A),
-      Color(0xFF1A1F3A),
+      darkCard,
+      darkCardElevated,
+      darkCard,
     ],
     stops: [0.0, 0.5, 1.0],
   );
@@ -159,8 +159,9 @@ class AppColors {
   
   /// Premium Features
   static const Color premiumColor = infoPurple;
+  static const Color premiumPurple = Color(0xFF6366F1); // Indigo-500 for gradients
   static const LinearGradient premiumGradient = LinearGradient(
-    colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+    colors: [infoPurple, premiumPurple],
   );
   
   // ============================================================================

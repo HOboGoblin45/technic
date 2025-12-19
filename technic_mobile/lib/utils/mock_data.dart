@@ -1,22 +1,16 @@
 /// Mock Data
-/// 
+///
 /// Fallback data for offline mode and testing.
 library;
 
-import 'package:flutter/material.dart';
 import '../models/market_mover.dart';
 import '../models/scan_result.dart';
 import '../models/idea.dart';
 import '../models/scoreboard_slice.dart';
 import '../models/copilot_message.dart';
 import '../theme/app_colors.dart';
-/// Default tickers for search hints and quick access
-const defaultTickers = <String>[
-  'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN',
-  'GOOGL', 'META', 'NFLX', 'AMD', 'INTC',
-  'JPM', 'GS', 'XOM', 'CVX', 'BA',
-  'CAT', 'LMT', 'KO', 'PEP', 'WMT',
-];
+
+// Note: defaultTickers is defined in constants.dart - import from there
 
 /// Mock market movers for fallback display
 const mockMovers = <MarketMover>[
@@ -109,7 +103,7 @@ const scoreboardSlices = <ScoreboardSlice>[
     '+4.2% MTM',
     '64% win',
     'Avg hold 4h',
-    Color(0xFF5EEAD4),
+    AppColors.infoTeal, // Teal for day trades
   ),
   ScoreboardSlice(
     'Swing',
@@ -123,12 +117,12 @@ const scoreboardSlices = <ScoreboardSlice>[
     '+12.4% YTD',
     '52% win',
     'Avg hold 6m',
-    Color(0xFFB0CAFF),
+    AppColors.technicBlueLight, // Light blue for long-term
   ),
 ];
 
 /// Mock Copilot conversation for demonstration
-const copilotMessages = <CopilotMessage>[
+const mockCopilotMessages = <CopilotMessage>[
   CopilotMessage('user', 'What changed in semis today?'),
   CopilotMessage(
     'assistant',
@@ -145,10 +139,4 @@ const copilotMessages = <CopilotMessage>[
   ),
 ];
 
-/// Suggested Copilot prompts for quick access
-const copilotPrompts = <String>[
-  "Summarize today's scan",
-  'Explain risk on NVDA setup',
-  'Compare TSLA vs AAPL momentum',
-  'What moved semis this week?',
-];
+// Note: copilotPrompts is defined in constants.dart - import from there
