@@ -1,11 +1,12 @@
 /// Theme Provider
-/// 
+///
 /// Manages app theme mode (dark/light) with persistence
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/storage_service.dart';
+import 'app_providers.dart'; // Import centralized storageServiceProvider
 
 /// Theme mode enum
 enum AppThemeMode {
@@ -27,19 +28,24 @@ class ThemeNotifier extends StateNotifier<AppThemeMode> {
   final StorageService _storage;
 
   Future<void> _loadTheme() async {
-    final themeMode = await _storage.loadThemeMode();
-    if (themeMode != null) {
-      switch (themeMode) {
-        case 'light':
-          state = AppThemeMode.light;
-          break;
-        case 'dark':
-          state = AppThemeMode.dark;
-          break;
-        case 'system':
-          state = AppThemeMode.system;
-          break;
+    try {
+      final themeMode = await _storage.loadThemeMode();
+      if (themeMode != null) {
+        switch (themeMode) {
+          case 'light':
+            state = AppThemeMode.light;
+            break;
+          case 'dark':
+            state = AppThemeMode.dark;
+            break;
+          case 'system':
+            state = AppThemeMode.system;
+            break;
+        }
       }
+    } catch (e) {
+      // Default to dark mode on error
+      state = AppThemeMode.dark;
     }
   }
 
@@ -70,8 +76,3 @@ class ThemeNotifier extends StateNotifier<AppThemeMode> {
     }
   }
 }
-
-/// Storage Service Provider
-final storageServiceProvider = Provider<StorageService>((ref) {
-  return StorageService.instance;
-});

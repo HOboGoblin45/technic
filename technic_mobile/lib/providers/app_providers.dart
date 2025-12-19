@@ -49,9 +49,14 @@ class ThemeModeNotifier extends StateNotifier<bool> {
   final StorageService _storage;
 
   Future<void> _loadThemeMode() async {
-    final mode = await _storage.loadThemeMode();
-    // Default to dark if no preference saved
-    state = mode == null ? true : mode == 'dark';
+    try {
+      final mode = await _storage.loadThemeMode();
+      // Default to dark if no preference saved
+      state = mode == null ? true : mode == 'dark';
+    } catch (e) {
+      // Default to dark mode on error
+      state = true;
+    }
   }
 
   Future<void> setDarkMode(bool isDark) async {
@@ -81,8 +86,13 @@ class OptionsModeNotifier extends StateNotifier<String> {
   final StorageService _storage;
 
   Future<void> _loadOptionsMode() async {
-    final mode = await _storage.loadOptionsMode();
-    state = mode ?? 'stock_plus_options';
+    try {
+      final mode = await _storage.loadOptionsMode();
+      state = mode ?? 'stock_plus_options';
+    } catch (e) {
+      // Default to stock_plus_options on error
+      state = 'stock_plus_options';
+    }
   }
 
   Future<void> setMode(String mode) async {
@@ -251,7 +261,12 @@ class UserIdNotifier extends StateNotifier<String?> {
   final StorageService _storage;
 
   Future<void> _loadUserId() async {
-    state = await _storage.loadUser();
+    try {
+      state = await _storage.loadUser();
+    } catch (e) {
+      // Default to null (not logged in) on error
+      state = null;
+    }
   }
 
   Future<void> signIn(String userId) async {
@@ -325,9 +340,14 @@ class WatchlistNotifier extends StateNotifier<List<WatchlistItem>> {
   final StorageService _storage;
 
   Future<void> _loadWatchlist() async {
-    // Load watchlist from storage
-    final items = await _storage.loadWatchlist();
-    state = items;
+    try {
+      // Load watchlist from storage
+      final items = await _storage.loadWatchlist();
+      state = items;
+    } catch (e) {
+      // Default to empty watchlist on error
+      state = [];
+    }
   }
 
   Future<void> add(String ticker, {String? signal, String? note, List<String>? tags}) async {
@@ -418,8 +438,12 @@ class WatchlistNotifier extends StateNotifier<List<WatchlistItem>> {
   }
 
   Future<void> _saveWatchlist() async {
-    // Save watchlist to storage
-    await _storage.saveWatchlist(state);
+    try {
+      // Save watchlist to storage
+      await _storage.saveWatchlist(state);
+    } catch (e) {
+      // Silent fail - storage error shouldn't crash the app
+    }
   }
 }
 
@@ -440,9 +464,14 @@ class CurrentTabNotifier extends StateNotifier<int> {
   final StorageService _storage;
 
   Future<void> _loadLastTab() async {
-    final lastTab = await _storage.loadLastTab();
-    if (lastTab != null) {
-      state = lastTab;
+    try {
+      final lastTab = await _storage.loadLastTab();
+      if (lastTab != null) {
+        state = lastTab;
+      }
+    } catch (e) {
+      // Default to first tab on error
+      state = 0;
     }
   }
 

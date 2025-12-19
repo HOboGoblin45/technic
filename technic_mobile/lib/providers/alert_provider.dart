@@ -1,5 +1,5 @@
 /// Alert Provider
-/// 
+///
 /// State management for price alerts.
 library;
 
@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/price_alert.dart';
 import '../services/storage_service.dart';
+import 'app_providers.dart'; // Import centralized storageServiceProvider
 
 /// Alert Notifier
 class AlertNotifier extends StateNotifier<List<PriceAlert>> {
@@ -123,11 +124,6 @@ class AlertNotifier extends StateNotifier<List<PriceAlert>> {
     await _loadAlerts();
   }
 }
-
-/// Storage Service Provider
-final storageServiceProvider = Provider<StorageService>((ref) {
-  return StorageService.instance;
-});
 
 /// Alert Provider
 final alertProvider = StateNotifierProvider<AlertNotifier, List<PriceAlert>>((ref) {

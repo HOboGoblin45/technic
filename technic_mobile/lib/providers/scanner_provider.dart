@@ -1,8 +1,9 @@
 /// Scanner Provider
-/// State management for scanner functionality using Provider pattern
+/// State management for scanner functionality using Riverpod
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/scanner_service.dart';
 
 /// Scanner state
@@ -179,3 +180,17 @@ class ScannerProvider with ChangeNotifier {
     notifyListeners();
   }
 }
+
+// ============================================================================
+// RIVERPOD PROVIDERS
+// ============================================================================
+
+/// Scanner Service Provider (singleton)
+final scannerServiceProvider = Provider<ScannerService>((ref) {
+  return scannerService;
+});
+
+/// Scanner Provider (ChangeNotifier wrapped for Riverpod)
+final scannerNotifierProvider = ChangeNotifierProvider<ScannerProvider>((ref) {
+  return ScannerProvider(service: ref.read(scannerServiceProvider));
+});

@@ -1,5 +1,5 @@
 /// Scan History Provider
-/// 
+///
 /// Manages scan history state and persistence
 library;
 
@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/scan_history_item.dart';
 import '../models/scan_result.dart';
 import '../services/storage_service.dart';
+import 'app_providers.dart'; // Import centralized storageServiceProvider
 
 /// Scan History Provider
 final scanHistoryProvider = StateNotifierProvider<ScanHistoryNotifier, List<ScanHistoryItem>>((ref) {
@@ -22,12 +23,17 @@ class ScanHistoryNotifier extends StateNotifier<List<ScanHistoryItem>> {
   static const int maxHistoryItems = 10;
 
   Future<void> _loadHistory() async {
-    // Load scan history from storage
-    final historyJson = await _storage.loadScanHistory();
-    final history = historyJson
-        .map((e) => ScanHistoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-    state = history;
+    try {
+      // Load scan history from storage
+      final historyJson = await _storage.loadScanHistory();
+      final history = historyJson
+          .map((e) => ScanHistoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      state = history;
+    } catch (e) {
+      // Default to empty history on error
+      state = [];
+    }
   }
 
   /// Save a new scan to history
@@ -92,11 +98,10 @@ class ScanHistoryNotifier extends StateNotifier<List<ScanHistoryItem>> {
   }
 
   Future<void> _saveHistory() async {
-    await _storage.saveScanHistory(state);
+    try {
+      await _storage.saveScanHistory(state);
+    } catch (e) {
+      // Silent fail - storage error shouldn't crash the app
+    }
   }
 }
-
-/// Storage Service Provider (from app_providers.dart)
-final storageServiceProvider = Provider<StorageService>((ref) {
-  return StorageService.instance;
-});
