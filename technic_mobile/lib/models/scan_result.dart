@@ -181,10 +181,75 @@ class ScanResult {
   
   /// Check if this has options strategies available
   bool get hasOptions => optionStrategies.isNotEmpty;
-  
+
   /// Get count of defined-risk options strategies
   int get definedRiskCount {
     return optionStrategies.where((s) => s.definedRisk).length;
+  }
+
+  /// Create a copy with updated fields
+  ScanResult copyWith({
+    String? ticker,
+    String? signal,
+    String? rrr,
+    String? entry,
+    String? stop,
+    String? target,
+    String? note,
+    List<double>? sparkline,
+    double? institutionalCoreScore,
+    String? icsTier,
+    double? winProb10d,
+    double? qualityScore,
+    String? playStyle,
+    bool? isUltraRisky,
+    String? profileName,
+    String? profileLabel,
+    String? sector,
+    String? industry,
+    double? techRating,
+    double? alphaScore,
+    double? atrPct,
+    String? eventSummary,
+    String? eventFlags,
+    String? fundamentalSnapshot,
+    List<OptionStrategy>? optionStrategies,
+    double? meritScore,
+    String? meritBand,
+    String? meritFlags,
+    String? meritSummary,
+  }) {
+    return ScanResult(
+      ticker ?? this.ticker,
+      signal ?? this.signal,
+      rrr ?? this.rrr,
+      entry ?? this.entry,
+      stop ?? this.stop,
+      target ?? this.target,
+      note ?? this.note,
+      sparkline ?? this.sparkline,
+      institutionalCoreScore ?? this.institutionalCoreScore,
+      icsTier ?? this.icsTier,
+      winProb10d ?? this.winProb10d,
+      qualityScore ?? this.qualityScore,
+      playStyle ?? this.playStyle,
+      isUltraRisky ?? this.isUltraRisky,
+      profileName ?? this.profileName,
+      profileLabel ?? this.profileLabel,
+      sector ?? this.sector,
+      industry ?? this.industry,
+      techRating ?? this.techRating,
+      alphaScore ?? this.alphaScore,
+      atrPct ?? this.atrPct,
+      eventSummary ?? this.eventSummary,
+      eventFlags ?? this.eventFlags,
+      fundamentalSnapshot ?? this.fundamentalSnapshot,
+      optionStrategies ?? this.optionStrategies,
+      meritScore ?? this.meritScore,
+      meritBand ?? this.meritBand,
+      meritFlags ?? this.meritFlags,
+      meritSummary ?? this.meritSummary,
+    );
   }
 }
 

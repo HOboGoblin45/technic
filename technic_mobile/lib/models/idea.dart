@@ -65,4 +65,23 @@ class Idea {
     if (sparkline.length < 2) return true;
     return sparkline.last >= sparkline.first;
   }
+
+  /// Create a copy with updated fields
+  Idea copyWith({
+    String? title,
+    String? ticker,
+    String? meta,
+    String? plan,
+    List<double>? sparkline,
+    Map<String, dynamic>? option,
+  }) {
+    return Idea(
+      title ?? this.title,
+      ticker ?? this.ticker,
+      meta ?? this.meta,
+      plan ?? this.plan,
+      sparkline ?? this.sparkline,
+      option: option ?? this.option,
+    );
+  }
 }

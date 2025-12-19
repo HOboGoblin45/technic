@@ -64,35 +64,93 @@ class SymbolDetail {
   });
   
   factory SymbolDetail.fromJson(Map<String, dynamic> json) {
+    // Helper for safe double parsing
+    double? toDouble(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString());
+    }
+
     return SymbolDetail(
-      symbol: json['symbol'] as String,
-      lastPrice: json['last_price'] as double?,
-      changePct: json['change_pct'] as double?,
+      symbol: json['symbol']?.toString() ?? '',
+      lastPrice: toDouble(json['last_price']),
+      changePct: toDouble(json['change_pct']),
       history: (json['history'] as List?)
-          ?.map((e) => PricePoint.fromJson(e as Map<String, dynamic>))
+          ?.map((e) => PricePoint.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList() ?? [],
       fundamentals: json['fundamentals'] != null
-          ? Fundamentals.fromJson(json['fundamentals'] as Map<String, dynamic>)
+          ? Fundamentals.fromJson(Map<String, dynamic>.from(json['fundamentals'] as Map))
           : null,
       events: json['events'] != null
-          ? EventInfo.fromJson(json['events'] as Map<String, dynamic>)
+          ? EventInfo.fromJson(Map<String, dynamic>.from(json['events'] as Map))
           : null,
-      meritScore: json['merit_score'] as double?,
-      meritBand: json['merit_band'] as String?,
-      meritFlags: json['merit_flags'] as String?,
-      meritSummary: json['merit_summary'] as String?,
-      techRating: json['tech_rating'] as double?,
-      winProb10d: json['win_prob_10d'] as double?,
-      qualityScore: json['quality_score'] as double?,
-      ics: json['ics'] as double?,
-      icsTier: json['ics_tier'] as String?,
-      alphaScore: json['alpha_score'] as double?,
-      riskScore: json['risk_score'] as String?,
-      momentumScore: json['momentum_score'] as double?,
-      valueScore: json['value_score'] as double?,
-      qualityFactor: json['quality_factor'] as double?,
-      growthScore: json['growth_score'] as double?,
-      optionsAvailable: json['options_available'] as bool? ?? false,
+      meritScore: toDouble(json['merit_score']),
+      meritBand: json['merit_band']?.toString(),
+      meritFlags: json['merit_flags']?.toString(),
+      meritSummary: json['merit_summary']?.toString(),
+      techRating: toDouble(json['tech_rating']),
+      winProb10d: toDouble(json['win_prob_10d']),
+      qualityScore: toDouble(json['quality_score']),
+      ics: toDouble(json['ics']),
+      icsTier: json['ics_tier']?.toString(),
+      alphaScore: toDouble(json['alpha_score']),
+      riskScore: json['risk_score']?.toString(),
+      momentumScore: toDouble(json['momentum_score']),
+      valueScore: toDouble(json['value_score']),
+      qualityFactor: toDouble(json['quality_factor']),
+      growthScore: toDouble(json['growth_score']),
+      optionsAvailable: json['options_available'] == true,
+    );
+  }
+
+  /// Create a copy with updated fields
+  SymbolDetail copyWith({
+    String? symbol,
+    double? lastPrice,
+    double? changePct,
+    List<PricePoint>? history,
+    Fundamentals? fundamentals,
+    EventInfo? events,
+    double? meritScore,
+    String? meritBand,
+    String? meritFlags,
+    String? meritSummary,
+    double? techRating,
+    double? winProb10d,
+    double? qualityScore,
+    double? ics,
+    String? icsTier,
+    double? alphaScore,
+    String? riskScore,
+    double? momentumScore,
+    double? valueScore,
+    double? qualityFactor,
+    double? growthScore,
+    bool? optionsAvailable,
+  }) {
+    return SymbolDetail(
+      symbol: symbol ?? this.symbol,
+      lastPrice: lastPrice ?? this.lastPrice,
+      changePct: changePct ?? this.changePct,
+      history: history ?? this.history,
+      fundamentals: fundamentals ?? this.fundamentals,
+      events: events ?? this.events,
+      meritScore: meritScore ?? this.meritScore,
+      meritBand: meritBand ?? this.meritBand,
+      meritFlags: meritFlags ?? this.meritFlags,
+      meritSummary: meritSummary ?? this.meritSummary,
+      techRating: techRating ?? this.techRating,
+      winProb10d: winProb10d ?? this.winProb10d,
+      qualityScore: qualityScore ?? this.qualityScore,
+      ics: ics ?? this.ics,
+      icsTier: icsTier ?? this.icsTier,
+      alphaScore: alphaScore ?? this.alphaScore,
+      riskScore: riskScore ?? this.riskScore,
+      momentumScore: momentumScore ?? this.momentumScore,
+      valueScore: valueScore ?? this.valueScore,
+      qualityFactor: qualityFactor ?? this.qualityFactor,
+      growthScore: growthScore ?? this.growthScore,
+      optionsAvailable: optionsAvailable ?? this.optionsAvailable,
     );
   }
   
@@ -143,13 +201,14 @@ class PricePoint {
   });
   
   factory PricePoint.fromJson(Map<String, dynamic> json) {
+    double toDouble(dynamic v) => (v as num?)?.toDouble() ?? 0.0;
     return PricePoint(
-      date: DateTime.parse(json['date'] as String),
-      open: (json['Open'] as num).toDouble(),
-      high: (json['High'] as num).toDouble(),
-      low: (json['Low'] as num).toDouble(),
-      close: (json['Close'] as num).toDouble(),
-      volume: json['Volume'] as int,
+      date: DateTime.tryParse(json['date']?.toString() ?? '') ?? DateTime.now(),
+      open: toDouble(json['Open'] ?? json['open']),
+      high: toDouble(json['High'] ?? json['high']),
+      low: toDouble(json['Low'] ?? json['low']),
+      close: toDouble(json['Close'] ?? json['close']),
+      volume: (json['Volume'] ?? json['volume'] as num?)?.toInt() ?? 0,
     );
   }
   
@@ -182,12 +241,17 @@ class Fundamentals {
   });
   
   factory Fundamentals.fromJson(Map<String, dynamic> json) {
+    double? toDouble(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString());
+    }
     return Fundamentals(
-      pe: json['pe'] as double?,
-      eps: json['eps'] as double?,
-      roe: json['roe'] as double?,
-      debtToEquity: json['debt_to_equity'] as double?,
-      marketCap: json['market_cap'] as double?,
+      pe: toDouble(json['pe']),
+      eps: toDouble(json['eps']),
+      roe: toDouble(json['roe']),
+      debtToEquity: toDouble(json['debt_to_equity']),
+      marketCap: toDouble(json['market_cap']),
     );
   }
   
@@ -217,15 +281,20 @@ class EventInfo {
   });
   
   factory EventInfo.fromJson(Map<String, dynamic> json) {
+    double? toDouble(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString());
+    }
     return EventInfo(
       nextEarnings: json['next_earnings'] != null
-          ? DateTime.parse(json['next_earnings'] as String)
+          ? DateTime.tryParse(json['next_earnings'].toString())
           : null,
-      daysToEarnings: json['days_to_earnings'] as int?,
+      daysToEarnings: (json['days_to_earnings'] as num?)?.toInt(),
       nextDividend: json['next_dividend'] != null
-          ? DateTime.parse(json['next_dividend'] as String)
+          ? DateTime.tryParse(json['next_dividend'].toString())
           : null,
-      dividendAmount: json['dividend_amount'] as double?,
+      dividendAmount: toDouble(json['dividend_amount']),
     );
   }
   

@@ -66,4 +66,21 @@ class MarketMover {
     if (sparkline.length < 2) return isPositive;
     return sparkline.last >= sparkline.first;
   }
+
+  /// Create a copy with updated fields
+  MarketMover copyWith({
+    String? ticker,
+    String? delta,
+    String? note,
+    bool? isPositive,
+    List<double>? sparkline,
+  }) {
+    return MarketMover(
+      ticker ?? this.ticker,
+      delta ?? this.delta,
+      note ?? this.note,
+      isPositive ?? this.isPositive,
+      sparkline ?? this.sparkline,
+    );
+  }
 }

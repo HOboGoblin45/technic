@@ -123,19 +123,19 @@ class PriceAlert {
   /// Create from JSON
   factory PriceAlert.fromJson(Map<String, dynamic> json) {
     return PriceAlert(
-      id: json['id'] as String,
-      ticker: json['ticker'] as String,
+      id: json['id']?.toString() ?? '',
+      ticker: json['ticker']?.toString() ?? '',
       type: AlertType.values.firstWhere(
-        (e) => e.name == json['type'],
+        (e) => e.name == json['type']?.toString(),
         orElse: () => AlertType.priceAbove,
       ),
-      targetValue: (json['targetValue'] as num).toDouble(),
-      isActive: json['isActive'] as bool? ?? true,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      targetValue: (json['targetValue'] as num?)?.toDouble() ?? 0.0,
+      isActive: json['isActive'] == true,
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
       triggeredAt: json['triggeredAt'] != null
-          ? DateTime.parse(json['triggeredAt'] as String)
+          ? DateTime.tryParse(json['triggeredAt'].toString())
           : null,
-      note: json['note'] as String?,
+      note: json['note']?.toString(),
     );
   }
 
