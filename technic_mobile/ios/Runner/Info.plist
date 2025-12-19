@@ -55,6 +55,13 @@
 	<array>
 		<string>fetch</string>
 		<string>remote-notification</string>
+		<string>processing</string>
+	</array>
+
+	<!-- Background Task Identifiers (iOS 13+) -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.technic.technicMobile.alertCheck</string>
 	</array>
 
 	<!-- Status bar style for dark theme -->

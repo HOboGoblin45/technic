@@ -399,8 +399,48 @@ class ApiService {
     throw Exception('HTTP ${res.statusCode}: ${res.body}');
   }
 
+  /// Fetch current prices for multiple symbols
+  ///
+  /// Used by alert service to check price conditions.
+  /// Returns a map of symbol -> current price.
+  Future<Map<String, double>> getCurrentPrices(List<String> symbols) async {
+    if (symbols.isEmpty) return {};
+
+    final prices = <String, double>{};
+
+    // Fetch prices for each symbol using the symbol detail endpoint
+    // This is done in parallel for efficiency
+    final futures = symbols.map((symbol) async {
+      try {
+        final detail = await fetchSymbolDetail(symbol, days: 1);
+        if (detail.lastPrice != null) {
+          prices[symbol] = detail.lastPrice!;
+        }
+      } catch (e) {
+        debugPrint('[API] Failed to fetch price for $symbol: $e');
+        // Skip this symbol on error
+      }
+    });
+
+    await Future.wait(futures);
+    return prices;
+  }
+
+  /// Fetch current price for a single symbol
+  ///
+  /// Returns null if price cannot be fetched.
+  Future<double?> getCurrentPrice(String symbol) async {
+    try {
+      final detail = await fetchSymbolDetail(symbol, days: 1);
+      return detail.lastPrice;
+    } catch (e) {
+      debugPrint('[API] Failed to fetch price for $symbol: $e');
+      return null;
+    }
+  }
+
   /// Fetch detailed information for a specific symbol
-  /// 
+  ///
   /// Returns comprehensive data including:
   /// - Price history (candlestick data)
   /// - MERIT Score and all quantitative metrics
