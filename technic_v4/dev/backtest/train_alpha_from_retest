@@ -1,0 +1,131 @@
+"""
+Train an XGBoost alpha model on historical replay data (forward returns).
+
+Inputs:
+    - Replay parquet with features and forward returns (e.g., replay_ics.parquet)
+Outputs:
+    - Model bundle saved to models/alpha/xgb_replay_5d.pkl
+      with keys: {"model": fitted_model, "features": feature_list}
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import List, Tuple
+
+import joblib
+import numpy as np
+import pandas as pd
+from xgboost import XGBRegressor
+
+# Ensure project root on path for direct invocation
+ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+DEFAULT_INPUT = Path("technic_v4/scanner_output/history/replay_ics.parquet")
+DEFAULT_MODEL_OUT = Path("models/alpha/xgb_replay_5d.pkl")
+
+# Feature candidates — reuse core technical/alpha fields if present
+FEATURES: List[str] = [
+    "TechRating",
+    "MomentumScore",
+    "TrendScore",
+    "VolScore",
+    "ATR14_pct",
+    "DollarVolume",
+    "risk_score",
+    "MuTotal",
+    "InstitutionalCoreScore",
+    "AlphaScorePct",
+    "SectorAlphaPct",
+]
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Train XGB alpha on replay data.")
+    p.add_argument("--input", type=str, default=str(DEFAULT_INPUT), help="Replay parquet path")
+    p.add_argument("--target", type=str, default="fwd_ret_5d", help="Forward return column to predict")
+    p.add_argument("--model-out", type=str, default=str(DEFAULT_MODEL_OUT), help="Output model bundle path")
+    p.add_argument("--train-end", type=str, default="2018-12-31", help="End date for training split (inclusive)")
+    p.add_argument("--val-end", type=str, default="2021-12-31", help="End date for validation split (inclusive)")
+    return p.parse_args()
+
+
+def load_replay(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"Replay file not found: {path}")
+    df = pd.read_parquet(path)
+    if "scan_date" in df.columns:
+        df["scan_date"] = pd.to_datetime(df["scan_date"])
+    return df
+
+
+def prepare_xy(df: pd.DataFrame, target_col: str, feature_list: List[str]) -> Tuple[pd.DataFrame, pd.Series]:
+    feats = [c for c in feature_list if c in df.columns]
+    X = df[feats].copy().replace([np.inf, -np.inf], np.nan)
+    y = pd.to_numeric(df[target_col], errors="coerce")
+    mask = X.notna().all(axis=1) & y.notna()
+    return X.loc[mask], y.loc[mask]
+
+
+def train_model(X: pd.DataFrame, y: pd.Series) -> XGBRegressor:
+    model = XGBRegressor(
+        n_estimators=400,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="reg:squarederror",
+        random_state=42,
+    )
+    model.fit(X, y)
+    return model
+
+
+def main() -> None:
+    args = parse_args()
+    df = load_replay(Path(args.input))
+
+    train_end = pd.Timestamp(args.train_end)
+    val_end = pd.Timestamp(args.val_end)
+
+    df_train = df[df["scan_date"] <= train_end]
+    df_val = df[(df["scan_date"] > train_end) & (df["scan_date"] <= val_end)]
+    df_test = df[df["scan_date"] > val_end]
+
+    print(f"Train rows: {len(df_train)}, Val rows: {len(df_val)}, Test rows: {len(df_test)}")
+
+    X_train, y_train = prepare_xy(df_train, args.target, FEATURES)
+    X_val, y_val = prepare_xy(df_val, args.target, FEATURES)
+    X_test, y_test = prepare_xy(df_test, args.target, FEATURES)
+
+    if X_train.empty:
+        print("No training rows after filtering; aborting.")
+        return
+
+    model = train_model(X_train, y_train)
+
+    def eval_split(X: pd.DataFrame, y: pd.Series) -> float:
+        if X.empty:
+            return float("nan")
+        preds = model.predict(X)
+        return float(np.corrcoef(preds, y)[0, 1])
+
+    ic_train = eval_split(X_train, y_train)
+    ic_val = eval_split(X_val, y_val)
+    ic_test = eval_split(X_test, y_test)
+
+    print(f"IC train: {ic_train:.4f}, val: {ic_val:.4f}, test: {ic_test:.4f}")
+
+    out_path = Path(args.model_out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    bundle = {"model": model, "features": X_train.columns.tolist()}
+    joblib.dump(bundle, out_path)
+    print(f"Saved model bundle to {out_path}")
+
+
+if __name__ == "__main__":
+    main()

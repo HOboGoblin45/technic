@@ -1,0 +1,561 @@
+﻿"""
+Optional ML alpha inference.
+
+Loads default alpha models (LGBM/XGB), optional deep model, and meta alpha.
+Intended as a drop-in enhancer for the factor-based alpha blend.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+from typing import Optional, TYPE_CHECKING
+
+import joblib
+import numpy as np
+import pandas as pd
+
+from technic_v4 import model_registry
+from technic_v4.config.settings import get_settings
+from technic_v4.engine import inference_engine
+from technic_v4.engine.alpha_models import (
+    BaseAlphaModel,
+    LGBMAlphaModel,
+    XGBAlphaModel,
+    EnsembleAlphaModel,
+)
+from technic_v4.engine.alpha_models.meta_alpha import MetaAlphaModel
+from technic_v4.infra.logging import get_logger
+
+logger = get_logger()
+
+# Optional torch typing for pylance
+if TYPE_CHECKING:  # pragma: no cover
+    import torch as torch_mod
+    import torch.nn as nn_mod
+else:
+    torch_mod = None
+    nn_mod = None
+
+try:
+    import torch  # type: ignore
+    import torch.nn as nn  # type: ignore
+
+    HAVE_TORCH = True
+except Exception:  # pragma: no cover
+    HAVE_TORCH = False
+    torch = None
+    nn = None
+
+
+DEFAULT_MODEL_PATH = Path("models/alpha/lgbm_v1.pkl")
+DEFAULT_ONNX_PATH = Path("models/alpha/lgbm_v1.onnx")
+DEFAULT_META_MODEL_PATH = Path("models/alpha/meta_alpha.pkl")
+DEFAULT_META_SUPER_PATH = Path("models/alpha/meta_super_ics.pkl")
+DEFAULT_DEEP_MODEL_PATH = Path("models/alpha/deep_alpha.pt")
+
+# Local XGB bundles (non-registry) for alpha_xgb_v2 (5d) and alpha_xgb_v2_10d (10d)
+_XGB_BUNDLE_5D: Optional[dict] = None
+_XGB_BUNDLE_10D: Optional[dict] = None
+_XGB_MODEL_PATH_5D = os.getenv("TECHNIC_ALPHA_MODEL_PATH", "models/alpha/xgb_v2.pkl")
+_XGB_MODEL_PATH_5D_FALLBACK = "models/alpha/xgb_v1.pkl"
+_XGB_MODEL_PATH_10D = os.getenv(
+    "TECHNIC_ALPHA_MODEL_PATH_10D", "models/alpha/xgb_v2_10d.pkl"
+)
+_XGB_MODEL_PATH_10D_FALLBACK = "models/alpha/xgb_v1_10d.pkl"
+_XGB_MODEL_PATH_5D_REGIME = {
+    "TRENDING_UP_LOW_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_UP_LOVOL", "models/alpha/xgb_v2_TRENDING_UP_LOW_VOL.pkl"),
+    "TRENDING_UP_HIGH_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_UP_HIVOL", "models/alpha/xgb_v2_TRENDING_UP_HIGH_VOL.pkl"),
+    "TRENDING_DOWN_LOW_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_DOWN_LOVOL", "models/alpha/xgb_v2_TRENDING_DOWN_LOW_VOL.pkl"),
+    "TRENDING_DOWN_HIGH_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_DOWN_HIVOL", "models/alpha/xgb_v2_TRENDING_DOWN_HIGH_VOL.pkl"),
+    "SIDEWAYS_LOW_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_SIDE_LOVOL", "models/alpha/xgb_v2_SIDEWAYS_LOW_VOL.pkl"),
+    "SIDEWAYS_HIGH_VOL": os.getenv("TECHNIC_ALPHA_MODEL_PATH_SIDE_HIVOL", "models/alpha/xgb_v2_SIDEWAYS_HIGH_VOL.pkl"),
+}
+_XGB_MODEL_PATH_5D_SECTOR_PREFIX = "models/alpha/xgb_v2_SECTOR_"
+_MODELS_DIR = Path("models/alpha")
+
+
+def _select_rolling_path(as_of_date: pd.Timestamp | None) -> Optional[str]:
+    if as_of_date is None:
+        return None
+    if not _MODELS_DIR.exists():
+        return None
+    candidates = []
+    for p in _MODELS_DIR.glob("xgb_v2_*_roll*.pkl"):
+        stem = p.stem  # e.g., xgb_v2_2018_roll or xgb_v2_2018_roll_SECTOR_TECH
+        m = re.search(r"xgb_v2_(\d{4})_roll", stem)
+        if not m:
+            continue
+        year = int(m.group(1))
+        candidates.append((year, str(p)))
+    if not candidates:
+        return None
+    asof_year = as_of_date.year
+    # pick the latest train_year <= asof_year, else the latest available
+    prior = [c for c in candidates if c[0] <= asof_year]
+    if prior:
+        year = max(prior, key=lambda x: x[0])[0]
+        # if multiple with same year, pick first
+        for y, path in candidates:
+            if y == year:
+                return path
+    # fallback: latest by year
+    year = max(candidates, key=lambda x: x[0])[0]
+    for y, path in candidates:
+        if y == year:
+            return path
+    return None
+
+
+def _load_xgb_bundle(path: str, cache: dict | None) -> tuple[Optional[dict], dict | None]:
+    """Internal helper to load an XGB joblib bundle with simple caching."""
+    if cache is not None:
+        return cache, cache
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Alpha model bundle not found at {path}")
+    logger.info("[ALPHA] loading XGB bundle from %s", path)
+    bundle = joblib.load(path)
+    return bundle, bundle
+
+
+def load_xgb_bundle_5d() -> dict:
+    """Lazy-load 5d XGB alpha model bundle."""
+    global _XGB_BUNDLE_5D
+    try:
+        bundle, _XGB_BUNDLE_5D = _load_xgb_bundle(_XGB_MODEL_PATH_5D, _XGB_BUNDLE_5D)
+        return bundle  # type: ignore[return-value]
+    except FileNotFoundError:
+        # Allow clean fallback to the prior v1 bundle
+        if Path(_XGB_MODEL_PATH_5D_FALLBACK).exists():
+            logger.info(
+                "[ALPHA] falling back to 5d XGB bundle at %s", _XGB_MODEL_PATH_5D_FALLBACK
+            )
+            bundle, _XGB_BUNDLE_5D = _load_xgb_bundle(
+                _XGB_MODEL_PATH_5D_FALLBACK, _XGB_BUNDLE_5D
+            )
+            return bundle  # type: ignore[return-value]
+        raise
+
+
+def load_xgb_bundle_10d() -> dict:
+    """Lazy-load 10d XGB alpha model bundle (if present)."""
+    global _XGB_BUNDLE_10D
+    try:
+        bundle, _XGB_BUNDLE_10D = _load_xgb_bundle(
+            _XGB_MODEL_PATH_10D, _XGB_BUNDLE_10D
+        )
+        return bundle  # type: ignore[return-value]
+    except FileNotFoundError:
+        if Path(_XGB_MODEL_PATH_10D_FALLBACK).exists():
+            logger.info(
+                "[ALPHA] falling back to 10d XGB bundle at %s", _XGB_MODEL_PATH_10D_FALLBACK
+            )
+            bundle, _XGB_BUNDLE_10D = _load_xgb_bundle(
+                _XGB_MODEL_PATH_10D_FALLBACK, _XGB_BUNDLE_10D
+            )
+            return bundle  # type: ignore[return-value]
+        raise
+
+
+# -------------------------------
+# Core model loading helpers (LGBM / registry)
+# -------------------------------
+
+
+def _load_model_by_entry(entry: dict) -> Optional[BaseAlphaModel]:
+    if not entry:
+        return None
+    path = entry.get("path_pickle")
+    if not path:
+        return None
+    model_name = entry.get("model_name", "")
+    try:
+        if model_name == "alpha_xgb_v1":
+            logger.info("[alpha] loading XGB model from %s", path)
+            return XGBAlphaModel.load(path)
+        if model_name == "alpha_ensemble_v1":
+            logger.info("[alpha] loading ensemble model from %s", path)
+            return EnsembleAlphaModel.load(path)
+        logger.info("[alpha] loading LGBM model from %s", path)
+        return LGBMAlphaModel.load(path)
+    except Exception:
+        logger.warning("[alpha] failed to load model at %s", path, exc_info=True)
+        return None
+
+
+def load_default_alpha_model() -> Optional[BaseAlphaModel]:
+    reg_entry = None
+    try:
+        reg_entry = model_registry.load_model("alpha_lgbm_v1")
+    except Exception:
+        reg_entry = None
+    settings = get_settings()
+    env_model_name = settings.alpha_model_name or os.getenv("TECHNIC_ALPHA_MODEL_NAME")
+    if env_model_name:
+        try:
+            reg_entry = model_registry.load_model(env_model_name)
+        except Exception:
+            pass
+    if reg_entry:
+        loaded = _load_model_by_entry(reg_entry)
+        if loaded:
+            return loaded
+    model_path = (
+        Path(reg_entry["path_pickle"])
+        if reg_entry and reg_entry.get("path_pickle")
+        else DEFAULT_MODEL_PATH
+    )
+    if not model_path.exists() and DEFAULT_MODEL_PATH.exists():
+        model_path = DEFAULT_MODEL_PATH
+    if not model_path.exists():
+        return None
+    try:
+        logger.info("[alpha] loading default LGBM model from %s", model_path)
+        return LGBMAlphaModel.load(str(model_path))
+    except Exception:
+        logger.warning(
+            "[alpha] failed to load default model %s", model_path, exc_info=True
+        )
+        return None
+
+
+def _score_with_bundle(
+    df_features: pd.DataFrame, bundle: dict, label: str = "5d"
+) -> Optional[pd.Series]:
+    """Helper to score df_features with a given XGB bundle."""
+    model = bundle.get("model")
+    feature_cols = bundle.get("features") or []
+
+    if model is None or not feature_cols:
+        logger.warning("[ALPHA] XGB bundle missing model or feature list for %s", label)
+        return None
+
+    missing = [c for c in feature_cols if c not in df_features.columns]
+    if missing:
+        logger.warning(
+            "[ALPHA] missing feature columns for %s XGB model: %s", label, missing
+        )
+        return None
+
+    X = (
+        df_features[feature_cols]
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+    )
+
+    try:
+        preds = model.predict(X)
+        logger.info("[ALPHA] %s XGB prediction succeeded, first few=%s", label, preds[:5])
+        return pd.Series(preds, index=df_features.index)
+    except Exception:
+        logger.warning("[ALPHA] %s XGB prediction failed", label, exc_info=True)
+        return None
+
+def score_alpha(df_features: pd.DataFrame) -> Optional[pd.Series]:
+    """
+    Score ML alpha (5-day horizon) using the local XGB bundle (models/alpha/xgb_v1.pkl).
+    This assumes df_features already contains the feature columns referenced by the bundle.
+    """
+    if df_features is None or df_features.empty:
+        return None
+
+    logger.info(
+        "[ALPHA] score_alpha called with shape=%s columns=%s",
+        df_features.shape,
+        list(df_features.columns),
+    )
+
+    try:
+        bundle = load_xgb_bundle_5d()
+    except FileNotFoundError:
+        logger.warning(
+            "[ALPHA] XGB 5d bundle not found at %s; returning None", _XGB_MODEL_PATH_5D
+        )
+        return None
+    except Exception:
+        logger.warning("[ALPHA] failed to load 5d XGB bundle", exc_info=True)
+        return None
+
+    return _score_with_bundle(df_features, bundle, label="5d")
+
+
+def score_alpha_regime(df_features: pd.DataFrame, regime_label: str) -> Optional[pd.Series]:
+    """
+    Score ML alpha (5d) using a regime-specific XGB bundle if available.
+    Falls back to default 5d bundle on miss.
+    """
+    path = _XGB_MODEL_PATH_5D_REGIME.get(regime_label)
+    if path and os.path.exists(path):
+        try:
+            bundle, _ = _load_xgb_bundle(path, None)
+            return _score_with_bundle(df_features, bundle, label=f"5d_{regime_label}")
+        except Exception:
+            logger.warning("[ALPHA] regime bundle load failed for %s; falling back", regime_label, exc_info=True)
+    return score_alpha(df_features)
+
+
+def score_alpha_sector(df_features: pd.DataFrame, sector: str) -> Optional[pd.Series]:
+    """
+    Score ML alpha (5d) using a sector-specific XGB bundle if available.
+    Falls back to default 5d bundle on miss.
+    """
+    sec = (sector or "").upper().replace(" ", "_")
+    if not sec:
+        return score_alpha(df_features)
+    path = f"{_XGB_MODEL_PATH_5D_SECTOR_PREFIX}{sec}.pkl"
+    if os.path.exists(path):
+        try:
+            bundle, _ = _load_xgb_bundle(path, None)
+            return _score_with_bundle(df_features, bundle, label=f"5d_SECTOR_{sec}")
+        except Exception:
+            logger.warning("[ALPHA] sector bundle load failed for %s; falling back", sec, exc_info=True)
+    return score_alpha(df_features)
+
+
+def select_xgb_model_path(
+    regime_label: str | None = None,
+    sector: str | None = None,
+    as_of_date: pd.Timestamp | None = None,
+) -> str:
+    """
+    Choose the most specific model path available given regime/sector/date.
+    Priority: regime bundle > sector bundle > rolling window bundle (by date) > default 5d.
+    """
+    # Try regime-specific
+    reg = (regime_label or "").upper().replace(" ", "_")
+    if reg and reg in _XGB_MODEL_PATH_5D_REGIME:
+        reg_path = _XGB_MODEL_PATH_5D_REGIME.get(reg)
+        if reg_path and os.path.exists(reg_path):
+            return reg_path
+
+    # Try sector-specific
+    sec = (sector or "").upper().replace(" ", "_")
+    if sec:
+        sec_path = f"{_XGB_MODEL_PATH_5D_SECTOR_PREFIX}{sec}.pkl"
+        if os.path.exists(sec_path):
+            return sec_path
+
+    # Try rolling-window bundle based on as_of_date
+    roll_path = _select_rolling_path(as_of_date)
+    if roll_path:
+        return roll_path
+
+    # Default
+    return _XGB_MODEL_PATH_5D
+
+
+def score_alpha_contextual(
+    df_features: pd.DataFrame,
+    regime_label: str | None = None,
+    sector: str | None = None,
+    as_of_date: pd.Timestamp | None = None,
+) -> Optional[pd.Series]:
+    """
+    Score ML alpha using the most specific bundle available (regime > sector > rolling > default).
+    """
+    path = select_xgb_model_path(regime_label, sector, as_of_date=as_of_date)
+    try:
+        bundle, _ = _load_xgb_bundle(path, None)
+        return _score_with_bundle(df_features, bundle, label=f"5d_{Path(path).stem}")
+    except Exception:
+        logger.warning("[ALPHA] contextual scoring failed for %s; falling back to default", path, exc_info=True)
+        try:
+            bundle = load_xgb_bundle_5d()
+            return _score_with_bundle(df_features, bundle, label="5d")
+        except Exception:
+            return None
+
+
+def score_alpha_10d(df_features: pd.DataFrame) -> Optional[pd.Series]:
+    """
+    Score ML alpha (10-day horizon) using a second XGB bundle (models/alpha/xgb_v1_10d.pkl).
+    Returns None if the model is missing or prediction fails.
+    """
+    if df_features is None or df_features.empty:
+        return None
+
+    logger.info(
+        "[ALPHA] score_alpha_10d called with shape=%s columns=%s",
+        df_features.shape,
+        list(df_features.columns),
+    )
+
+    try:
+        bundle = load_xgb_bundle_10d()
+    except FileNotFoundError:
+        logger.info(
+            "[ALPHA] XGB 10d bundle not found at %s; skipping 10d alpha",
+            _XGB_MODEL_PATH_10D,
+        )
+        return None
+    except Exception:
+        logger.warning("[ALPHA] failed to load 10d XGB bundle", exc_info=True)
+        return None
+
+    return _score_with_bundle(df_features, bundle, label="10d")
+
+# -------------------------------
+# Meta alpha
+# -------------------------------
+
+
+def load_meta_alpha_model() -> Optional[BaseAlphaModel]:
+    path = DEFAULT_META_MODEL_PATH
+    if not path.exists():
+        return None
+    try:
+        logger.info("[alpha] loading meta model from %s", path)
+        return MetaAlphaModel.load(str(path))
+    except Exception:
+        logger.warning(
+            "[alpha] failed to load meta model %s", path, exc_info=True
+        )
+        return None
+
+
+_META_SUPER_MODEL = None
+
+
+def load_meta_super_model(path: Path = DEFAULT_META_SUPER_PATH):
+    global _META_SUPER_MODEL
+    if _META_SUPER_MODEL is not None:
+        return _META_SUPER_MODEL
+    if not path.exists():
+        return None
+    try:
+        _META_SUPER_MODEL = joblib.load(path)
+        return _META_SUPER_MODEL
+    except Exception:
+        return None
+
+
+def score_meta_alpha(df: pd.DataFrame) -> Optional[pd.Series]:
+    model = load_meta_alpha_model()
+    if model is None:
+        return None
+    cols: list[str] = []
+    for col in ["factor_alpha", "ml_alpha", "AlphaScore"]:
+        if col in df.columns:
+            cols.append(col)
+    cols.extend([c for c in df.columns if c.startswith("tft_forecast_h")])
+    cols.extend(
+        [
+            c
+            for c in df.columns
+            if c.startswith("regime_trend_") or c.startswith("regime_vol_")
+        ]
+    )
+    if not cols:
+        return None
+    try:
+        X = df[cols].replace([np.inf, -np.inf], np.nan).fillna(0)
+        return model.predict(X)
+    except Exception:
+        return None
+
+
+def score_meta_super(df: pd.DataFrame) -> Optional[pd.Series]:
+    """
+    Score meta-model ("super-ICS") that outputs win probability (binary clf).
+    """
+    bundle = load_meta_super_model()
+    if bundle is None:
+        return None
+    model = bundle.get("model")
+    feats = bundle.get("features") or []
+    if model is None or not feats:
+        return None
+    missing = [c for c in feats if c not in df.columns]
+    if missing:
+        return None
+    try:
+        X = df[feats].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        probs = model.predict_proba(X)[:, 1]
+        return pd.Series(probs, index=df.index)
+    except Exception:
+        return None
+
+
+# -------------------------------
+# Deep alpha (sequential) placeholder
+# -------------------------------
+if HAVE_TORCH:
+
+    class _TinyLSTM(nn.Module):  # pragma: no cover
+        def __init__(self, input_dim: int, hidden_dim: int = 32):
+            super().__init__()
+            self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True)
+            self.head = nn.Linear(hidden_dim, 1)
+
+        def forward(self, x):
+            _, (h, _) = self.lstm(x)
+            out = self.head(h[-1])
+            return out.squeeze(-1)
+
+else:
+    _TinyLSTM = None  # type: ignore
+
+
+def load_deep_alpha_model(path: Path = DEFAULT_DEEP_MODEL_PATH):
+    if not HAVE_TORCH or _TinyLSTM is None:
+        return None
+    if not path.exists():
+        return None
+    try:
+        state = torch.load(path, map_location="cpu")
+        input_dim = (
+            state.get("meta", {}).get("input_dim", 4)
+            if isinstance(state, dict)
+            else 4
+        )
+        model = _TinyLSTM(input_dim=input_dim)
+        model.load_state_dict(state.get("state_dict", state))
+        model.eval()
+        return model
+    except Exception:
+        return None
+
+
+def _build_seq_from_history(
+    history_df: pd.DataFrame, seq_len: int = 60
+) -> Optional[np.ndarray]:
+    if history_df is None or history_df.empty:
+        return None
+    df = history_df.tail(seq_len + 1).copy()
+    if df.empty or len(df) < seq_len:
+        return None
+    df["ret"] = df["Close"].pct_change()
+    df["vol"] = df["Volume"].pct_change().fillna(0)
+    df["rsi_proxy"] = df["Close"].rolling(14).apply(
+        lambda x: (
+            x.diff().clip(lower=0).mean()
+            / (x.diff().abs().mean() + 1e-6)
+        )
+    )
+    feats = (
+        df[["ret", "vol", "rsi_proxy"]]
+        .fillna(0)
+        .tail(seq_len)
+        .values.astype("float32")
+    )
+    return feats
+
+
+def score_deep_alpha_single(history_df: pd.DataFrame) -> Optional[float]:
+    """
+    Score deep alpha for a single symbol using recent history.
+    """
+    if not HAVE_TORCH:
+        return None
+    model = load_deep_alpha_model()
+    if model is None:
+        return None
+    seq = _build_seq_from_history(history_df)
+    if seq is None:
+        return None
+    with torch.no_grad():
+        tens = torch.tensor(seq).unsqueeze(0)  # (1, seq_len, feat_dim)
+        out = model(tens).cpu().numpy().ravel()
+        return float(out[0]) if len(out) > 0 else None
+    return None
