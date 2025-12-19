@@ -1,6 +1,8 @@
 import Flutter
 import UIKit
 import BackgroundTasks
+import FirebaseCore
+import FirebaseMessaging
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -12,6 +14,21 @@ import BackgroundTasks
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        // Initialize Firebase
+        FirebaseApp.configure()
+
+        // Set up Firebase Messaging delegate
+        Messaging.messaging().delegate = self
+
+        // Request notification permissions
+        UNUserNotificationCenter.current().delegate = self
+        let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
+        UNUserNotificationCenter.current().requestAuthorization(
+            options: authOptions,
+            completionHandler: { _, _ in }
+        )
+        application.registerForRemoteNotifications()
+
         GeneratedPluginRegistrant.register(with: self)
 
         // Register background tasks (iOS 13+)
@@ -110,6 +127,49 @@ import BackgroundTasks
         // Schedule background task when app enters background
         if #available(iOS 13.0, *) {
             scheduleAlertCheckTask()
+        }
+    }
+
+    // MARK: - Remote Notifications
+
+    override func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        // Pass device token to Firebase
+        Messaging.messaging().apnsToken = deviceToken
+        print("[AppDelegate] APNs token registered")
+    }
+
+    override func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        print("[AppDelegate] Failed to register for remote notifications: \(error)")
+    }
+}
+
+// MARK: - Firebase Messaging Delegate
+
+extension AppDelegate: MessagingDelegate {
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        print("[AppDelegate] FCM Token: \(fcmToken ?? "nil")")
+
+        // Send token to your backend server if needed
+        let dataDict: [String: String] = ["token": fcmToken ?? ""]
+        NotificationCenter.default.post(
+            name: Notification.Name("FCMToken"),
+            object: nil,
+            userInfo: dataDict
+        )
+
+        // Forward to Flutter via method channel if needed
+        if let controller = window?.rootViewController as? FlutterViewController {
+            let channel = FlutterMethodChannel(
+                name: "com.technic.technicMobile/fcm",
+                binaryMessenger: controller.binaryMessenger
+            )
+            channel.invokeMethod("onTokenRefresh", arguments: fcmToken)
         }
     }
 }
