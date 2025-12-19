@@ -1,0 +1,36 @@
+services:
+  # Main Technic API Service
+  - type: web
+    name: technic-api
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn technic_v4.api_server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: TECHNIC_API_KEY
+        sync: false
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: FMP_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_DB
+        value: 0
+      - key: TECHNIC_USE_REDIS
+        value: 1
+      - key: TECHNIC_USE_ML_ALPHA
+        value: true
+      - key: TECHNIC_USE_RAY
+        value: 0
+    healthCheckPath: /health
+    autoDeploy: true
