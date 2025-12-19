@@ -1,0 +1,87 @@
+/// Technic App - Entry Point
+/// 
+/// Quantitative trading companion with AI-powered insights.
+library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'app_shell.dart';
+import 'services/storage_service.dart';
+import 'theme/app_theme.dart';
+
+// ============================================================================
+// GLOBAL STATE
+// ============================================================================
+
+/// Theme mode notifier
+final ValueNotifier<bool> themeIsDark = ValueNotifier<bool>(false);
+
+/// Options mode preference: "stock_only" or "stock_plus_options"
+final ValueNotifier<String> optionsMode = ValueNotifier<String>('stock_plus_options');
+
+/// User ID
+final ValueNotifier<String?> userId = ValueNotifier<String?>(null);
+
+// ============================================================================
+// MAIN ENTRY POINT
+// ============================================================================
+
+Future<void> main() async {
+  // Initialize Flutter bindings
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize storage
+  final storage = StorageService.instance;
+  await storage.init();
+  
+  // Load theme preference
+  final savedTheme = await storage.loadThemeMode();
+  themeIsDark.value = savedTheme == 'dark';
+  
+  // Load options mode preference
+  final savedOptionsMode = await storage.loadOptionsMode();
+  if (savedOptionsMode != null) {
+    optionsMode.value = savedOptionsMode;
+  }
+  
+  // Load user ID
+  userId.value = await storage.loadUser();
+  
+  // Run app
+  runApp(
+    const ProviderScope(
+      child: TechnicApp(),
+    ),
+  );
+}
+
+// ============================================================================
+// APP WIDGET
+// ============================================================================
+
+/// Main application widget
+class TechnicApp extends StatelessWidget {
+  const TechnicApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: themeIsDark,
+      builder: (context, isDark, _) {
+        return MaterialApp(
+          title: 'Technic',
+          debugShowCheckedModeBanner: false,
+          
+          // Theme configuration
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+          
+          // Home
+          home: const TechnicShell(),
+        );
+      },
+    );
+  }
+}

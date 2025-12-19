@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Push Notifications capability -->
+	<!-- Change to 'production' for App Store builds -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- Sign in with Apple capability -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+
+	<!-- Associated Domains for Universal Links -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:technic.app</string>
+		<string>applinks:www.technic.app</string>
+	</array>
+</dict>
+</plist>
