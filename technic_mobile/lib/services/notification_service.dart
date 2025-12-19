@@ -1,15 +1,13 @@
 /// Notification Service
 ///
-/// Handles local and push notifications for price alerts and other app events.
-/// Integrates with Firebase Cloud Messaging (FCM) for remote push notifications.
+/// Handles push notifications using Firebase Cloud Messaging.
+/// Local notifications temporarily disabled due to package compatibility issues.
 library;
 
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Background message handler - must be a top-level function
@@ -18,33 +16,18 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Ensure Firebase is initialized
   await Firebase.initializeApp();
   debugPrint('[FCM] Background message: ${message.messageId}');
-
-  // Show local notification for background messages
-  final notificationService = NotificationService();
-  await notificationService.initialize();
-
-  if (message.notification != null) {
-    await notificationService.showNotification(
-      title: message.notification!.title ?? 'Technic',
-      body: message.notification!.body ?? '',
-      payload: message.data['ticker'],
-    );
-  }
 }
 
 /// Notification Service
 ///
-/// Manages local and push notifications for price alerts and app events.
-/// Uses flutter_local_notifications for local notifications and
-/// firebase_messaging for remote push notifications.
+/// Manages push notifications using Firebase Cloud Messaging.
+/// Note: Local notifications are temporarily disabled due to Android SDK compatibility.
 class NotificationService {
   NotificationService._();
 
   static final NotificationService _instance = NotificationService._();
   factory NotificationService() => _instance;
 
-  final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
 
   bool _isInitialized = false;
@@ -54,43 +37,14 @@ class NotificationService {
   String? get fcmToken => _fcmToken;
 
   /// Initialize the notification service
-  ///
-  /// Must be called after Firebase.initializeApp() and before
-  /// showing any notifications. Typically called in main.dart.
   Future<void> initialize() async {
     if (_isInitialized) return;
-
-    // Initialize local notifications
-    await _initializeLocalNotifications();
 
     // Initialize FCM
     await _initializeFCM();
 
     _isInitialized = true;
-    debugPrint('[Notifications] Initialized successfully');
-  }
-
-  /// Initialize local notifications
-  Future<void> _initializeLocalNotifications() async {
-    // Android settings
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-
-    // iOS settings
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false, // We'll request via FCM
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-
-    const settings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-
-    await _localNotifications.initialize(
-      settings,
-      onDidReceiveNotificationResponse: _onNotificationTapped,
-    );
+    debugPrint('[Notifications] Initialized successfully (FCM only)');
   }
 
   /// Initialize Firebase Cloud Messaging
@@ -119,7 +73,6 @@ class NotificationService {
     _fcm.onTokenRefresh.listen((token) {
       _fcmToken = token;
       debugPrint('[FCM] Token refreshed: $token');
-      // TODO: Send updated token to backend
     });
 
     // Handle foreground messages
@@ -143,25 +96,16 @@ class NotificationService {
   /// Handle foreground messages
   void _handleForegroundMessage(RemoteMessage message) {
     debugPrint('[FCM] Foreground message: ${message.messageId}');
-
-    // Show local notification for foreground messages
-    if (message.notification != null) {
-      showNotification(
-        title: message.notification!.title ?? 'Technic',
-        body: message.notification!.body ?? '',
-        payload: message.data['ticker'],
-      );
-    }
+    debugPrint('[FCM] Title: ${message.notification?.title}');
+    debugPrint('[FCM] Body: ${message.notification?.body}');
   }
 
   /// Handle notification tap when app is in background
   void _handleMessageOpenedApp(RemoteMessage message) {
     debugPrint('[FCM] Message opened app: ${message.data}');
 
-    // Navigate to relevant screen based on notification data
     final ticker = message.data['ticker'];
     if (ticker != null) {
-      // TODO: Navigate to symbol detail page
       debugPrint('[FCM] Should navigate to $ticker');
     }
   }
@@ -181,117 +125,40 @@ class NotificationService {
     return granted;
   }
 
-  /// Show a price alert notification
+  /// Show a price alert notification (via FCM only)
   Future<void> showAlertNotification({
     required String ticker,
     required String title,
     required String body,
     String? payload,
   }) async {
-    if (!_isInitialized) {
-      debugPrint('[Notifications] Service not initialized, skipping notification');
-      return;
-    }
-
-    final androidDetails = AndroidNotificationDetails(
-      'price_alerts',
-      'Price Alerts',
-      channelDescription: 'Notifications for price alert triggers',
-      importance: Importance.high,
-      priority: Priority.high,
-      ticker: 'Price Alert',
-      icon: '@mipmap/ic_launcher',
-      color: const ui.Color(0xFF4A9EFF), // Technic blue
-      enableVibration: true,
-      playSound: true,
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-      threadIdentifier: 'price_alerts',
-    );
-
-    final details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-
-    await _localNotifications.show(
-      id,
-      title,
-      body,
-      details,
-      payload: payload ?? ticker,
-    );
-
-    debugPrint('[Notifications] Showed alert: $title - $body');
+    debugPrint('[Notifications] Alert: $title - $body (FCM only, no local notification)');
+    // Local notifications disabled - would need backend to send FCM message
   }
 
-  /// Show a general notification
+  /// Show a general notification (via FCM only)
   Future<void> showNotification({
     required String title,
     required String body,
     String? payload,
   }) async {
-    if (!_isInitialized) {
-      debugPrint('[Notifications] Service not initialized, skipping notification');
-      return;
-    }
-
-    const androidDetails = AndroidNotificationDetails(
-      'general',
-      'General',
-      channelDescription: 'General app notifications',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      icon: '@mipmap/ic_launcher',
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-
-    await _localNotifications.show(
-      id,
-      title,
-      body,
-      details,
-      payload: payload,
-    );
+    debugPrint('[Notifications] Notification: $title - $body (FCM only, no local notification)');
+    // Local notifications disabled - would need backend to send FCM message
   }
 
-  /// Cancel a specific notification
+  /// Cancel a specific notification (not supported without local notifications)
   Future<void> cancel(int id) async {
-    await _localNotifications.cancel(id);
+    debugPrint('[Notifications] Cancel not supported (local notifications disabled)');
   }
 
-  /// Cancel all notifications
+  /// Cancel all notifications (not supported without local notifications)
   Future<void> cancelAll() async {
-    await _localNotifications.cancelAll();
+    debugPrint('[Notifications] Cancel all not supported (local notifications disabled)');
   }
 
-  /// Handle notification tap
-  void _onNotificationTapped(NotificationResponse response) {
-    debugPrint('[Notifications] Tapped: ${response.payload}');
-    // TODO: Navigate to relevant screen based on payload
-  }
-
-  /// Get pending notifications
-  Future<List<PendingNotificationRequest>> getPendingNotifications() async {
-    return _localNotifications.pendingNotificationRequests();
+  /// Get pending notifications (not supported without local notifications)
+  Future<List<dynamic>> getPendingNotifications() async {
+    return [];
   }
 
   /// Check if notifications are enabled
@@ -333,14 +200,7 @@ class NotificationService {
   }
 }
 
-/// Color class for Android notification (simple implementation)
-class Color {
-  final int value;
-  const Color(this.value);
-}
-
 /// Notification Service Provider
 final notificationServiceProvider = Provider<NotificationService>((ref) {
-  final service = NotificationService();
-  return service;
+  return NotificationService();
 });
