@@ -1,13 +1,15 @@
 /// Authentication Service
-/// 
+///
 /// Handles user authentication including login, signup, logout,
-/// and JWT token management with secure storage.
+/// Apple Sign-In, and JWT token management with secure storage.
 library;
 
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 /// User model
 class User {
@@ -172,6 +174,109 @@ class AuthService {
       debugPrint('[Auth] Signup error: $e');
       if (e is Exception) rethrow;
       throw Exception('Signup failed: $e');
+    }
+  }
+
+  /// Check if Apple Sign-In is available
+  ///
+  /// Returns true on iOS 13+ devices where Sign in with Apple is supported.
+  Future<bool> isAppleSignInAvailable() async {
+    if (!Platform.isIOS) return false;
+    return await SignInWithApple.isAvailable();
+  }
+
+  /// Sign in with Apple
+  ///
+  /// Returns AuthResponse with user data and tokens on success.
+  /// Throws Exception on failure or user cancellation.
+  Future<AuthResponse> signInWithApple() async {
+    try {
+      debugPrint('[Auth] Initiating Apple Sign-In');
+
+      // Request credential from Apple
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      debugPrint('[Auth] Apple credential received');
+
+      // Extract user info (only available on first sign-in)
+      final String? email = credential.email;
+      final String? firstName = credential.givenName;
+      final String? lastName = credential.familyName;
+      final String identityToken = credential.identityToken ?? '';
+      final String authorizationCode = credential.authorizationCode;
+      final String userIdentifier = credential.userIdentifier ?? '';
+
+      // Construct display name
+      String displayName = '';
+      if (firstName != null || lastName != null) {
+        displayName = [firstName, lastName]
+            .where((s) => s != null && s.isNotEmpty)
+            .join(' ');
+      }
+
+      // Send to backend for verification and user creation
+      final uri = Uri.parse('$_baseUrl/api/auth/apple');
+      final res = await _client
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'identity_token': identityToken,
+              'authorization_code': authorizationCode,
+              'user_identifier': userIdentifier,
+              'email': email,
+              'name': displayName,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final decoded = jsonDecode(res.body) as Map<String, dynamic>;
+        final authResponse = AuthResponse.fromJson(decoded);
+
+        // Store tokens and user data securely
+        await _storeAuthData(authResponse);
+
+        debugPrint('[Auth] Apple Sign-In successful');
+        return authResponse;
+      }
+
+      // Handle error responses
+      final errorBody = _tryDecodeError(res.body);
+      final errorMessage =
+          errorBody['message'] ?? errorBody['detail'] ?? 'Apple Sign-In failed';
+
+      debugPrint('[Auth] Apple Sign-In failed: $errorMessage');
+      throw Exception(errorMessage);
+    } on SignInWithAppleAuthorizationException catch (e) {
+      debugPrint('[Auth] Apple Sign-In authorization error: ${e.code}');
+      switch (e.code) {
+        case AuthorizationErrorCode.canceled:
+          throw Exception('Sign in cancelled');
+        case AuthorizationErrorCode.failed:
+          throw Exception('Sign in failed');
+        case AuthorizationErrorCode.invalidResponse:
+          throw Exception('Invalid response from Apple');
+        case AuthorizationErrorCode.notHandled:
+          throw Exception('Sign in not handled');
+        case AuthorizationErrorCode.notInteractive:
+          throw Exception('Sign in requires interaction');
+        case AuthorizationErrorCode.unknown:
+        default:
+          throw Exception('Unknown error during Apple Sign-In');
+      }
+    } catch (e) {
+      debugPrint('[Auth] Apple Sign-In error: $e');
+      if (e is Exception) rethrow;
+      throw Exception('Apple Sign-In failed: $e');
     }
   }
 

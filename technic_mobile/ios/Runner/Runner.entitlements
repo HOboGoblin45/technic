@@ -7,11 +7,17 @@
 	<key>aps-environment</key>
 	<string>development</string>
 
-	<!-- Associated Domains for deep linking (future use) -->
-	<!-- Uncomment when deep linking is configured -->
-	<!-- <key>com.apple.developer.associated-domains</key>
+	<!-- Sign in with Apple capability -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+
+	<!-- Associated Domains for Universal Links -->
+	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:technic.app</string>
-	</array> -->
+		<string>applinks:www.technic.app</string>
+	</array>
 </dict>
 </plist>

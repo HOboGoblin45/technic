@@ -69,5 +69,28 @@
 	<string>UIStatusBarStyleLightContent</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+
+	<!-- Face ID usage description -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to quickly and securely unlock Technic</string>
+
+	<!-- Deep Linking / URL Schemes -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.technic.technicMobile</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>technic</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Universal Links (Associated Domains configured in entitlements) -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<true/>
 </dict>
 </plist>
