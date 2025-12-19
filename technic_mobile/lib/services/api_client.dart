@@ -237,11 +237,45 @@ class ApiClient {
     }
   }
   
-  /// Close the client
+  /// Close the client and release resources
   void close() {
     _client.close();
   }
 }
 
-/// Singleton instance
-final apiClient = ApiClient();
+// ============================================================================
+// SINGLETON MANAGEMENT
+// ============================================================================
+
+/// Singleton instance for API client.
+///
+/// Lifecycle Management:
+/// - This singleton is created when first accessed and lives for the app lifetime
+/// - Call [disposeApiClient] when the app is being terminated to release resources
+/// - In Flutter, call this in the app's dispose method or when signing out
+///
+/// Example usage in main.dart:
+/// ```dart
+/// void main() {
+///   WidgetsBinding.instance.addObserver(
+///     LifecycleEventHandler(
+///       detachedCallBack: () => disposeApiClient(),
+///     ),
+///   );
+///   runApp(MyApp());
+/// }
+/// ```
+ApiClient? _apiClientInstance;
+
+/// Get the singleton API client instance
+ApiClient get apiClient {
+  _apiClientInstance ??= ApiClient();
+  return _apiClientInstance!;
+}
+
+/// Dispose the API client singleton and release HTTP resources.
+/// Call this when the app is terminating or when cleaning up resources.
+void disposeApiClient() {
+  _apiClientInstance?.close();
+  _apiClientInstance = null;
+}
