@@ -1,29 +1,39 @@
 /// API Configuration
 /// Centralized configuration for API endpoints and settings
+///
+/// Environment Variables:
+/// - API_BASE_URL: Override base URL (e.g., --dart-define=API_BASE_URL=https://api.example.com)
+/// - PRODUCTION: Set to true for production mode (e.g., --dart-define=PRODUCTION=true)
 library;
 
+import '../utils/constants.dart' as constants;
+
 class ApiConfig {
-  // Base URLs
-  static const String devBaseUrl = 'http://localhost:8002';
-  static const String prodBaseUrl = 'https://your-production-url.com'; // Update when deployed
-  
-  // Current environment
-  static const bool isProduction = false; // Set to true for production
-  
-  // Get active base URL
-  static String get baseUrl => isProduction ? prodBaseUrl : devBaseUrl;
-  
-  // Timeouts
-  static const Duration connectTimeout = Duration(seconds: 30);
-  static const Duration receiveTimeout = Duration(seconds: 30);
-  static const Duration sendTimeout = Duration(seconds: 30);
-  
+  // Environment-driven base URL
+  // Override with: flutter run --dart-define=API_BASE_URL=https://your-api.com
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:8002',
+  );
+
+  // Production mode flag
+  // Override with: flutter run --dart-define=PRODUCTION=true
+  static const bool isProduction = bool.fromEnvironment(
+    'PRODUCTION',
+    defaultValue: false,
+  );
+
+  // Timeouts - reference centralized constants
+  static Duration get connectTimeout => constants.apiTimeout;
+  static Duration get receiveTimeout => constants.apiTimeout;
+  static Duration get sendTimeout => constants.apiTimeout;
+
   // Retry configuration
   static const int maxRetries = 3;
   static const Duration retryDelay = Duration(seconds: 2);
   
-  // Cache configuration
-  static const Duration cacheExpiry = Duration(minutes: 5);
+  // Cache configuration - reference centralized constants
+  static Duration get cacheExpiry => constants.cacheShortDuration;
   static const bool enableCache = true;
   
   // Headers

@@ -227,36 +227,28 @@ Add comments explaining when to call dispose for singletons.
 
 ---
 
-## Sprint 6: Configuration Externalization (Priority: LOW)
+## Sprint 6: Configuration Externalization (Priority: LOW) ✅ COMPLETE
 
 **Estimated Effort:** 0.5 days
 **Impact:** Easier environment management
+**Status:** Completed
 
 ### 6.1 Move Hardcoded Values to Environment
 **File:** `lib/services/api_config.dart`
 
-```dart
-static const String baseUrl = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'https://technic-m5vn.onrender.com',
-);
-
-static const bool isProduction = bool.fromEnvironment(
-  'PRODUCTION',
-  defaultValue: false,
-);
-```
+**Implemented:**
+- Added `String.fromEnvironment` for `API_BASE_URL` with localhost default
+- Added `bool.fromEnvironment` for `PRODUCTION` flag
+- Added documentation for dart-define usage
 
 ### 6.2 Externalize Timeout Values
-**File:** `lib/utils/constants.dart`
+**File:** `lib/services/api_config.dart`
 
-```dart
-class ApiTimeouts {
-  static const Duration defaultTimeout = Duration(seconds: 30);
-  static const Duration scanTimeout = Duration(minutes: 10);
-  static const Duration uploadTimeout = Duration(minutes: 5);
-}
-```
+**Implemented:**
+- Imported constants.dart for centralized timeout values
+- Changed `connectTimeout`, `receiveTimeout`, `sendTimeout` to reference `constants.apiTimeout`
+- Changed `cacheExpiry` to reference `constants.cacheShortDuration`
+- Removes duplication between api_config.dart and constants.dart
 
 ---
 
@@ -269,8 +261,8 @@ class ApiTimeouts {
 | 3 | Code Cleanup | MEDIUM | 0.5 days | 12 | ✅ Complete |
 | 4 | Model Improvements | MEDIUM | 1 day | 18 | ✅ Complete |
 | 5 | Resource Management | LOW | 0.5 days | 5 | ✅ Complete |
-| 6 | Configuration | LOW | 0.5 days | 8 | Pending |
-| **Total** | | | **4.5-5.5 days** | **72** | |
+| 6 | Configuration | LOW | 0.5 days | 8 | ✅ Complete |
+| **Total** | | | **4.5-5.5 days** | **72** | ✅ All Complete |
 
 ---
 
