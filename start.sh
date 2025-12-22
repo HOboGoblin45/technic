@@ -11,5 +11,5 @@ else
     echo "⚠️  Warning: training_data_v2.parquet not found on persistent disk"
 fi
 
-# Start the API server (use api.py which is proven to work)
-exec python -m uvicorn api:app --host 0.0.0.0 --port "$PORT"
+# Start the API server with Lambda & Redis integration
+exec python -m uvicorn technic_v4.api_server:app --host 0.0.0.0 --port "$PORT"
