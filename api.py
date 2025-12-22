@@ -498,8 +498,15 @@ def run_scan_v1(body: ScanRequestV1) -> Dict[str, Any]:
         cols = set(df.columns)
         if "Symbol" not in cols:
             return []
+        # Sort by RewardRisk if available, otherwise by TechRating
+        if "RewardRisk" in cols:
+            sort_col = "RewardRisk"
+        elif "TechRating" in cols:
+            sort_col = "TechRating"
+        else:
+            sort_col = "Symbol"  # Fallback to alphabetical
         ideas_df = (
-            df.sort_values("RewardRisk", ascending=False)
+            df.sort_values(sort_col, ascending=False)
             .head(5)
             .assign(
                 title=lambda x: x["Signal"] if "Signal" in cols else "Idea",
@@ -539,7 +546,13 @@ def run_scan_v1(body: ScanRequestV1) -> Dict[str, Any]:
             )
         return out
 
-    df_sorted = df.sort_values("RewardRisk", ascending=False)
+    # Sort by RewardRisk if available, otherwise by TechRating
+    if "RewardRisk" in df.columns:
+        df_sorted = df.sort_values("RewardRisk", ascending=False)
+    elif "TechRating" in df.columns:
+        df_sorted = df.sort_values("TechRating", ascending=False)
+    else:
+        df_sorted = df
 
     return {
         "results": _results(df_sorted),
