@@ -24,6 +24,8 @@ services:
         sync: false
       - key: REDIS_PASSWORD
         sync: false
+      - key: REDIS_URL
+        sync: false
       - key: REDIS_DB
         value: 0
       - key: TECHNIC_USE_REDIS
@@ -32,5 +34,15 @@ services:
         value: true
       - key: TECHNIC_USE_RAY
         value: 0
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-east-1
+      - key: LAMBDA_FUNCTION_NAME
+        value: technic-scanner
+      - key: USE_LAMBDA
+        value: true
     healthCheckPath: /health
     autoDeploy: true

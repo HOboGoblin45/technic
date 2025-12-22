@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import json
+import time
+import hashlib
 from typing import Any, List, Optional, Literal
 
 import pandas as pd
@@ -13,10 +16,39 @@ from technic_v4.config.pricing import PLANS
 from technic_v4.scanner_core import ScanConfig, run_scan, OUTPUT_DIR as SCAN_OUTPUT_DIR
 from technic_v4.ui.generate_copilot_answer import generate_copilot_answer
 
+# Initialize logging
+from technic_v4.infra.logging import get_logger
+logger = get_logger()
+
+# Initialize Redis cache
+try:
+    from technic_v4.cache.redis_cache import redis_cache
+    REDIS_AVAILABLE = redis_cache.available
+    logger.info(f"[API] Redis cache available: {REDIS_AVAILABLE}")
+except Exception as e:
+    redis_cache = None
+    REDIS_AVAILABLE = False
+    logger.warning(f"[API] Redis cache not available: {e}")
+
+# Initialize AWS Lambda client
+AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
+LAMBDA_FUNCTION_NAME = os.getenv('LAMBDA_FUNCTION_NAME', 'technic-scanner')
+USE_LAMBDA = os.getenv('USE_LAMBDA', 'false').lower() == 'true'
+
+lambda_client = None
+if USE_LAMBDA:
+    try:
+        import boto3
+        lambda_client = boto3.client('lambda', region_name=AWS_REGION)
+        logger.info(f"[API] Lambda client initialized: {LAMBDA_FUNCTION_NAME} in {AWS_REGION}")
+    except Exception as e:
+        logger.warning(f"[API] Lambda client initialization failed: {e}")
+        lambda_client = None
+
 app = FastAPI(
     title="Technic API",
     version="1.0.0",
-    description="Technic scan API: equity/options idea generation",
+    description="Technic scan API: equity/options idea generation (with Lambda & Redis)",
 )
 
 
@@ -93,7 +125,98 @@ def version() -> dict[str, Any]:
         "api_version": app.version,
         "use_ml_alpha": settings.use_ml_alpha,
         "use_tft_features": settings.use_tft_features,
+        "lambda_enabled": USE_LAMBDA and lambda_client is not None,
+        "redis_enabled": REDIS_AVAILABLE,
     }
+
+
+def _get_cache_key(req: ScanRequest) -> str:
+    """Generate cache key from scan request"""
+    config_dict = {
+        "max_symbols": req.max_symbols,
+        "trade_style": req.trade_style,
+        "min_tech_rating": req.min_tech_rating,
+        "options_mode": req.options_mode,
+        "sectors": sorted(req.sectors) if req.sectors else None,
+        "lookback_days": req.lookback_days,
+    }
+    config_str = json.dumps(config_dict, sort_keys=True)
+    hash_key = hashlib.md5(config_str.encode()).hexdigest()
+    return f"scan_v1:{hash_key}"
+
+
+def _check_cache(cache_key: str) -> Optional[dict]:
+    """Check if scan result is cached"""
+    if not REDIS_AVAILABLE or not redis_cache:
+        return None
+    
+    try:
+        cached = redis_cache.get(cache_key)
+        if cached:
+            logger.info(f"[API] Cache HIT: {cache_key}")
+            return json.loads(cached) if isinstance(cached, str) else cached
+    except Exception as e:
+        logger.warning(f"[API] Cache read error: {e}")
+    
+    return None
+
+
+def _set_cache(cache_key: str, data: dict, ttl: int = 300) -> None:
+    """Cache scan result"""
+    if not REDIS_AVAILABLE or not redis_cache:
+        return
+    
+    try:
+        redis_cache.set(cache_key, json.dumps(data), ttl=ttl)
+        logger.info(f"[API] Cache SET: {cache_key} (TTL: {ttl}s)")
+    except Exception as e:
+        logger.warning(f"[API] Cache write error: {e}")
+
+
+def _invoke_lambda(req: ScanRequest) -> Optional[dict]:
+    """Invoke AWS Lambda for heavy computation"""
+    if not lambda_client:
+        return None
+    
+    try:
+        logger.info(f"[API] Invoking Lambda: {LAMBDA_FUNCTION_NAME}")
+        start_time = time.time()
+        
+        # Prepare payload
+        payload = {
+            "max_symbols": req.max_symbols,
+            "trade_style": req.trade_style,
+            "min_tech_rating": req.min_tech_rating,
+            "options_mode": req.options_mode or "stock_plus_options",
+            "sectors": req.sectors,
+            "lookback_days": req.lookback_days,
+        }
+        
+        # Invoke Lambda
+        response = lambda_client.invoke(
+            FunctionName=LAMBDA_FUNCTION_NAME,
+            InvocationType='RequestResponse',
+            Payload=json.dumps(payload)
+        )
+        
+        # Parse response
+        response_payload = json.loads(response['Payload'].read())
+        
+        if response_payload.get('statusCode') != 200:
+            error_body = json.loads(response_payload.get('body', '{}'))
+            logger.error(f"[API] Lambda error: {error_body.get('error', 'Unknown error')}")
+            return None
+        
+        # Parse successful response
+        body = json.loads(response_payload['body'])
+        elapsed = time.time() - start_time
+        logger.info(f"[API] Lambda completed in {elapsed:.2f}s")
+        
+        return body
+        
+    except Exception as e:
+        logger.error(f"[API] Lambda invocation failed: {e}", exc_info=True)
+        return None
 
 
 @app.get("/meta")
@@ -196,10 +319,74 @@ def _load_latest_scan_row(symbol: str) -> Optional[pd.Series]:
 def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> ScanResponse:
     """
     Run a scan and return a stable, versioned schema.
+    
+    Flow:
+    1. Check Redis cache
+    2. If cached -> return immediately
+    3. If not cached:
+       a. For large scans (>50 symbols) -> try Lambda
+       b. If Lambda fails or small scan -> use Render
+    4. Cache the result
     """
     from technic_v4.universe_loader import load_universe
     
+    start_time = time.time()
     options_mode = req.options_mode or "stock_plus_options"
+    
+    # Generate cache key
+    cache_key = _get_cache_key(req)
+    
+    # Check cache first
+    cached_result = _check_cache(cache_key)
+    if cached_result:
+        logger.info(f"[API] Returning cached result (took {time.time() - start_time:.2f}s)")
+        return ScanResponse(**cached_result)
+    
+    # Calculate universe size
+    universe = load_universe()
+    universe_size = len(universe)
+    
+    if req.sectors:
+        sector_set = {s.lower().strip() for s in req.sectors}
+        filtered_universe = [
+            row for row in universe
+            if row.sector and row.sector.lower().strip() in sector_set
+        ]
+        universe_size = len(filtered_universe)
+    
+    # Decide execution strategy
+    use_lambda = USE_LAMBDA and lambda_client and req.max_symbols > 50
+    
+    if use_lambda:
+        # Try Lambda for large scans
+        logger.info(f"[API] Using Lambda for scan ({req.max_symbols} symbols)")
+        lambda_result = _invoke_lambda(req)
+        
+        if lambda_result and lambda_result.get('results'):
+            # Lambda succeeded
+            elapsed = time.time() - start_time
+            logger.info(f"[API] Lambda scan completed in {elapsed:.2f}s")
+            
+            # Format response
+            response_data = {
+                "status": f"Scan completed via Lambda in {elapsed:.1f}s",
+                "disclaimer": " ".join(PRODUCT.disclaimers),
+                "results": lambda_result['results'],
+                "universe_size": universe_size,
+                "symbols_scanned": len(lambda_result['results']),
+            }
+            
+            # Cache the result
+            _set_cache(cache_key, response_data, ttl=300)
+            
+            return ScanResponse(**response_data)
+        else:
+            # Lambda failed, fall back to Render
+            logger.warning("[API] Lambda failed, falling back to Render")
+    
+    # Run scan locally on Render
+    logger.info(f"[API] Using Render for scan ({req.max_symbols} symbols)")
+    
     cfg = ScanConfig(
         max_symbols=req.max_symbols,
         trade_style=req.trade_style,
@@ -209,34 +396,29 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
         lookback_days=req.lookback_days,
     )
     
-    # Calculate universe size BEFORE scanning
-    universe = load_universe()
-    universe_size = len(universe)
-    
-    # Apply sector filters to get actual universe size
-    if req.sectors:
-        sector_set = {s.lower().strip() for s in req.sectors}
-        filtered_universe = [
-            row for row in universe
-            if row.sector and row.sector.lower().strip() in sector_set
-        ]
-        universe_size = len(filtered_universe)
-    
     # Run the scan
     df, status_text = run_scan(cfg)
     
     # Track how many symbols were actually scanned
     symbols_scanned = len(df) if df is not None and not df.empty else 0
+    
+    elapsed = time.time() - start_time
+    logger.info(f"[API] Render scan completed in {elapsed:.2f}s")
 
     disclaimer = " ".join(PRODUCT.disclaimers)
+    
+    response_data = {
+        "status": f"{status_text} (Render: {elapsed:.1f}s)",
+        "disclaimer": disclaimer,
+        "results": _format_scan_results(df),
+        "universe_size": universe_size,
+        "symbols_scanned": symbols_scanned,
+    }
+    
+    # Cache the result
+    _set_cache(cache_key, response_data, ttl=300)
 
-    return ScanResponse(
-        status=status_text,
-        disclaimer=disclaimer,
-        results=_format_scan_results(df),
-        universe_size=universe_size,
-        symbols_scanned=symbols_scanned,
-    )
+    return ScanResponse(**response_data)
 
 
 @app.post("/v1/copilot")
