@@ -203,7 +203,10 @@ def run_scan(
         else:
             df, log = result
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(500, f"scan failed: {exc}") from exc
+        import traceback
+        error_detail = f"scan failed: {exc}\n\nTraceback:\n{traceback.format_exc()}"
+        print(f"[SCAN ERROR] {error_detail}")
+        raise HTTPException(500, error_detail) from exc
 
     records = df.to_dict(orient="records")
 
@@ -465,7 +468,10 @@ def run_scan_v1(body: ScanRequestV1) -> Dict[str, Any]:
         else:
             df, log = result
     except Exception as exc:
-        raise HTTPException(500, f"scan failed: {exc}") from exc
+        import traceback
+        error_detail = f"scan failed: {exc}\n\nTraceback:\n{traceback.format_exc()}"
+        print(f"[SCAN ERROR V1] {error_detail}")
+        raise HTTPException(500, error_detail) from exc
 
     # Apply sector filter if provided
     if body.sectors and len(body.sectors) > 0:
