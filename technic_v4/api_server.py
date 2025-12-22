@@ -447,6 +447,37 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
     return ScanResponse(**response_data)
 
 
+class UniverseStats(BaseModel):
+    sectors: List[str]
+    subindustries: List[str]
+    total_symbols: int
+
+
+@app.get("/v1/universe_stats", response_model=UniverseStats)
+def universe_stats(api_key: str = Depends(get_api_key)) -> UniverseStats:
+    """
+    Get universe statistics including available sectors and subindustries.
+    """
+    from technic_v4.universe_loader import load_universe
+    from collections import Counter
+    
+    try:
+        rows = load_universe()
+        sector_counts = Counter(r.sector or "Unknown" for r in rows)
+        subindustry_counts = Counter(r.subindustry or "Other" for r in rows)
+        
+        sectors_sorted = sorted(sector_counts.items(), key=lambda x: x[1], reverse=True)
+        subindustries_sorted = sorted(subindustry_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        return UniverseStats(
+            sectors=[name for name, _ in sectors_sorted],
+            subindustries=[name for name, _ in subindustries_sorted],
+            total_symbols=len(rows),
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"universe stats failed: {exc}") from exc
+
+
 @app.post("/v1/copilot")
 async def copilot(request: CopilotRequest, api_key: str = Depends(get_api_key)):
     """
@@ -551,14 +582,15 @@ def symbol_detail(ticker: str, days: int = 90, api_key: str = Depends(get_api_ke
     This endpoint pulls data from the latest scan results if available,
     otherwise returns basic price history.
     """
-    from technic_v4 import data_engine
+    from technic_v4.data_layer.price_layer import get_stock_history_df
     from technic_v4.data_layer.events import get_event_info
+    from technic_v4.data_layer.fundamentals import get_fundamentals
     
     ticker = ticker.upper().strip()
     
     # Get price history
     try:
-        history_df = data_engine.get_price_history(ticker, days, freq="daily")
+        history_df = get_stock_history_df(ticker, days)
         if history_df is None or history_df.empty:
             raise HTTPException(status_code=404, detail=f"No price data found for {ticker}")
         
@@ -642,7 +674,7 @@ def symbol_detail(ticker: str, days: int = 90, api_key: str = Depends(get_api_ke
     # Get fundamentals
     fundamentals = None
     try:
-        fund_data = data_engine.get_fundamentals(ticker)
+        fund_data = get_fundamentals(ticker)
         if fund_data:
             fundamentals = Fundamentals(
                 pe=fund_data.get("pe"),
