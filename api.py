@@ -410,7 +410,17 @@ def symbol_detail(ticker: str, days: int = 90, intraday: bool = False) -> Dict[s
     fundamentals: Dict[str, Any] = {}
     if get_fundamentals:
         try:
-            fundamentals = get_fundamentals(symbol) or {}
+            fund_obj = get_fundamentals(symbol)
+            if fund_obj is not None:
+                # Convert FundamentalsSnapshot object to dict if needed
+                if hasattr(fund_obj, 'raw'):
+                    fundamentals = fund_obj.raw if isinstance(fund_obj.raw, dict) else {}
+                elif isinstance(fund_obj, dict):
+                    fundamentals = fund_obj
+                else:
+                    fundamentals = {}
+            else:
+                fundamentals = {}
         except Exception:
             fundamentals = {}
 
