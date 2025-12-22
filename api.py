@@ -350,17 +350,24 @@ def universe_stats() -> Dict[str, Any]:
     """
     Return cached universe sectors/subindustries for picklists.
     """
-    if get_universe_stats is None:
-        raise HTTPException(500, "Universe stats unavailable")
     try:
-        stats = get_universe_stats()
+        # Import directly here to avoid module-level import issues
+        from technic_v4.universe_loader import load_universe
+        from collections import Counter
+        
+        rows = load_universe()
+        sector_counts = Counter(r.sector or "Unknown" for r in rows)
+        subindustry_counts = Counter(r.subindustry or "Other" for r in rows)
+        
+        sectors_sorted = sorted(sector_counts.items(), key=lambda x: x[1], reverse=True)
+        subindustries_sorted = sorted(subindustry_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        return {
+            "sectors": [name for name, _ in sectors_sorted],
+            "subindustries": [name for name, _ in subindustries_sorted],
+        }
     except Exception as exc:  # pragma: no cover
         raise HTTPException(500, f"universe stats failed: {exc}") from exc
-
-    return {
-        "sectors": [name for name, _ in stats.get("sectors", [])],
-        "subindustries": [name for name, _ in stats.get("subindustries", [])],
-    }
 
 
 @app.get("/symbol/{ticker}", response_model=SymbolResponse)
@@ -540,7 +547,24 @@ def universe_stats_v1() -> Dict[str, Any]:
     """
     V1 API: Get universe statistics (mobile app compatible).
     """
-    return universe_stats()
+    try:
+        # Import directly here to avoid module-level import issues
+        from technic_v4.universe_loader import load_universe
+        from collections import Counter
+        
+        rows = load_universe()
+        sector_counts = Counter(r.sector or "Unknown" for r in rows)
+        subindustry_counts = Counter(r.subindustry or "Other" for r in rows)
+        
+        sectors_sorted = sorted(sector_counts.items(), key=lambda x: x[1], reverse=True)
+        subindustries_sorted = sorted(subindustry_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        return {
+            "sectors": [name for name, _ in sectors_sorted],
+            "subindustries": [name for name, _ in subindustries_sorted],
+        }
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(500, f"universe stats failed: {exc}") from exc
 
 
 # Convenience launcher: uvicorn api:app --reload
