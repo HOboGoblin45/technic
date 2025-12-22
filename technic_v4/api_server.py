@@ -416,8 +416,14 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
         lookback_days=req.lookback_days,
     )
     
-    # Run the scan
-    df, status_text = run_scan(cfg)
+    # Run the scan (returns 3 values: df, status_text, performance_metrics)
+    result = run_scan(cfg)
+    if len(result) == 3:
+        df, status_text, performance_metrics = result
+    else:
+        # Backward compatibility
+        df, status_text = result
+        performance_metrics = {}
     
     # Track how many symbols were actually scanned
     symbols_scanned = len(df) if df is not None and not df.empty else 0
