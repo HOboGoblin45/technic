@@ -1031,6 +1031,10 @@ def _resolve_lookback_days(trade_style: str, base_days: int) -> int:
     - "Medium-term swing": use slider value as-is
     - "Position / longer-term": ensure at least 180 days
     """
+    # Handle None base_days - default to 150
+    if base_days is None:
+        base_days = 150
+    
     ts = (trade_style or "").lower().strip()
 
     # Day-trading -> very short history
