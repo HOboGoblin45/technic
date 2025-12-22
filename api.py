@@ -196,7 +196,12 @@ def run_scan(
         cfg = None
         if hasattr(scanner_core, "ScanConfig"):
             cfg = scanner_core.ScanConfig(max_symbols=max_symbols, min_tech_rating=min_tech_rating)
-        df, log = scanner_core.run_scan(config=cfg)
+        result = scanner_core.run_scan(config=cfg)
+        # Handle both old (df, log) and new (df, log, metrics) return formats
+        if len(result) == 3:
+            df, log, metrics = result
+        else:
+            df, log = result
     except Exception as exc:  # pragma: no cover
         raise HTTPException(500, f"scan failed: {exc}") from exc
 
@@ -453,7 +458,12 @@ def run_scan_v1(body: ScanRequestV1) -> Dict[str, Any]:
                 trade_style=body.trade_style,
                 lookback_days=body.lookback_days or 90,
             )
-        df, log = scanner_core.run_scan(config=cfg)
+        result = scanner_core.run_scan(config=cfg)
+        # Handle both old (df, log) and new (df, log, metrics) return formats
+        if len(result) == 3:
+            df, log, metrics = result
+        else:
+            df, log = result
     except Exception as exc:
         raise HTTPException(500, f"scan failed: {exc}") from exc
 
