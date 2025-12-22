@@ -25,9 +25,16 @@ if ROOT not in sys.path:
 try:
     from technic_v4 import scanner_core
     from technic_v4.engine import trade_planner
-except Exception:  # pragma: no cover - keep API alive even if imports fail
+    SCANNER_AVAILABLE = True
+    SCANNER_ERROR = None
+except Exception as e:  # pragma: no cover - keep API alive even if imports fail
     scanner_core = None  # type: ignore
     trade_planner = None  # type: ignore
+    SCANNER_AVAILABLE = False
+    SCANNER_ERROR = str(e)
+    import traceback
+    print(f"[ERROR] Failed to import scanner_core: {e}")
+    traceback.print_exc()
 
 # Optional options stack
 try:
@@ -181,8 +188,9 @@ def run_scan(
       - ascending: sort order (default False)
       - include_log: include scan log text (default True)
     """
-    if scanner_core is None:
-        raise HTTPException(500, "scanner_core unavailable in this session")
+    if not SCANNER_AVAILABLE or scanner_core is None:
+        error_detail = f"scanner_core unavailable: {SCANNER_ERROR}" if SCANNER_ERROR else "scanner_core unavailable"
+        raise HTTPException(500, error_detail)
 
     try:
         cfg = None
@@ -432,8 +440,9 @@ def run_scan_v1(body: ScanRequestV1) -> Dict[str, Any]:
     
     Accepts JSON body with scan parameters and returns structured results.
     """
-    if scanner_core is None:
-        raise HTTPException(500, "scanner_core unavailable in this session")
+    if not SCANNER_AVAILABLE or scanner_core is None:
+        error_detail = f"scanner_core unavailable: {SCANNER_ERROR}" if SCANNER_ERROR else "scanner_core unavailable"
+        raise HTTPException(500, error_detail)
 
     try:
         cfg = None
