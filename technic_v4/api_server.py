@@ -36,14 +36,30 @@ LAMBDA_FUNCTION_NAME = os.getenv('LAMBDA_FUNCTION_NAME', 'technic-scanner')
 USE_LAMBDA = os.getenv('USE_LAMBDA', 'false').lower() == 'true'
 
 lambda_client = None
+logger.info(f"[API INIT] USE_LAMBDA env var: {os.getenv('USE_LAMBDA', 'not set')}")
+logger.info(f"[API INIT] USE_LAMBDA parsed: {USE_LAMBDA}")
+logger.info(f"[API INIT] AWS_REGION: {AWS_REGION}")
+logger.info(f"[API INIT] LAMBDA_FUNCTION_NAME: {LAMBDA_FUNCTION_NAME}")
+
 if USE_LAMBDA:
     try:
         import boto3
+        logger.info(f"[API INIT] boto3 imported successfully")
         lambda_client = boto3.client('lambda', region_name=AWS_REGION)
-        logger.info(f"[API] Lambda client initialized: {LAMBDA_FUNCTION_NAME} in {AWS_REGION}")
+        logger.info(f"[API INIT] Lambda client initialized: {LAMBDA_FUNCTION_NAME} in {AWS_REGION}")
+        
+        # Test Lambda connectivity
+        try:
+            response = lambda_client.get_function(FunctionName=LAMBDA_FUNCTION_NAME)
+            logger.info(f"[API INIT] Lambda function verified: {response['Configuration']['FunctionName']}")
+        except Exception as verify_error:
+            logger.error(f"[API INIT] Lambda function verification failed: {verify_error}")
+            
     except Exception as e:
-        logger.warning(f"[API] Lambda client initialization failed: {e}")
+        logger.error(f"[API INIT] Lambda client initialization failed: {e}", exc_info=True)
         lambda_client = None
+else:
+    logger.info(f"[API INIT] Lambda disabled (USE_LAMBDA={USE_LAMBDA})")
 
 app = FastAPI(
     title="Technic API",
@@ -356,6 +372,10 @@ def scan_endpoint(req: ScanRequest, api_key: str = Depends(get_api_key)) -> Scan
     
     # Decide execution strategy
     use_lambda = USE_LAMBDA and lambda_client and req.max_symbols > 50
+    
+    # Debug logging for Lambda decision
+    logger.info(f"[LAMBDA DECISION] USE_LAMBDA={USE_LAMBDA}, lambda_client={'initialized' if lambda_client else 'None'}, max_symbols={req.max_symbols}, threshold=50")
+    logger.info(f"[LAMBDA DECISION] Will use Lambda: {use_lambda}")
     
     if use_lambda:
         # Try Lambda for large scans
