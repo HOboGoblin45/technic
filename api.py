@@ -163,6 +163,149 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+# -------------------------------------------------------------------
+# V1 API Routes (Mobile App Compatible)
+# -------------------------------------------------------------------
+
+class ScanRequestV1(BaseModel):
+    """Request body for V1 scan endpoint"""
+    max_symbols: int = Field(default=50, ge=1, le=6000)
+    trade_style: str = Field(default="Short-term swing")
+    min_tech_rating: float = Field(default=0.0, ge=0.0, le=100.0)
+    sectors: Optional[List[str]] = None
+    lookback_days: Optional[int] = Field(default=90, ge=1, le=365)
+    options_mode: Optional[str] = None
+
+
+@app.post("/v1/scan", response_model=ScanResponse)
+def run_scan_v1(body: ScanRequestV1) -> Dict[str, Any]:
+    """
+    V1 API: Run equity scanner with POST body (mobile app compatible).
+    
+    Accepts JSON body with scan parameters and returns structured results.
+    """
+    if scanner_core is None:
+        raise HTTPException(500, "scanner_core unavailable in this session")
+
+    try:
+        cfg = None
+        if hasattr(scanner_core, "ScanConfig"):
+            cfg = scanner_core.ScanConfig(
+                max_symbols=body.max_symbols,
+                min_tech_rating=body.min_tech_rating,
+                trade_style=body.trade_style,
+                lookback_days=body.lookback_days or 90,
+            )
+        df, log = scanner_core.run_scan(config=cfg)
+    except Exception as exc:
+        raise HTTPException(500, f"scan failed: {exc}") from exc
+
+    # Apply sector filter if provided
+    if body.sectors and len(body.sectors) > 0:
+        if "Sector" in df.columns:
+            df = df[df["Sector"].isin(body.sectors)]
+
+    # Structured payload for Flutter
+    def _movers(df: pd.DataFrame) -> List[Dict[str, Any]]:
+        if not {"Symbol", "RewardRisk", "Signal"} <= set(df.columns):
+            return []
+        movers_df = (
+            df[["Symbol", "RewardRisk", "Signal"]]
+            .assign(
+                ticker=lambda x: x["Symbol"],
+                delta=lambda x: x["RewardRisk"].round(2),
+                note=lambda x: x["Signal"],
+                isPositive=lambda x: x["RewardRisk"].fillna(0) >= 0,
+            )[["ticker", "delta", "note", "isPositive"]]
+            .head(6)
+        )
+        return movers_df.to_dict(orient="records")
+
+    def _ideas(df: pd.DataFrame) -> List[Dict[str, Any]]:
+        cols = set(df.columns)
+        if "Symbol" not in cols:
+            return []
+        ideas_df = (
+            df.sort_values("RewardRisk", ascending=False)
+            .head(5)
+            .assign(
+                title=lambda x: x["Signal"] if "Signal" in cols else "Idea",
+                ticker=lambda x: x["Symbol"],
+                meta=lambda x: (
+                    "R:R "
+                    + x.get("RewardRisk", pd.Series()).fillna(0).round(2).astype(str)
+                    + (" • TechRating " + x.get("TechRating", pd.Series()).fillna(0).round(1).astype(str)
+                       if "TechRating" in cols else "")
+                ),
+                plan=lambda x: (
+                    "Entry " + x.get("EntryPrice", pd.Series()).fillna("").astype(str)
+                    + " • Stop " + x.get("StopPrice", pd.Series()).fillna("").astype(str)
+                    + " • Target " + x.get("TargetPrice", pd.Series()).fillna("").astype(str)
+                ),
+            )[["title", "ticker", "meta", "plan"]]
+        )
+        return ideas_df.to_dict(orient="records")
+
+    def _results(df: pd.DataFrame) -> List[Dict[str, Any]]:
+        cols = set(df.columns)
+        out = []
+        for _, row in df.iterrows():
+            out.append(
+                {
+                    "ticker": row.get("Symbol"),
+                    "signal": row.get("Signal"),
+                    "rrr": f"R:R {row.get('RewardRisk'):.2f}" if pd.notna(row.get("RewardRisk")) else None,
+                    "entry": row.get("EntryPrice"),
+                    "stop": row.get("StopPrice"),
+                    "target": row.get("TargetPrice"),
+                    "techRating": row.get("TechRating") if "TechRating" in cols else None,
+                    "riskScore": row.get("RiskScore") if "RiskScore" in cols else None,
+                    "sector": row.get("Sector"),
+                    "industry": row.get("Industry"),
+                }
+            )
+        return out
+
+    df_sorted = df.sort_values("RewardRisk", ascending=False)
+
+    return {
+        "results": _results(df_sorted),
+        "movers": _movers(df_sorted),
+        "ideas": _ideas(df_sorted),
+        "log": log,
+        "universe_size": len(df),
+        "symbols_scanned": len(df),
+    }
+
+
+@app.get("/v1/symbol/{ticker}", response_model=SymbolResponse)
+def symbol_detail_v1(ticker: str, days: int = Query(90, ge=1, le=365)) -> Dict[str, Any]:
+    """
+    V1 API: Get detailed symbol information (mobile app compatible).
+    """
+    return symbol_detail(ticker, days, intraday=False)
+
+
+@app.post("/v1/copilot")
+def copilot_v1(body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    V1 API: Copilot endpoint (mobile app compatible).
+    """
+    return copilot(body)
+
+
+@app.get("/v1/universe_stats", response_model=UniverseStats)
+def universe_stats_v1() -> Dict[str, Any]:
+    """
+    V1 API: Get universe statistics (mobile app compatible).
+    """
+    return universe_stats()
+
+
+# -------------------------------------------------------------------
+# Original API Routes (Backward Compatible)
+# -------------------------------------------------------------------
+
 @app.get("/scan", response_model=ScanResponse)
 def run_scan(
     max_symbols: int = Query(50, ge=1, le=500),
