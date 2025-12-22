@@ -42,12 +42,29 @@ def _init_redis():
         return
     
     try:
-        settings = get_settings()
-        redis_url = getattr(settings, 'redis_url', 'redis://localhost:6379/0')
-        _REDIS_CLIENT = redis.from_url(redis_url, decode_responses=False, socket_timeout=2)
+        # Check environment variable first (Render sets this)
+        redis_url = os.getenv('REDIS_URL')
+        
+        if not redis_url:
+            # Fallback to settings
+            settings = get_settings()
+            redis_url = getattr(settings, 'redis_url', None)
+        
+        if not redis_url:
+            # Final fallback to localhost (for local development)
+            redis_url = 'redis://localhost:6379/0'
+            logger.info("[REDIS] No REDIS_URL found, using localhost")
+        
+        _REDIS_CLIENT = redis.from_url(
+            redis_url, 
+            decode_responses=False, 
+            socket_timeout=5,
+            socket_connect_timeout=5,
+            retry_on_timeout=True
+        )
         _REDIS_CLIENT.ping()
         _REDIS_ENABLED = True
-        logger.info("[REDIS] Connected to Redis at %s", redis_url)
+        logger.info("[REDIS] Connected to Redis successfully")
     except Exception as e:
         _REDIS_ENABLED = False
         logger.warning("[REDIS] Redis unavailable, using L1/L2 cache only: %s", e)
