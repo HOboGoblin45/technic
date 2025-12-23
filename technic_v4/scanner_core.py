@@ -1591,17 +1591,91 @@ def _finalize_results(
 
     if results_df.empty:
         if base_results.empty:
-            return results_df, "No results passed the TechRating filter."
+            return results_df, "No results returned from scan."
 
-        # Fallback: show the top few names even if they missed the cutoff
-        results_df = (
-            base_results.sort_values("TechRating", ascending=False)
-            .head(3)
-            .reset_index(drop=True)
-        )
-        status_text = (
-            "No results passed the TechRating filter; showing top-ranked names instead."
-        )
+        # Tiered fallback system: A+ → A → B+ → B- → Top 10
+        logger.info("[TIERED RESULTS] No A+ setups found, applying tiered fallback")
+        
+        # Get available scoring columns
+        has_merit = "MeritScore" in base_results.columns
+        has_tech = "TechRating" in base_results.columns
+        has_quality = "QualityScore" in base_results.columns
+        
+        # Define tiers with relaxed thresholds
+        tiers = [
+            {
+                "name": "A",
+                "merit_min": 70,
+                "tech_min": 60,
+                "quality_min": 70,
+                "max_results": 10,
+                "message": "No A+ setups found. Showing A-grade setups (strong quality, good technicals)."
+            },
+            {
+                "name": "B+",
+                "merit_min": 60,
+                "tech_min": 50,
+                "quality_min": 60,
+                "max_results": 15,
+                "message": "No A-grade setups found. Showing B+ setups (good quality, decent technicals)."
+            },
+            {
+                "name": "B-",
+                "merit_min": 50,
+                "tech_min": 40,
+                "quality_min": 50,
+                "max_results": 20,
+                "message": "No B+ setups found. Showing B- setups (acceptable quality, moderate technicals)."
+            }
+        ]
+        
+        # Try each tier
+        for tier in tiers:
+            tier_results = base_results.copy()
+            
+            # Apply tier filters
+            if has_merit:
+                tier_results = tier_results[
+                    pd.to_numeric(tier_results["MeritScore"], errors="coerce") >= tier["merit_min"]
+                ]
+            
+            if has_tech:
+                tier_results = tier_results[
+                    pd.to_numeric(tier_results["TechRating"], errors="coerce") >= tier["tech_min"]
+                ]
+            
+            if has_quality:
+                tier_results = tier_results[
+                    pd.to_numeric(tier_results["QualityScore"], errors="coerce") >= tier["quality_min"]
+                ]
+            
+            if not tier_results.empty:
+                # Found results in this tier
+                results_df = tier_results.head(tier["max_results"]).copy()
+                results_df["ResultTier"] = tier["name"]
+                status_text = tier["message"]
+                logger.info(
+                    "[TIERED RESULTS] Found %d %s-grade setups (MERIT≥%d, Tech≥%d, Quality≥%d)",
+                    len(results_df),
+                    tier["name"],
+                    tier["merit_min"],
+                    tier["tech_min"],
+                    tier["quality_min"]
+                )
+                break
+        else:
+            # No results in any tier, show top 10 by TechRating
+            results_df = (
+                base_results.sort_values("TechRating", ascending=False)
+                .head(10)
+                .reset_index(drop=True)
+            )
+            results_df["ResultTier"] = "Ungraded"
+            status_text = (
+                "No graded setups found. Showing top 10 stocks by technical rating. "
+                "These may not meet quality standards - trade with caution."
+            )
+            logger.info("[TIERED RESULTS] Fallback to top 10 by TechRating")
 
     # Trade planning
     results_df = plan_trades(results_df, risk)
