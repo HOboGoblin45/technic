@@ -143,38 +143,45 @@ class _PremiumAppBarState extends State<PremiumAppBar>
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: SafeArea(
             bottom: false,
-            child: Container(
-              height: 70,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  // Logo and Title (animated out when search expanded)
-                  AnimatedBuilder(
-                    animation: _fadeAnimation,
-                    builder: (context, child) {
-                      return Opacity(
-                        opacity: _fadeAnimation.value,
-                        child: Transform.translate(
-                          offset: Offset(-20 * _searchAnimation.value, 0),
-                          child: _buildLogoSection(),
+              child: Container(
+                height: 70,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    // Logo and Title (animated out when search expanded)
+                    if (!_isSearchExpanded)
+                      Flexible(
+                        child: AnimatedBuilder(
+                          animation: _fadeAnimation,
+                          builder: (context, child) {
+                            return Opacity(
+                              opacity: _fadeAnimation.value,
+                              child: Transform.translate(
+                                offset: Offset(-20 * _searchAnimation.value, 0),
+                                child: _buildLogoSection(),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
+                      ),
 
-                  const Spacer(),
+                    if (!_isSearchExpanded) const Spacer(),
 
-                  // Search bar (expandable)
-                  if (widget.showSearch) _buildSearchSection(),
+                    // Search bar (expandable)
+                    if (widget.showSearch)
+                      Flexible(
+                        flex: _isSearchExpanded ? 1 : 0,
+                        child: _buildSearchSection(),
+                      ),
 
-                  // Action buttons
-                  if (!_isSearchExpanded) ...[
-                    if (widget.showNotifications) _buildNotificationButton(),
-                    if (widget.actions != null) ...widget.actions!,
+                    // Action buttons
+                    if (!_isSearchExpanded) ...[
+                      if (widget.showNotifications) _buildNotificationButton(),
+                      if (widget.actions != null) ...widget.actions!,
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
           ),
         ),
       ),

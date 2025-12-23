@@ -34,9 +34,6 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
-  Timer? _etaTimer;
-  String _eta = 'Calculating...';
-
   @override
   void initState() {
     super.initState();
@@ -45,55 +42,27 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
       vsync: this,
     )..repeat();
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
-    
-    // Update ETA every second
-    _etaTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          _eta = _calculateETA();
-        });
-      }
-    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
-    _etaTimer?.cancel();
     super.dispose();
   }
 
-  String _calculateETA() {
-    if (widget.startTime == null ||
-        widget.symbolsScanned == null ||
-        widget.totalSymbols == null ||
-        widget.symbolsScanned == 0 ||
-        widget.totalSymbols == 0) {
-      return 'Calculating...';
-    }
-
-    final elapsed = DateTime.now().difference(widget.startTime!);
-    final symbolsRemaining = widget.totalSymbols! - widget.symbolsScanned!;
+  String _getEstimatedTime() {
+    final totalSymbols = widget.totalSymbols ?? 0;
     
-    if (symbolsRemaining <= 0) return 'Almost done...';
-
-    // Calculate average time per symbol
-    final avgTimePerSymbol = elapsed.inMilliseconds / widget.symbolsScanned!;
-    final estimatedRemainingMs = (avgTimePerSymbol * symbolsRemaining).round();
-    
-    final remainingSeconds = (estimatedRemainingMs / 1000).round();
-    
-    // Format the time remaining
-    if (remainingSeconds < 60) {
-      return '$remainingSeconds sec';
-    } else if (remainingSeconds < 3600) {
-      final minutes = (remainingSeconds / 60).floor();
-      final seconds = remainingSeconds % 60;
-      return '${minutes}m ${seconds}s';
+    if (totalSymbols == 0) {
+      return 'Analyzing markets...';
+    } else if (totalSymbols < 100) {
+      return 'Est. 10-20 seconds';
+    } else if (totalSymbols < 1000) {
+      return 'Est. 30-60 seconds';
+    } else if (totalSymbols < 5000) {
+      return 'Est. 1-2 minutes';
     } else {
-      final hours = (remainingSeconds / 3600).floor();
-      final minutes = ((remainingSeconds % 3600) / 60).floor();
-      return '${hours}h ${minutes}m';
+      return 'Est. 2-3 minutes';
     }
   }
 
@@ -222,7 +191,7 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
               
               const SizedBox(height: 16),
               
-              // ETA
+              // Status Message
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -236,14 +205,19 @@ class _ScanProgressOverlayState extends State<ScanProgressOverlay>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.schedule,
-                      size: 16,
-                      color: AppColors.primaryBlue,
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          AppColors.primaryBlue,
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     Text(
-                      'ETA: $_eta',
+                      _getEstimatedTime(),
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
