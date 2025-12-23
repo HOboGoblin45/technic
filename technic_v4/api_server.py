@@ -192,6 +192,7 @@ def _set_cache(cache_key: str, data: dict, ttl: int = 300) -> None:
 def _invoke_lambda(req: ScanRequest) -> Optional[dict]:
     """Invoke AWS Lambda for heavy computation"""
     if not lambda_client:
+        logger.warning("[API] Lambda client not initialized")
         return None
     
     try:
@@ -208,6 +209,8 @@ def _invoke_lambda(req: ScanRequest) -> Optional[dict]:
             "lookback_days": req.lookback_days,
         }
         
+        logger.info(f"[API] Lambda payload: {json.dumps(payload, indent=2)}")
+        
         # Invoke Lambda
         response = lambda_client.invoke(
             FunctionName=LAMBDA_FUNCTION_NAME,
@@ -215,23 +218,66 @@ def _invoke_lambda(req: ScanRequest) -> Optional[dict]:
             Payload=json.dumps(payload)
         )
         
-        # Parse response
-        response_payload = json.loads(response['Payload'].read())
+        logger.info(f"[API] Lambda response status: {response.get('StatusCode')}")
         
-        if response_payload.get('statusCode') != 200:
-            error_body = json.loads(response_payload.get('body', '{}'))
-            logger.error(f"[API] Lambda error: {error_body.get('error', 'Unknown error')}")
+        # Read and parse response payload
+        payload_bytes = response['Payload'].read()
+        logger.info(f"[API] Lambda raw response (first 500 chars): {payload_bytes[:500]}")
+        
+        response_payload = json.loads(payload_bytes)
+        logger.info(f"[API] Lambda parsed response keys: {response_payload.keys()}")
+        
+        # Check for Lambda function errors
+        if 'FunctionError' in response:
+            logger.error(f"[API] Lambda function error: {response.get('FunctionError')}")
+            logger.error(f"[API] Lambda error payload: {response_payload}")
             return None
         
-        # Parse successful response
-        body = json.loads(response_payload['body'])
+        # Check status code
+        status_code = response_payload.get('statusCode')
+        if status_code != 200:
+            error_body = response_payload.get('body', '{}')
+            if isinstance(error_body, str):
+                try:
+                    error_body = json.loads(error_body)
+                except:
+                    pass
+            logger.error(f"[API] Lambda returned status {status_code}: {error_body}")
+            return None
+        
+        # Parse successful response body
+        body = response_payload.get('body')
+        if isinstance(body, str):
+            try:
+                body = json.loads(body)
+            except Exception as parse_error:
+                logger.error(f"[API] Failed to parse Lambda response body: {parse_error}")
+                logger.error(f"[API] Body content: {body[:500]}")
+                return None
+        
+        # Validate response structure
+        if not isinstance(body, dict):
+            logger.error(f"[API] Lambda response body is not a dict: {type(body)}")
+            return None
+        
+        if 'results' not in body:
+            logger.error(f"[API] Lambda response missing 'results' key. Keys: {body.keys()}")
+            return None
+        
         elapsed = time.time() - start_time
-        logger.info(f"[API] Lambda completed in {elapsed:.2f}s")
+        result_count = len(body.get('results', []))
+        logger.info(f"[API] Lambda completed in {elapsed:.2f}s with {result_count} results")
         
         return body
         
+    except json.JSONDecodeError as e:
+        logger.error(f"[API] Lambda JSON decode error: {e}", exc_info=True)
+        return None
+    except KeyError as e:
+        logger.error(f"[API] Lambda response missing expected key: {e}", exc_info=True)
+        return None
     except Exception as e:
-        logger.error(f"[API] Lambda invocation failed: {e}", exc_info=True)
+        logger.error(f"[API] Lambda invocation failed: {type(e).__name__}: {e}", exc_info=True)
         return None
 
 
