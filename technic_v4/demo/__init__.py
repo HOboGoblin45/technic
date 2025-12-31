@@ -23,10 +23,49 @@ def is_demo_mode() -> bool:
 
 
 def load_demo_scan_results() -> Dict[str, Any]:
-    """Load predetermined scan results for demo."""
+    """Load predetermined scan results for demo and transform to API schema."""
     demo_file = DEMO_DIR / "demo_scan_results.json"
     with open(demo_file, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        data = json.load(f)
+    
+    # Transform field names to match API schema
+    # API expects: ticker, rrr, delta, note, isPositive, title, meta, plan
+    # Demo has: symbol, rewardRisk, change, changePct, idea, rationale
+    
+    # Transform results
+    for result in data.get('results', []):
+        if 'symbol' in result:
+            result['ticker'] = result.pop('symbol')
+        if 'rewardRisk' in result:
+            rr = result.pop('rewardRisk')
+            result['rrr'] = f"R:R {rr:.2f}"
+    
+    # Transform movers
+    for mover in data.get('movers', []):
+        if 'symbol' in mover:
+            mover['ticker'] = mover.pop('symbol')
+        if 'change' not in mover:
+            mover['delta'] = mover.get('changePct', 0.0)
+        else:
+            mover['delta'] = mover.pop('change')
+        if 'signal' in mover:
+            mover['note'] = mover.pop('signal')
+        if 'isPositive' not in mover:
+            mover['isPositive'] = mover.get('delta', 0) >= 0
+    
+    # Transform ideas
+    for idea in data.get('ideas', []):
+        if 'symbol' in idea:
+            idea['ticker'] = idea.pop('symbol')
+        if 'idea' in idea:
+            idea['title'] = idea.pop('idea')
+        if 'rationale' in idea:
+            # Split rationale into meta and plan
+            rationale = idea.pop('rationale')
+            idea['meta'] = rationale[:100] + "..." if len(rationale) > 100 else rationale
+            idea['plan'] = "See full analysis for entry/exit strategy"
+    
+    return data
 
 
 def load_demo_copilot_responses() -> Dict[str, Any]:
