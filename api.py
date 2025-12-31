@@ -59,6 +59,17 @@ except Exception:  # pragma: no cover
     get_realtime_last = None  # type: ignore
     get_fundamentals = None  # type: ignore
 
+# Demo mode support
+try:
+    from technic_v4.demo import is_demo_mode, load_demo_scan_results, get_demo_copilot_response, get_demo_symbol_detail
+    DEMO_AVAILABLE = True
+except Exception:  # pragma: no cover
+    is_demo_mode = None  # type: ignore
+    load_demo_scan_results = None  # type: ignore
+    get_demo_copilot_response = None  # type: ignore
+    get_demo_symbol_detail = None  # type: ignore
+    DEMO_AVAILABLE = False
+
 app = FastAPI(title="Technic API", version="0.1.0")
 
 # Add CORS middleware to allow Flutter web app to connect
@@ -458,6 +469,12 @@ def run_scan_v1(body: ScanRequestV1) -> Dict[str, Any]:
     
     Accepts JSON body with scan parameters and returns structured results.
     """
+    # Check for demo mode first
+    if DEMO_AVAILABLE and is_demo_mode and is_demo_mode():
+        print("[DEMO MODE] Returning predetermined scan results")
+        demo_data = load_demo_scan_results()
+        return demo_data
+    
     if not SCANNER_AVAILABLE or scanner_core is None:
         error_detail = f"scanner_core unavailable: {SCANNER_ERROR}" if SCANNER_ERROR else "scanner_core unavailable"
         raise HTTPException(500, error_detail)
@@ -587,6 +604,13 @@ def copilot_v1(body: Dict[str, Any]) -> Dict[str, Any]:
     """
     V1 API: Copilot endpoint (mobile app compatible).
     """
+    # Check for demo mode first
+    if DEMO_AVAILABLE and is_demo_mode and is_demo_mode():
+        question = (body or {}).get("question", "")
+        print(f"[DEMO MODE] Returning predetermined copilot response for: {question}")
+        answer = get_demo_copilot_response(question)
+        return {"answer": answer}
+    
     return copilot(body)
 
 
